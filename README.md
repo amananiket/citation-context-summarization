@@ -12,6 +12,8 @@ Citation Context based scientific summarization algorithm based on C-LexRank (ht
 * 1 - Unigrams
 * 2 - Bigrams
 * 3 - Number of citations
+* 4 - POS Tag unigrams
+* 5 - POS Tag Bigrams
 
 ```
 python executeAndEvaluate.py <featureIndex> <comments>
