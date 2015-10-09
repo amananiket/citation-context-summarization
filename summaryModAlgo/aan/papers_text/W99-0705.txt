@@ -1,0 +1,1083 @@
+The #-TBL System: 
+Logic Programming Tools for 
+Transformation-Based Learning 
+TorbjSrn Lager 
+Department ofLinguistics 
+Uppsala University 
+Torbj orn. Lager~ling. uu. se 
+Abstract 
+The #u-TBL system represents an attempt o use the 
+search and database capabilities of the Prolog pro- 
+gramming language to implement a generalized form 
+of transformation-based learning. In the true spirit 
+of logic-programming, the implementation is 'derived' 
+from a declarative, logical interpretation f transforma- 
+tion rules. The #-TBL system recognizes four kinds 
+of rules, that can be used to implement various kinds 
+of disambiguators, including Constraint Grammar dis- 
+ambiguators a  well as more traditional 'Brill-taggers'. 
+Results from a number of experiments and benchmarks 
+are presented which show that the system is both flex- 
+" ible and efficient. 
+Introduction 
+Since Eric Brill first introduced the method of Trans- 
+formation-Based Learning (TBL) it has been used 
+to learn rules for many natural anguage processing 
+tasks, such as part-of-speech tagging \[Brill, 1995\], PP- 
+attachment disambiguation \[Brill and Resnik, 1994\], 
+text chunking \[Ramshaw and Marcus, 1995\], spell- 
+ing correction \[Mangu and Brill, 1997\], dialogue act 
+tagging \[Samuel et al, 1998\] and ellipsis resolution 
+\[Hardt, 1998\]. Thus, TBL has proved very useful, in 
+many different ways, and is likely to continue to do so 
+in the future. 
+Moreover, since Brill generously made his own TBL 
+implementation publicly available, l many researchers in 
+need of all off-the-shelf retrainable part-of-speech tag- 
+ger have found what they were looking for. However, 
+although very useful, Brill's original implementation 
+is somewhat opaque, templates are not compositional, 
+IThroughout this paper, when referring to Brill's TBL 
+implementation, it is always his contextual-rule-learner - 
+implemented in C - that I have in mind. "It is available from 
+http://www, cs. jhu. edu/~bri l l / ,  along with ~veral other 
+learners and utility programs. 
+and they are hard-wired into the program. Therefore, 
+the program is difficult o modify and extend. What is 
+more, it is fairly slow. 
+This paper is dedicated to the design and implemen- 
+tation of an alternative transformation-based learner 
+system, called "the #-TBL system" (pronounced "mu- 
+table"). The p-TBL system is designed to be the- 
+oretically transparent, flexible and efficient. Trans- 
+parency is achieved by performing a 'logical reconstruc- 
+tion' of TBL, and by deriving the system from there. 
+Flexibility is achieved through the use of a composi- 
+tional rule and template formalism, and 'pluggable' "al- 
+gorithms. As for the implementation, it turns out that 
+transformation-based learning can be implemented very 
+straightforwardly in a logic programming language such 
+as Prolog. Efficient indexing of data, unification and 
+backtracking search, as well as established Prolog pro- 
+gramming techniques for building rule compilers and 
+meta-interpreters, contribute to the making of a logi- 
+cally transparent, easily extendible, and fairly efficient 
+system. 2 
+The content of the paper is presented in a bottom-up 
+fashion, starting from the semantics of transformation 
+rules. First, I show that, contrary to what is often as- 
+sumed, transformation rules can be given a declarative, 
+logical interpretation. I then introduce the IL-TBL sys- 
+tem, which in a manner of speaking is derived from this 
+interpretation f rules. The template compiler, a part 
+of the system which translates templates into efficient 
+Prolog programs, is described, and by w~" of examples 
+it is shown how a particular combination of training 
+data and templates may be 'queried' from the Prolog 
+prompt. Next, a number of variants of all-solutions 
+predicates are specified, that deal with notions uch as 
+scores, rankings and thresholds. Since they appear to 
+be independently useful - even useful outside TBL - 
+"The ~-TBL system is available from 
+http://~w, ling. gu. se/-~lager/mutbl, html. 
+33 
+I 
+I 
+I 
+I 
+I 
+I 
+I 
+I 
+I 
+I 
+I 
+I 
+I 
+I 
+I 
+I 
+I 
+I 
+I 
+they belong in a separate library. By combining pred- 
+icates from these code libraries, a number of TBL-like 
+algorithms are assembled, and benchmarks are run that 
+show the/~-TBL system to be quite efficient. Finally, a 
+small experiment using transformation-based l arning 
+to induce Constraint Grammars from corpora is per- 
+formed. 
+The Semantics of Transformation Rules 
+The object of TBL is to learn an ordered sequence of 
+transformation rules. The p-TBL system supports four 
+kinds of transformation rules. 
+Rep lacement  ru les  dictate when - based on the 
+context - one feature value for a word should be re- 
+placed with another feature value. An example would 
+be "replace tag vb with nn if the Word immediately 
+to the left has a tag dt" .  Here is how this rule 
+is represented in the #-TBL system's compositional 
+rule/template formalism: 
+tag:vb>nn <- tag:dr@\[-1\]. 
+This is of course the exact counterpart of the transfor- 
+mation rule in Brill's original framework. 
+Add i t ion  rules specify when a feature value should 
+be added to a word. An example would be "add tag nn 
+to a word if the word immediately to the left has a tag 
+tit": 
+tag:0>nn <- tag:dr@\[-1\]. 
+Note that a feature value is actually added to a word 
+only if it not already there. 
+De le t ion  rules dictate when a feature value should 
+be removed from a word. An example would be "remove 
+tag vb from a word if the word immediately to the left 
+has a tag dt":  
+tag:vb>0 <- tag:dt@\[-1\]. 
+Reduct ion  rules reduce the set of feature values 
+for a word with a certain value. An example would 
+be "reduce a word's tag values with tag vb if the word 
+immediately to the left has a tag dr": 
+tag:vb>l <- tag:dr@I-I\]. 
+An important difference between deletion rules and re- 
+duction rules is that the latter will only remove a feature 
+value from a word if it is not the last value for that fea- 
+ture. If vb is the last value the above rule is not applica- 
+ble and the reduction will not take place. This should 
+remind us of the kind of constraints that are central 
+to the so called reductionistic approach to disambigua- 
+tion. as represented by for example Constraint Gram- 
+34 
+mar \[Karlsson et al, 1995\]). Constraint grammars may 
+indeed be possible to learn in the IL-TBL system, as I 
+will show towards the end of this paper. 
+In the p-TBL system's rule formalism, conditions 
+may refer to different symbol features, and complex 
+conditions may be composed from simpler ones. For 
+example, here is a rule saying "replace the tag for ad- 
+verb with the tag for adjective, if the current word is 
+"only", and if the previous tag, or the tag before that, 
+is a determiner tag.": 
+tag:ab>jj <- wd:only@\[O\] k tag:dt@\[-1,-2\] .  
+Ill this paper, I will break with the tradition to think 
+about transformation rules in exclusively procedural 
+terms, and instead try to think about them in declara- 
+tive and logical terms. Transformation rules (partially) 
+describe an ordered sequence of pairs of symbols, which 
+I will refer to as a relation. Such a relation form training 
+data for a TBL system. Here is a simple (and unrealis- 
+tically small) example: 
+dt vb nn dt vb kn dt vb ab dt vb 
+dt nn vb dt nn kn dt jj kn dt nn 
+The sequence formed by the upper elements of the pairs 
+will be referred to as Sl, and the sequence formed by the 
+lower elements as Sn. Such sequences can be. modelled 
+by means of two sets of clauses, which relate positions 
+in the sequences to symbol feature values: 
+$1 (1, dr) Sl (2, vb) $1 (3, nn) ... S1 (11, vb) 
+S. (I, dr) S~ (2, nn) S.(3, vb) ... S. (11, nn) 
+A central point in this paper is the suggestion that 
+the declarative semantics of transformation rules can 
+be captured by rule formulas in the form of univer- 
+sally quantified implications, and that, for example, the 
+meanings of the four very simple rules shown previously 
+are captured by the following formulas: 
+Replacement 
+Vpo,p, \[S, (po,vb) A (Pl = 1)o - 1) A St (p, .dr) --r S ,  (po,nn)\] 
+Addition 
+Vpo,p, \[-,St (po,nn) A (p, = Po - 1) A St (p, ,at ) ---r S,  (po ,nn ) \] 
+Delet ion 
+Vpo.p, \[St (po,vb ) A (p, = po - 1) A St (p, ,dr) --~ -~S. (po,vb )\] 
+Reduction 
+Vpo,p, \[Sl (po,vb) A Bxo\[S, (po,xo) A (x0 # vb)\]A 
+(P, = P0 -- 1) A S,(pl,dt) --~ -.S.(po,vb)\] 
+Rule formulas as such will not be put to any direct 
+computational use, but the notion of a rule formula 
+provides a starting point, from which computational 
+tools can be derived. 
+A rule instance is a rule formula in which every vari- 
+able has been replaced with a constant. Now, we may 
+define the notions of positive and negative instances 
+of rule formulas (and thus indirectly of transforma- 
+tion rules). A positive rule instance is a rule instance 
+where the mltecedent and the consequent are both true. 
+Thus, the following formula is a positive instance of the 
+formula corresponding to the simple replacement rule 
+above: 
+Sl(2, vb) A (1 = 2 - 1) A S,(I,dt) --+ S,(2, nn) 
+A negative instance of a rule is a rule instance where the 
+antecedent is true but where the consequent is false, for 
+example: 
+Sl(8,vb) A (7 = 8 - 1) A S~(7,dt) -~ S,,(8, nn) 
+Note that Brilrs notion of a neutral instance of a rule, 
+i.e. an instance of a rule that replaces an incorrect ag 
+with another incorrect ag, is a negative instance in my 
+terminology. (In practice, this does not seem to matter 
+much, as I will show later.) 
+We now define two important rule evaluation mea- 
+sures. The score of a rule is the number of its positive 
+instances minus the number of its negative instances: 
+sco~e(R) =1 pos(R) 1 - I neg(R) I 
+The accuracy of a rule is its number of positive instances 
+divided by the total number of instances of the rule: 
+accuracy(R) = I pos(R) I 
+I P?S(R) I + I neg(R) I 
+The notion of rule accuracy is well-known in rule in- 
+duction and inductive logic programming, and towards 
+the end of this paper we will see that it may have a role 
+to play in the context of transformation-based l arning 
+too. 
+An Overv iew o f  the  #-TBL  System 
+Through the use of unification and a particular search 
+strategy (backtracking), a logic programming environ- 
+ment such as Prolog implements a constructive kind 
+of inference which allows us to define predicates that 
+are able to recognize, generate and search for positive 
+and negative instances of transformation rules. Fur- 
+thermore, a layer of recta-logical predicates provides 
+a way to collect and count such instances, and thus 
+a way to calculate the score and accuracy for any 
+rule. Therefore, in a logic programming framework, 
+transformation-based l arning can be implemented in a 
+very clear and simple way. 
+However, for such an implementation to become use- 
+ful. we have to think about efficiency. Among other 
+things, we need to think about how we index our train- 
+ing data. Assuming the part-of-speech tagging task. 
+corpus data can be represented by" means of three "kinds 
+of clauses: 
+35 
+wd (P,N) is true iff the word W is at position P in the 
+corpus 
+tag(P,A)  is true iff the word at position P in the cor- 
+pus is tagged A 
+tag(A,B,P)  is true iff the word at, P is tagged A and 
+the correct ag for the word at P is B 
+Although this representation may seem a bit redundant, 
+it provides exactly the kind of indexing into the data 
+that is needed. 3 A decent Prolog system can deal with 
+millions of such clauses. 
+Rules that can be learned in TBL  are instances of 
+templates, such as "replace tag A with B if tho symbol 
+(e.g. the word) immediately to the left has tag C, where 
+A, B and C are variables. Here is how we write this 
+template in the p-TBL system: 
+t3(A,B,C) # tag:A>B <- tag:C@\[-l\]. 
+The term to the left of # is a unique identifier for the 
+template. A template instance is a template in which 
+every variable in the identifier has been replaced by a 
+constant. If we strip the identifier we end up with a 
+transformation rule again. The instantiated identifier 
+uniquely identifies that rule. 
+Positive instances of rules that are instancbs of the 
+above template can be efficiently recognized, generated 
+and searched for, by means of the following clause: 
+positive (t3(A,B,C)) :- 
+tag(A,B,PO), Pl is PO-I, tag(Pl,C). 
+Negative instances are handled as follows: 
+negative (t3 (A,B, C) ) :- 
+tag(A,X,PO), dif(X,B), P1 is PO-I,taE(PI,C). 
+It should be clear how these clauses use the representa- 
+tion described above, and that they respect the seman- 
+tics exemplified in the previous section. Clauses cor- 
+responding to other templates and other types of rules 
+can be defined accordingly. 
+Tied to each template is also an update proce.dure that 
+will apply rules that are instances of this template, and 
+thus update sequences, by replacing feature values with 
+other feature values, adding to the feature values, or 
+removing from them. For example: 
+apply(t3 (A,B,C)) :- 
+(tag(A,X,P), P1 is P-l, tag(PI,C), 
+retract(tag(A,X,P)),  re t rac t ( tag(P , l ) ) ,  
+assert(tag(B,X,P)), asser~(tag(P,B)), 
+fail ; true). 
+3Assuming a Prolog with first argument indexing. 
+I 
+I 
+I 
+I 
+I 
+I 
+I 
+I 
+I 
+I 
+I 
+I 
+I 
+I 
+I 
+I 
+I 
+I 
+I 
+To write clauses uch as these by hand for large sets 
+of templates would be tedious and prone to errors and 
+omissions. Fortunately, since the formalism is composi- 
+tional, it is easy to write a template compiler that gener- 
+ates them automatically. The #u-TBL system uses well- 
+known Prolog compiler writing techniques to expand 
+templates written in the compositional high-level nota- 
+tion into clauses that can be run as programs. Thus, the 
+convenience and flexibility of a high-level notation for 
+templates and rules does not compromise performance. 
+A template grammar defines the exact relation between 
+a template and a set of clauses. As an illustration, the 
+following grammar rules are used to expand a template 
+into a Prolog clause defining pos i t ive / l ,  negative/1 
+and apply/ l ,  for that template: 
+term_expansion((ID # A<-Cs), 
+\ [ (pos i t ive( ID)  : -  G1), 
+(negative(ID) :- G2), 
+(apply(ID) :-(G3.fail;true))\]) :- 
+pos ((A<-Cs) ,LI, \[\] ), list2goal(L1 .G1), 
+ne E ((A<-Cs) ,L2, \[\] ). list2goal (Li, G2), 
+app((A<-Cs) ,L3, \[\] ), list2goal(L3,G3). 
+pos((F:A>B<-Cs)) --> 
+{G =.. \[F,A,B,P\]},\[G\], cond(Cs,P). 
+neg((F:A>B<-Cs)) --> 
+{G =.. \[F,A,X,P\]}, \[dif(X,B),G\], cond(Cs,P). 
+app((F:A>B<-Cs)) --> 
+{GI =.. \[F,A,X,P\], G2 =.. \[F,P,A\], 
+G3 =.. \[F,B,X,P\], G4 =.. \[F.P,B\]}, 
+\[GI\], cond(Cs,P), \[retract(Gl), 
+retract(G2), assert(G3), assert(G4)\]. 
+cond((C&Cs),P) --> cond(C,P), cond(Cs,P). 
+cond(FA@Pos,PO) --> pos(Pos,PO,P), feat(FA,P). 
+pos(Pos,PO,P) --> 
+\[member(Offset,Pos), P is PO+Offset\]. 
+feat(F:A,P)--> {G =.. \[F,P,A\]}, \[G\]. 
+A modern Prolog system will compile the resulting 
+clauses all the way down to machine code. Thus. a 
+TBL-system implemented in Prolog can be quite effi- 
+cient. 
+The p -TBL  Template  Compi le r  
+When a file containing transformation rules is consulted 
+or compiled, each transformation rule is expanded into 
+several Prolog clauses) As a result of this, a large 
+number of predicates becomes available, some of which 
+are documented in Figure 1. 
+Using the predicates generated by the template com- 
+piler, the training data in combination with the tem- 
+4Also. if the user does not provide them, template idea- 
+tlfiers m'e constructed automatically. 
+pair(?a,?B) 
+pair(?h,?B,?P) 
+A ~ aligned with B at a position P in the current data. 
+positive (?RuleID) 
+positive (?RuleID, ?a, ?B) 
+positive (?RuleID, ?A, ?B, ?P) 
+RuleID names a rule which has a positive instance in 
+the current data at a position P, whero A is aligned 
+with B. The rule is an instance of a template, which 
+is identified by the functor of RuleID. A call to this 
+predicate usually has many solutions, az~,l tile order in 
+which solutions are returned on backtracking is deter- 
+mined by the order in which templates are presented 
+to the system, and the order of symbols in the training 
+data. 
+sample(?RuleID) 
+sample(?RuleID,?A,?B) 
+sample(?RuleID,?A,?B,?P) 
+As positive/{l,2,3}, except that rules are randomly 
+sampled. 
+sample_R(+R,?A,?B,-Rules) 
+Binds Rules to al ist  with R rmldomly samplcd rules. 
+negative(?RuleID) 
+negative(?RuleID,?h,?B) 
+negative(?RuleID.?A,?B,?P) 
+RuleID names a rule which hasa negative instance m 
+the data a ta  position P, where h is aligned with B. 
+apply (+RuleID) 
+The rule RuleID is applied to the current data. 
+Figure 1: Extract fi'om the manual 
+plates may be queried. By backtracking through the 
+solutions to a call to pos i t ive /1  we may for example 
+verify that there are ten ways to instantiate our exam- 
+ple template in our example data (for space reasons, I 
+show only the first three solutions): 
+\[ 7- positive(RuleID), RuleID # Rule? 
+Rule = tag:vb>nn <- tag:dt@\[-l\] 7 ; 
+Rule = tag:nn>vb <- tag:vb@\[-1\] ? ; 
+Rule = tag:dr>dr <- tag:nn@\[-l\] ? ; 
+? . . 
+Alternatively, we might be interested only in instances 
+where the aligned feature values (h and B) are different, 
+and there are six of those: a
+Sdif/2 is a built-in predicate in SICStus Prolog. A call 
+to d i f  (X,Y) constrains X and Y to represent different erms. 
+Calls to d i f /2  either succeed~ fail. or are blocked depending 
+oil whether X and Y are sufficiently instantiated. 
+36 
+l 7- dif(A,B), positive(ID,A,B), ID # Rule. 
+Or, we might be interested only in template instances 
+where the aligned symbols have feature values nn and 
+vb, respectively. There is only one such rule: 
+i ?- positive(RulelD,nn,vb), RuleID # Rule. 
+Rule = tag:nn>vb <- tag:vb@\[-l\] ? ; 
+Sometimes, a random sample of a positive rule might 
+be more useful: 
+7-  sample(Ru le ID ,nn ,vb) ,  RuleID # Rule .  
+Rule = tag :nn>vb <- tag :vb@\[ -1 \ ]  
+As for negative instances, we may want to know if the 
+rule tag :vb>nn <-  tag :dr@\[ -1 \ ]  has any negative in- 
+stances in the training data, and indeed there is one at 
+position 8, where vb is aligned with j j  rather than nn: 
+?- RuleID # (tag:vb>nn <- tag:dt0\[-l\]), 
+negative(RuleID,A,B,P). 
+h = vb, B = j j ,  P = 8 ? 
+L ib rary  ranking 
+Library ranking is a package for scoring and ranking 
+rules. It was written for the specific purpose of scoring 
+transformation rules in the context of TBL, but is likely 
+to be more generally useful, hence deserving its status 
+as a libra~'y. The basic notions are defined as follows: 
+A score is an integer > 0 
+A ranking entry is a pair S-R such that S is a score 
+and R is a rule 
+A ranking is an ordered sequence of ranking entries 
+where each rule occurs only once. 
+The score of a rule is determined by counting the so- 
+lutions returned by goals containing the rule (or rather 
+its ID). Thus. many predicates in library ranking are 
+meta-predicates that work much the same way as the 
+so called all-solutions predicates that are built into Pro- 
+log. Figure 2 lists some of the predicates available in 
+library ranking. 
+The library encapsulates some of Brill's own w~'s of 
+optimizing transformation-based l arning - optimiza- 
+tions which are possible to perform for the ranking of 
+rules in general. 
+The predicates in library ranking interact in a 
+straightforward way with the predicates generated by 
+the template compiler, as the following examples will 
+show. Here. for instance, is how we compute (and print) 
+a ranking on the basis of the goal invoh'ing a call to 
+posit ive/3: 
+37 
+count (?R, +Goal , -N) 
+Binds N to the number of solutions for Goal. un\]ess it 
+fails for lack of solutions. If there are uninsta~itiated 
+variables in Goal, then a call to countl3 may back- 
+track, generating alternative values for N corresponding 
+to different instantiations of the free variables of Goal. 
+Defined as: 
+count(R,Goal,N) :- 
+bagof(R,Goal,Solutions), 
+length(Solutions,N). 
+rank (?R, +Goal, +ST, -Ranking) 
+Computes the score for each instance of R and ranks 
+the instances. However, instances with scores less than 
+the score threshold (ST) are not ranked. Defined as: 
+rank (R, Goal, ST, Rnkng) :- 
+setof (N-R, (count (., Goal, N), N>ST), Rnkng0), 
+reverse  (RnkngO, Rnkng). 
+penalize (?R, +Goal, +Rnkng, +ST, +AT, -NewRnkng) 
+Re-ranks the rules ill Rnkng by subtracting from their 
+scores, giving a new ranking NewRnkng. However. any 
+rule with a score < ST or all accuracy < AT Is just 
+dropped. 
+at_position (+N, +Rnkng, -Rule, -Score) 
+Retrieves the Nth rule in the ranking, and its score. 
+highscore (?R, +PGoal, +NGoal, +ST, +AT, ?WR, ?WRS) 
+Among the different instances of R, NR is the rule with 
+the highest score (i.e. the 'winning rule'), and NRS is 
+its score, defined as the number of solutions to the 
+goal PGoal minus the number of solutions to NGoal. 
+However. if NRS < ST, or if no rule clears the accuracy 
+threshold (AT), highscore/7 fails. Works a~ if defined 
+by: 
+highscore (R,PGoal,NGoal, ST, AT, WR, ~IRS) -- 
+rank (R, PGoal, ST, Rnkng), 
+penalize (R, NGoal, Rnkng, ST, AT, NewRnkng), 
+at _pos it ion ( 1, NewRnkng, WR, WRS). 
+Ill fact, highscore/7 is implemented in a more efficient 
+way. It keeps track of a leading rule and its score, and 
+thus only has to generate and count solutions to NGoal 
+for rules for which the number of positive instances Is 
+greater than the score for the leading lule. Moreover, 
+the score threshold (ST) for the counting of solutions of 
+NGoal can be set to the nmnber of solutions to PGoal 
+minus the score for the leading rule. 
+Figure 2: Extract fl'om the manual 
+?- rank(R,A-B'(di f (A,B),posit ive(R,A,B)) , l ,L) ,  
+print_ranking(L). 
+3 tag:vb>nn <- tag:dt@\[-1\] 
+1 tag:vb>jj <- tag:dtO\[-l\] 
+I 
+I 
+I 
+I 
+I 
+I 
+I 
+I 
+I 
+I 
+I 
+i 
+I 
+I 
+I 
+I 
+I 
+I 
+I 
+And here is how we find the highest scoring rule: 
+I 7- highscore(R,A'B'(dif(A,B),positive(R,A,B)), 
+negat i re  ( R), 1, WR, WRS ). 
+WR = tag:vb>nn <- tag:tit@\[-1\], WRS = 3 ? ; 
+This concludes the demonstration f how the template 
+compiler and the ranking library allows a particular 
+combination of templates and training data to be in- 
+teractively explored from the Prolog prompt. 
+S imple  TBL  
+Full transformation-based l arning is just a small snip- 
+pet of code away. Given corpus data, templates and val- 
+ues for the thresholds (ST and AT), the predicate tb l /3  
+implements learning of a sequence of rules: 
+Program 1 
+tb l  (ST,AT,WRs) : -  
+( highscore (Rule, 
+A'B" (dif (A,B) ,positive (Rule,A, B)), 
+negative (Rule), 
+ST, 
+AT, 
+WR, 
+WRS) 
+-> apply(~), 
+tbl  (ST,AT,WRsl), 
+was = \[~n~lWas13 
+; WRs = \[\] 
+). 
+This predicate, defined entirely in terms of predicates 
+generated by the template compiler and predicates from 
+library ranking, combines all the important principles of 
+TBL into a complete learning program, that repeatedly 
+instantiates rule templates in training data, scores rules 
+on the basis of counts of positive and negative instances 
+of them, selects the highest scoring rule on the basis of 
+this ranking, and applies it to the training data. 
+Consider our small example once again. Here are the 
+three rules learned (with the score threshold set to 1) 
+tag:vb>nn <- tag:dt~\[-1\] .  
+tag:ab>kn <- tag:nn@\[-1\]. 
+tag:nn>vb <- tag:nn@\[-l\]. 
+and here are the transformations that the upper se- 
+quence of the training data goes through, when the rules 
+are applied in the given order: 
+dt vb nn dt vb kn dt vb ab dt vb 
+dt nn nn dt nn kn dt nn ab dt nn 
+dt nn nn dt nn kn dt nn kn dt nn 
+d~ nn vb dt nn kn dt nn kn dt nn 
+It is interesting to regard what is happening hei-e as a 
+decomposition of a relation S1-S,, into a number of re- 
+38 
+lations SI-S.>_ o. . .  o S , - I -S , ,  corresponding to a number 
+of rules R1 o . . .  o R ,_ , .  
+In general, for such a decomposition S,-S,  = Si- 
+S,+l o S,+I-Sn, it holds that if a rule R, has P pos- 
+itive and N negative instances in S,-S, ,  then (i) R, 
+will have P + N positive and no negative instances in 
+Ss-Si+l, and (ii) Ri will have no positive nor negative 
+instances in S,+I-S,.  Clearly, (i) follows from the fact 
+that the update procedure associated with R, changed 
+the negative instances of Ri in S,-S,  into positive ones, 
+and (ii) from the fact that the antecedent of R, must 
+be false in S,+l'Sn. As a corollary to (ii) it follows that 
+Ri will not be selected next. 
+For each step, as long as P > ST + N, then S, will 
+become more similar to Sn. Note. in our example, that 
+there is one rule, tag :nn>j j  <- tag:dr@\[ -1 \ ] ,  that 
+would remove the only remaining difference between 
+$4 and S,.  However, this rule also has three nega- 
+tive instances, and thus the rule gets a score below tim 
+threshold. 
+Sca l ing  Up 
+Program 1is indeed small, simple and transparent. But 
+what about efficiency? How well does it scale up to han- 
+dle real world tasks, such as part-of-speech tagging? In 
+one small test the learner was operating on annotated 
+Swedish corpora 6 of three different sizes, with 23 dif- 
+ferent tags, and the 26 templates that BriU uses in his 
+distribution: 
+tag:A>B <- tag:C@\[-l\]. 
+tag:A>B <- tag:C?\[l\]. 
+tag:A>B <- tag:C?\[-2\]. 
+tag:A>B <- tag:C@\[2\]. 
+tag:A>B <- tag:C@\[-l,-2\]. 
+tag:A>B <- tag:C@\[l,2\]. 
+tag:A>B <- tag:C@\[-l,-2,-3\]. 
+tag:A>B <- tag:C@\[l,2,3\]. 
+tag:A>B <- tag:C@\[-1\] & tag:D@\[1\]. 
+tag:A>B <- tag:C@\[-l\] ~ tag:D~\[-2\]. 
+tag:A>B <- tag:C@\[1\] & tag:D@\[2\]. 
+tag:A>B <- ,d:C@\[O\] ~ tag:D@\[-2\]. 
+tag:A>B <- wd:C@\[O\] & wd:D@\[-2\]. 
+tag:A>B <- wd:C@\[-1\]. 
+tag:A>B <- wd:C@\[l\]. 
+tag:A>B <- wd:C@\[-2\]. 
+tag:A>B <- wd:C@\[2\]. 
+tag:A>B <- wd:C@\[-l,-2\]. 
+tag:A>B <- ,d:C@\[1,2\]. 
+tag:A>B <- wd:C@\[O\] & ,d:D@\[-1\]. 
+6I have used selected parts of the Stockholm-Umea Cor- 
+pus (SUC). Here is a key to the part-of-speech tags appear- 
+ing in the present paper: ma = noun, vb = verb, pp = prepo- 
+sition, pra = proper name. d t= determiner, pn = pronoun, 
+ie = infinitive marker, sn = subjunction, j j  = adjective, 
+ab = adverb, hp = relative pronoun, kn ---- conjunction. See 
+\[Ejerhed et al~ 1992\] for further details of this corpus. 
+tag:h>B <- wd:C@\[O\] & wd:D@\[l\]. 
+tag:A>B <- wd:C@\[0\] & tag : D@ \[-l\] . 
+tag:h>B <- wd:C@\[O\] & tag:D@\[1\]. 
+tag:A> B <- wd:C@\[O\]. 
+tag:A>B <- wd:C@\[O\] & tag:D@\[2\]. 
+tag:A>B <- wd:C@\[O\] & wd:D@\[2\]. 
+Below, I show the first thirteen rules, as they are re- 
+ported by the p-TBL system (during training on the 
+30kw corpus). Each rule is preceded by its score (first 
+column), and by its accuracy (second column). 
+130 1.00 tag:dt>pn <- tag:vb~\[1 \ ] .  
+114 0.82 tag : ie>sn <- tag:vb@\[2\].  
+58 0.85 tag:pn>dt <- vd:det@\[O\] & tag:jj%\[l\]. 
+37 1.00 tag:ie>sn <- tag:dt@\[l\]. 
+37 0.97 tag:ie>sn <- tag:nn@\[1\]. 
+34 0.95 tag:dt>pn <- tag:pp@\[l\]. 
+29 1.00 tag:ie>sn <- tag:pn@\[1\]. 
+21 1.00 tag:ie>sn <- tag:pro@Ill. 
+19 1.00 tag:jj>pn <- wd:bland@\[-1\]. 
+18 1.00 tag:dt>pn <- tag:hp@\[l\]. 
+17 0.84 tag:pp>sn <- ,d:om@\[O\] & tag:pn@\[l\]. 
+15 0.94 tag:sn>ie <- tag:vb@\[1\]. 
+14 0.63 tag:hp>kn <- wd:som@\[O\] & tag:nn@\[1\]. 
+Note that the actual accuracy of a learned rule can 
+sometimes be well below 1.00. (The accuracy thresh- 
+old was set to 0.5 in this experiment.) The sequence 
+of rules works well anyway, since the damage done by 
+an incorrect rule can be repaired by rules later in the 
+sequence. (In fact, a small experiment confirmed that 
+the setting of the accuracy threshold to 1.00 generates 
+a tagger which performs less well.) 
+For each corpus, the accuracy of the learned sequence 
+of rules was measured on a test corpus consisting of 
+40,000 words, with an initial-state accuracy of 93.3%. 
+The system was running on a Sun Ultra Enterprise 3000 
+with a 250Mhz processor. Table 1 summarizes the re- 
+sults of the tests: 
+Size ST 
+30k 2 
+60k 4 
+120k 6 
+Runtime Mem.req. 
+15 min 23M 
+24 rain 38M 
+54 rain 71M 
+#(Its) Acc. 
+99 95.5% 
+81 95.7% 
+88 95.8% 
+Table 1: #-TBL performance - the simple algorithm 
+The performance of the p-TBL system was compared 
+with Brill's learner unning on the same machine, with 
+the same templates, core thresholds and training data. 
+Table 2 gives the figures. 
+These tests verify that the program works as ex- 
+pected, and also that it is quite efficient, despite its 
+small size and simple design. In fact. the tests show 
+that p-TBL learner is an order of magnitude faster than 
+Brill's original learner for this particular task. 
+39 
+Size ST 
+30k 2 
+60k 4 
+120k 6 
+Runtime Mem.req. 
+90 min 24M 
+185 min 43M 
+560 min 82M 
+#(Rs) 
+104 
+89 
+98 
+ACC. 
+95.5% 
+95.7% 
+95.8% 
+Table 2: Performance of Brill's learner 
+TBL  h la Er ic  Br i l l  
+This algorithm is perhaps tile one that resembles Brill's" 
+own algorithm the most. It differs fi'om the siml)le algo- 
+rithm in that to learn one rule, it ranks the error types 
+that occur in the trairting data (using rank /4  from li- 
+brary ranking to do so), and then it searches top-to- 
+bottom in this ranking, entry by entry, for a rule which 
+fixes the type of error recorded by the entry, always 
+keeping track of a leading rule and its score. When the 
+score for a ranking entry drops below the leading rule's 
+score, the search is abandoned, and the leader is de- 
+clared winner. This effectively prunes the search space 
+without losing completeness, and it also saves a lot of 
+memory, since only rules for one kind of error at a time 
+have to be held in memory. 
+Program 2 
+tbl (ST, AT, WRs) :- 
+( rank((h,B), (dif CA,B) ,pair(A,B)), ST,Rnkng), 
+le arn_one (Rnkng, dummy, O, AT, I/R, NRS), 
+NRS >= ST 
+-> apply (WR), 
+tb l  (ST,AT,NRsl), 
+NRs = \[WRtWRsl\] 
+WRs = \[\] 
+). 
+learn_one (RnkngO,LR,LRS, AT,NR, NRS) :- 
+( RnkngO -- \[N-CA,B) lEnkng\], 
+N > LRS 
+-> ( highscore (R, 
+positive (R,A,B), 
+negative (R, A, A), 
+LRS, 
+AT, 
+LR1, 
+LRSI) 
+-> learn_one(Rnkng,LR1,LRS1 ,AT,NR,NRS) 
+; learn_one (Rnkng,LR, LRS, AT,NR, WRS) 
+) 
+; NR = LR, NRS = LI~ 
+). 
+The benchmark results, using the same setup as with 
+the simple algorithm, are shown in Table 3. 
+As can be seen from Table 3, the optimized algo- 
+rithm is significantly faster than the simple one, and 
+it uses less memory. However, as pointed out in 
+\[Ramshaw and Marcus, 1995\], the effect of this partic- 
+ular optimization method depends on the size of the 
+! 
+Size ST 
+30k 2 
+60k 4 
+120k I. 6 
+Runtime Mem.req. 
+10 min 17M 
+20 min 22M 
+50 min 39M 
+#(Rs) Acc. 
+99 95.5% 
+85 95.7% 
+92 95.8% 
+Table 3: I~-TBL performance - the optimized algorithm 
+tag set. The larger the tag set, the more benefit we 
+can expect. Thus, we can expect o see even greater 
+improvements for many learning tasks. 
+Note also that in contrast with the simple algorithm, 
+this algorithm uses Brill's notion of negative rule in- 
+stance. The  call negat ive (g, A, A) ensures that neutral 
+instances are not counted as negative. However, it ap- 
+pears that the way negative instances are counted does 
+not matter much, at least not for this application. The  
+rules look pretty much the same as the rules generated 
+by Brill's learner, and in fact, the first ten rules are 
+identical. 
+Monte  Car lo  TBL  
+The original TBL algorithm suffers from the fact that 
+the number of candidate rules to consider grows very 
+fast with the number of rule templates, and in prac- 
+tice only a small number of templates can be handled. 
+\[Samuel t al., 1998\] presents a novel twist to the al- 
+gorithm, in order to solve this problem. The idea is 
+to randomly sample from the space of possible rules, 
+rather than generating them all. The better the rule is, 
+the greater the chance that it is included in the sample. 
+Thus, the system is likely to find the best rules first. An 
+implementation f this algorithm can be assembled by 
+replacing the definition of learn_one/6 in Program 2 
+with the following definition: 
+Program 3 
+learn_one(Rnkng0,LR,LRS,AT,NR,NRS) :- 
+( Rnkng0 = \[N-(A,B) IRnkng\], 
+N > LRS 
+-> samp1e_R(16,A,B,Rs), 
+( highscore(R, 
+(member(R,Rs),positive(R,A,B)), 
+negative(R,A,A), 
+LRS, 
+AT, 
+LRI, 
+LRS1) 
+learn_one(Rnlmg,LRI,LRSl,AT,NR,NRS) 
+Iearn_one(Rnkng,LR,LRS,AT,NR,NRS) 
+-> 
+) 
+). 
+NR = LR, NRS = LRS 
+40 
+That is, h ighscore/7 picks tile rules that it evalu- 
+ates from the (here) 16 rules that are sampled. The 
+amount of work that h ighscore/7 has to perform, and 
+the memory requirements, no longer depends on how 
+many templates there are. 
+To test the algorithm, the system was run with 260 
+templates with the 60,000 word corpus, and a compar- 
+ison was made with the optimized algorithm. The out- 
+come of this experiment is reported in Table 4. 
+Algorithm Runtime Mem.req. #(Rs) Acc. 
+Lazy 48 min 21M 202 95.7% 
+Brill 427 min 84M 126 95.7% 
+Table 4: #-TBL performance - the lazy algorithm vs. 
+the '~ la Brill algorithm. 
+As can be seen from the table, although the other al- 
+gorithm did not perform too bad with 260 templates, 
+the 'lazy' algorithm was an order of magllitude faster. 
+Accuracy was not compromised, although the number 
+of rules grew. 
+As a sidenote, let me describe a convenient /L-TBL 
+system feature which makes it possible to train with 
+very many templates without actually writing them 'all 
+down. Instead of loading a set of templates into the 
+system, the user may load a couple of template decla- 
+rations, which, in terms of 'window' sizes and ranges of 
+relative positions over which windows 'slide', constrain 
+the relation between templates and clauses, defined by 
+the template grammar. Constrained in this way, the 
+grammar Call be used to generate templates. Without 
+going into any further details, let me just show the dec- 
+larations which causes the system to generate the 260 
+templates used above: 
+? - head(tag:A>B). 
+:- window_size(tag,3). 
+"- window_size(wd,2). 
+:- range(tag,\[-3,-2,-l,l,2,3\]). 
+:- range(wd,\[-2,-1,1,2\]). 
+"- anchors(\[-t,O,1\]). 
+Learn ing  Const ra in t  Grammars  
+In another experiment, the #-TBL system was run with 
+a number of templates for reduction rules, in order to see 
+if something resembling a Constraint Grammar could 
+be induced from training data. Each word token in a 
+training corpus of 30,000 words was assigned the set 
+of part-of-speech tags that it can have according to a 
+lexicon. The training data also indicated which member 
+of this set was the correct one. 
+The system was run with the following four tem- 
+plates: 
+tag:A>l <- unique(tag:C@\[-l\]). 
+tag:A>l <- unique (tag : C@ \[l\] ) . 
+tag:A>l <- wd:C@\[O\] & unique(tag:D@\[-l\]). 
+tag:h>l <- wd:C@\[O\] k unique(tag:DO\[l\]). 
+The use of the un ique/1 wrapper in the conditions of 
+the rules has the effect hat a rule will trigger only if the 
+assignments of tags to words in the relevant surround- 
+ings ar e non-mnbiguous. (As Karlsson et al (1995) put 
+it, the rules are run in "careful application mode".) 
+As mentioned earlier, replacement rules do not have 
+to be very accurate: if a rule early in a sequence of re- 
+placement rules makes ome errors, the errors can often 
+be 'fixed' by rules later in the sequence. By contrast, 
+in a sequence of reduction rules there are no rules that 
+can add tags once they have been removed. There- 
+fore, in order to maximize the accuracy of the whole 
+sequence of rules, it must be induced under a valida- 
+tion bias which sees to it that each rule is as accurate 
+as possible. In the #-TBL system, this is taken care of 
+by" setting the accuracy threshold to a very high value. 
+However, a sequence of rules induced in this way will 
+typically leave many words with more than one tag. If 
+we want instead to minimize the tags per words ratio, 
+the accuracy threshold can be set to a lower value, but 
+then a lower tagging accuracy will naturally result. In 
+the experiment, he accuracy threshold was set to 0.99 
+(which still allows for a bit of noise in the data) and to 
+0.85. Program 2 was used. 
+Below, I show the first ten rules that were learned by 
+the system (with the accuracy threshold set to 0.99): 
+451 1.00 tag:rg>l <- 
+451 1.00 tag:pl>l <- 
+274 1.00 tag:pn>l <- 
+274 0.99 tag:ab>l <- 
+230 1.00 tag:pl>l <- 
+222 1.00 tag:ab>l <- 
+221 1.00 tag : rg>l  <- 
+219 1.00 tag:p1>1 <- 
+200 1.00 tag:p1>1 <- 
+166 0.99 tag:rg>l  <- 
+wd:i@\[O\] ~ unique(nn@\[l\]). 
+wd:i@\[O\] & unique(nn@\[1\]). 
+wd: en@ \[0\] & unique (nn@ \[i\] ). 
+wd: en@ \[0\] & unique (nn@ \[i\] ). 
+unique(dl@ \[-I\] ). 
+wd:av~\[O\] & unique(nn@\[-l\]). 
+wd:?@\[O\] & unique(nn@\[-l\]). 
+.d:i@\[O\] & unique(nn@\[-1\]). 
+wd:p@\[O\] k unique(nn@\[-t\]). 
+wd:en@\[O\] & unique(jj@\[l\]). 
+The induced sequences of rules were tested on a cor- 
+pus of 11,000 words. Both the accuracy and the tags 
+per word ratio in the test corpus were measured7 The 
+initial tags per word ratio in the test corpus was 1.35. 
+The results of the tests are given in Table 5. 
+Size ST AT #(Rs) Runtime Acc. T /W 
+30k 6 0.99 410 75 min. 99.6% 1.17 
+30k 6 0.85 215 20 min. 98.1% 1.04 
+Table 5: Result of Constraint Grammar induction 
+TA word is deemed to be accurately tagged if the correct 
+tag is an element in the set of tags that the word has been 
+assigned. 
+These results are promising. But before it would be 
+fair to compare with other methods for inducing Con- 
+straint Grammars from annotated corpora, e.g. the 
+methods described ill \[Samuelsson etal., 1996\] or in 
+\[Lindberg and Eineborg, 1998\], it remains to determine 
+the optimal set of templates and the optimal settings 
+of the accuracy threshold. Very likely, the learning pro- 
+cess (applied to the learning of reduction rules) can also 
+be optimized for speed. In short, a lot more has to be 
+done, but at least this section has shown how easily an 
+experiment like this can be set up in the #-TBL envi- 
+ronment. 
+Summary and Conclusions 
+The #-TBL system is not just a re-implementation 
+of original TBL in another programming language. 
+Rather it should be seen as all attempt o use tile rea- 
+soning and database capabilities of Prolog to do TBL 
+ill a more high-level way. The #-TBL system is: 
+General  - The system supports four types of rules by 
+means of which not only traditional 'Brill-taggers', 
+but also Constraint Grammar disambiguators, are 
+possible to train. 
+Easi ly extend ib le  - Through its support of a compo- 
+sitional rule/template formalism and 'pluggable' al- 
+gorithms, the system can easily be tailored to differ- 
+ent learning tasks. 
+T ransparent  - Rules have a declarative, logical se- 
+mantics which, among other things, has proved to be 
+of great value during the implementation work. 
+Eff ic ient - A number of benchmarks have been run 
+which show that the system is fairly efficient - an 
+order of magnitude faster than Brill's contextual-rule 
+learner. 
+In teract ive  - Prolog is all interactive language and 
+this is something that the #-TBL system inherits. 
+Smal l  - Thanks to the choice of implementation lan- 
+guage, the system's code base can be kept quite small. 
+Indeed, a 'light' version of the #-TBL system., con- 
+sisting of just one page of Prolog code, has been im- 
+plemented \[Lager, 1999\]. 
+In short, the #-TBL system is a powerful environ- 
+ment in which to experiment with transformation-based 
+learning. 
+Acknowledgements 
+Thanks to Lars Borin, Mats DahllSf and Natalia Zi- 
+novjeva at Uppsala University for comments and sug- 
+gestions. Joakim Nivre in GSteborg "also provided me 
+with valuable insights and advice. 
+41 
+I 
+I 
+I 
+I 
+I 
+I 
+I 
+I 
+I 
+I 
+I 
+I 
+I 
+I 
+I 
+I 
+I 
+I 
+I 
+References 
+\[Brill and Resnik, 1994\] Brill, E. and Resnik, P., 1994. 
+A transformation-based approach to prepositional 
+phrase attachment disambiguation. I  Proceedings 
+of COLING'94, Kyoto, Japan. 
+\[Brill, 1995\] Brill, E., 1995, Transformation-Based 
+Error-Driven Learning and Natural Language Pro- 
+cessing: A Case Study in Part of Speech Tagging. 
+Computational Linguistics, December 1995. 
+\[Ejerhed et al, 1992\] Ejerhed, E., K~illgren, G.. 
+\Vennstedt, O. and .?.str5m, M., 1992, The Lin- 
+guistic Annotation System of the Stockhohn-Umea 
+Project. Department of Linguistics, University bf 
+Ume.  
+\[Hardt, 1998\] Hardt, D. 1998, Improving Ellipsis Res- 
+olution w'ith Transformation-Based L arning. To 
+appear, AAAI Fall Symposium. 
+\[Karlsson et al, 1995\] Karlsson, F., Voutilainen, A., 
+Heikkil~i, J., Anttila, A. (eds.). 1995, Constraint 
+Grammar. A Language-Independent System for 
+Parsing Unrestricted Text. Mouton de Gruyter. 
+\[Lager, 1999\] Lager, T. 1999, /~-TBL Lite: A Small, 
+Extendible Transformation-Based L arner, In Pro- 
+ceedings of the Ninth Conference o\] the European 
+Chapter of the Association for Computational Lin- 
+guistics (EACL'99), Bergen, June 8 - 12, 1999. 
+\[Lindberg and Eineborg, 1998\] Lindberg, N. and 
+Eineborg M., Learning Constraint Grammar-style 
+disambiguation rules using Inductive Logic Pro- 
+gramming. In Proceedings of COLING/ACL "98. 
+\[Mangu and Brill, 1997\] Mangu, L. and Brill, E., 1997, 
+Automatic Rule Acquisition for Spelling Correc- 
+tion, In Proceedings of The Fourteenth Interna- 
+tional Conference on Machine Learning, ICML 97, 
+.'Morgan Kaufmann. 
+\[Ramshaw mad Marcus, 1995\] Ramshaw, L. A. and 
+Marcus, M., P., 1995, Text Chunking using 
+Transformation-Based L arning, In Proceedings of 
+the A CL Third Workshop on Very Large Corpora, 
+June 1995, pp. 82-94. 
+\[Samuel t al., 1998\] Samuel, K., Carberry, S. and 
+Vij~'-Shanker, K., 1998. Dialogue Act Tagging 
+with Transformation-Based L arning. In Proceed- 
+ings of COLING/ACL'98, pp. 1150-1156. 
+\[Samuelsson et al, 1996\] Samuelsson, C., Tapanainen. 
+P. and Voutilainen. A., 1996, Inducing Constraint 
+Grammars. In: Laurent. M. and de la Higuera. C. 
+42 
+(eds.) Grammatical bfference: Learning Syntax 
+: fi'om Sentences, Springer Verlag. 
+Appendix: The #-TBL User Interface 
+Although it certainly helps to be familiar with the Pro- 
+log programming language, the p-TBL system is actu- 
+ally designed to be usable also by those who lack Prolog 
+experience. 
+The system has a simple command line interface, de- 
+picted in Figure 3, from which commands ('an be given 
+and queries be made. Furthermore. there are several 
+flags which control the way in which the system carries 
+out its tasks. 
+*************************************************** 
+The NUTBL System, vers ion 0.7  
+(c) Torbjoern Lager, 1999 
+Dept. of L ingu is t i cs ,  Uppsala Un ivers i ty ,  Sweden 
+The MUTBL System comes v i th  abso lu te ly  no warranty. 
+FLAGS: 
+t ra in ing_data='data/ testcorpus '  
+test_data='data/10kw_test '  
+a lgor i tbm='a lgor i thms/br i l l '  
+templates=~templates/brill_dist_templates '. 
+score_thresho ld=3 
+accuracy_thresho ld=0.5  
+verbos i ty=2 
+COMMANDS: 
+load 
+train 
+test 
+set F=V 
+help 
+f lags 
+commands 
+- loads  data ,  compi les  . templates ,  e tc .  
+- s ta r ts  t ra in ing  process 
+- tests result  of t ra in ing  
+- sets f lag F to the va lue V 
+- shows this menu 
+- sho.s sett ings of flags 
+- lists available commands 
+predicates - lists available pred icates  
+I ?- 
+Figure 3: The #-TBL User Interface 

@@ -1,0 +1,817 @@
+Learning Parse and Translation Decisions 
+From Examples With Rich Context 
+Ul f  Hermjakob  and  Raymond J .  Mooney  
+Dept .  of Computer  Sciences 
+Un ivers i ty  of Texas  at  Aust in  
+Aust in ,  TX  78712, USA 
+u l f@cs .utexas .edu mooney@cs .utexas .edu  
+Abst rac t  
+We present a knowledge and context-based 
+system for parsing and translating natu- 
+ral language and evaluate it on sentences 
+from the Wall Street Journal. Applying 
+machine learning techniques, the system 
+uses parse action examples acquired un- 
+der supervision to generate a determinis- 
+tic shift-reduce parser in the form of a de- 
+cision structure. It relies heavily on con- 
+text, as encoded in features which describe 
+the morphological, syntactic, semantic and 
+other aspects of a given parse state. 
+1 In t roduct ion  
+The parsing of unrestricted text, with its enormous 
+lexical and structural ambiguity, still poses a great 
+challenge in natural anguage processing. The tradi- 
+tional approach of trying to master the complexity of 
+parse grammars with hand-coded rules turned out to 
+be much more difficult than expected, if not impos- 
+sible. Newer statistical approaches with often only 
+very limited context sensitivity seem to have hit a 
+performance ceiling even when trained on very large 
+corpora. 
+To cope with the complexity of unrestricted text, 
+parse rules in any kind of formalism will have to 
+consider a complex context with many different mor- 
+phological, syntactic or semantic features. This can 
+present a significant problem, because ven linguisti- 
+cally trained natural anguage developers have great 
+difficulties writing and even more so extending ex- 
+plicit parse grammars covering a wide range of nat- 
+ural language. On the other hand it is much easier 
+for humans to decide how specific sentences hould 
+be analyzed. 
+We therefore propose an approach to parsing 
+based on learning from examples with a very strong 
+emphasis on context, integrating morphological, 
+syntactic, semantic and other aspects relevant to 
+making good parse decisions, thereby also allowing 
+the parsing to be deterministic. Applying machine 
+learning techniques, the system uses parse action ex- 
+amples acquired under supervision to generate a de- 
+terministic shift-reduce type parser in the form of a 
+decision structure. The generated parser transforms 
+input sentences into an integrated phrase-structure 
+and case-frame tree, powerful enough to be fed into 
+a transfer and a generation module to complete the 
+full process of machine translation. 
+Balanced by rich context and some background 
+knowledge, our corpus based approach relieves the 
+NL-developer f om the hard if not impossible task of 
+writing explicit grammar ules and keeps grammar 
+coverage increases very manageable. Compared with 
+standard statistical methods, our system relies on 
+deeper analysis and more supervision, but radically 
+fewer examples. 
+2 Bas ic  Pars ing  Parad igm 
+As the basic mechanism for parsing text into a 
+shallow semantic representation, we choose a shift- 
+reduce type parser (Marcus, 1980). It breaks parsing 
+into an ordered sequence of small and manageable 
+parse actions such as shift and reduce. This ordered 
+'left-to-right' parsing is much closer to how humans 
+parse a sentence than, for example, chart oriented 
+parsers; it allows a very transparent control struc- 
+ture and makes the parsing process relatively intu- 
+itive for humans. This is very important, because 
+during the training phase, the system is guided by a 
+human supervisor for whom the flow of control needs 
+to be as transparent and intuitive as possible. 
+The parsing does not have separate phases for 
+part-of-speech selection and syntactic and semantic 
+processing, but rather integrates all of them into a 
+single parsing phase. Since the system has all mor- 
+phological, syntactic and semantic ontext informa- 
+tion available at all times, the system can make well- 
+482 
+based decisions very early, allowing a single path, i.e. 
+deterministic parse, which eliminates wasting com- 
+putation on 'dead end' alternatives. 
+Before the parsing itself starts, the input string 
+is segmented into a list of words incl. punctuation 
+marks, which then are sent through a morphological 
+analyzer that, using a lexicon 1, produces primitive 
+frames for the segmented words. A word gets a prim- 
+itive frame for each possible par t of speech. (Mor- 
+phological ambiguity is captured within a frame.) 
+parse stack 
+"bought" 
+synt: verb 
+top of top of 
+stack list 
+? "<input list > 
+, "today" 
+synt adv 
+(R 2 TO S-VP AS PRED (OBJ PAT)) 
+"reduce the 2 top elements ofthe parse stack 
+to a frame with syntax 'vp' 
+and roles 'pred' and 'obj and pat'" 
+1 
+~ "bought abook . . . .  today" 
+synt: vp synt: adv 
+sub: (pred) (obj pat) 
+/ 
+I "bought" 
+synt: verb 
+Figure 1: Example of a parse action (simplified); 
+boxes represent frames 
+The central data structure for the parser consists 
+of a parse stack and an input list. The parse stack 
+and the input list contain trees of frames of words 
+or phrases. Core slots of frames are surface and lexi- 
+cal form, syntactic and semantic ategory, subframes 
+with syntactic and semantic roles, and form restric- 
+1The lexicon provides part-of-speech information and 
+links words to concepts, as used in the KB (see next 
+section). Additional information i cludes irregular forms 
+and grammatical gender etc. (in the German lexicon). 
+"John bought a new computer science book 
+today."  : 
+synt/sem: S-SNT/I-EV-BUY 
+forms: (3rd_person sing past_tense) 
+lex : "buy" 
+subs : 
+(SUBJ AGENT) "John": 
+synt/sem: S-NP/I-EN-JOHN 
+(PRED) "John" 
+synt/sem: S-NOUN/I-EN-JOHN 
+(PRED) "bought": 
+synt/sem: S-TR-VERB/I-EV-BUY 
+(OBJ THEME) "a new computer science book": 
+synt/sem: S-NP/I-EN-BOOK 
+(DET) "a" 
+(MOD) "new" 
+(PRED) "computer science book" 
+(MOD) "computer science" 
+(MOD) "computer" 
+(PRED) "science" 
+(PRED) "book" 
+(TIME) "today": 
+synt/sem: S-ADV/C-AT-TIME 
+(PRED) "today" 
+synt/sem: S-ADV/I-EADV-TODAY 
+(DUMMY) "." : 
+synt : D-PERIOD 
+Figure 2: Example of a parse tree (simplified). 
+tions such as number, person, and tense. Optional 
+slots include special information like the numerical 
+value of number words. 
+Initially, the parse stack is empty and the input 
+list contains the primitive frames produced by the 
+morphological nalyzer. After initialization, the de- 
+terministic parser applies a sequence of parse actions 
+to the parse structure. The most frequent parse ac- 
+tions are shift, which shifts a frame from the input 
+list onto the parse stack or backwards, and reduce, 
+which combines one or several frames on the parse 
+stack into one new frame. The frames to be com- 
+bined are typically, but not necessarily, next to each 
+other at the top of the stack. As shown in figure 1, 
+the action 
+(R 2 TO VP AS PRED (0BJ PAT)) 
+for example reduces the two top frames of the stack 
+into a new frame that is marked as a verb phrase 
+and contains the next-to-the-top frame as its pred- 
+icate (or head) and the top frame of the stack as 
+its object and patient. Other parse actions include 
+add-into, which adds frames arbitrarily deep into an 
+existing frame tree, mark, which can mark any slot 
+of any frame with any value, and operations to in- 
+troduce empty categories (i.e. traces and 'PRO', as 
+in "Shei wanted PR.Oi to win."). Parse actions can 
+483 
+have numerous arguments, making the parse action 
+language very powerful. 
+The parse action sequences needed for training the 
+system are acquired interactively. For each train- 
+ing sentence, the system and the supervisor parse 
+the sentence step by step, with the supervisor enter- 
+ing the next parse action, e.g. (R 2 TO VP AS PRED 
+(01aJ PAT) ), and the system executing it, repeating 
+this sequence until the sentence is fully parsed. At 
+least for the very first sentence, the supervisor actu- 
+ally has to type in the entire parse action sequence. 
+With a growing number of parse action examples 
+available, the system, as described below in more de- 
+tail, can be trained using those previous examples. 
+In such a partially trained system, the parse actions 
+are then proposed by the system using a parse deci- 
+sion structure which "classifies" the current context. 
+The proper classification is the specific action or se- 
+quence of actions that (the system believes) should 
+be performed next. During further training, the su- 
+pervisor then enters parse action commands by ei- 
+ther confirming what the system proposes or overrul- 
+ing it by providing the proper action. As the corpus 
+of parse examples grows and the system is trained 
+on more and more data, the system becomes more 
+refined, so that the supervisor has to overrule the 
+system with decreasing frequency. The sequence of 
+correct parse actions for a sentence is then recorded 
+in a log file. 
+3 Features  
+To make good parse decisions, a wide range of fea- 
+tures at various degrees of abstraction have to be 
+considered. To express such a wide range of fea- 
+tures, we defined a feature language. Parse features 
+can be thought of as functions that map from par- 
+tially parsed sentences to a value. Applied to the 
+target parse state of figure 1, the feature (SYNT 
+OF OBJ OF -1 AT S-SYNT-ELEM), for example, 
+designates the general syntactic lass of the object 
+of the first frame of the parse stack 2, in our example 
+np 3. So, features do not a priori operate on words or 
+phrases, but only do so if their description references 
+such words or phrases, as in our example through the 
+path 'OBJ OF -1'. 
+Given a particular parse state and a feature, the 
+system can interpret the feature and compute its 
+2S-SYNT-ELEM designates the top syntactic level; 
+since -1 is negative, the feature refers to the 1st frame 
+of the parse stack. Note that the top of stack is at the 
+right end for the parse stack. 
+3If a feature is not defined in a specific parse state, the 
+feature interpreter assigns the special value unavailable. 
+value for the given parse state, often using additional 
+background knowledge such as 
+1. A knowledge base (KB), which currently con- 
+sists of a directed acyclic graph of 4356 mostly 
+semantic and syntactic oncepts connected by 
+4518 is-a links, e.g. "book,~o~,n-eoncept is-a 
+tangible - objectnoun-coneept". Most concepts 
+representing words are at a fairly shallow level 
+of the KB, e.g. under 'tangible object', 'ab- 
+stract', 'process verb', or 'adjective', with more 
+depth used only in concept areas more relevant 
+for making parse and translation decisions, such 
+as temporal, spatial and animate concepts. 4 
+2. A subcategorization table that describes the syn- 
+tactic and semantic role structures for verbs, 
+with currently 242 entries. 
+The following representative examples, for easier 
+understanding rendered in English and not in fea- 
+ture language syntax, further illustrate the expres- 
+siveness of the feature language: 
+? the general syntactic class of frame_3 (the 
+third element of the parse stack): e.g. verb, adj, 
+np, 
+? whether or not the adverbial alternative of 
+frame1 (the top element of the input list) is 
+an adjectival degree adverb, 
+? the specific finite tense of frame_i,  e.g. present 
+tense, 
+? whether or not frame_l contains an object, 
+? the semantic role of frame_l with respect to 
+frame_2: e.g. agent, time; this involves pattern 
+matching with corresponding entries in the verb 
+subcategorization table, 
+? whether or not frarne_2 and frame_l satisfy 
+subject-verb agreement. 
+Features can in principal refer to any one or sev- 
+eral elements on the parse stack or input list, and 
+any of their subelements, at any depth. Since the 
+currently 205 features are supposed to bear some 
+linguistic relevance, none of them are unjustifiably 
+remote from the current focus of a parse state. 
+The feature collection is basically independent 
+from the supervised parse action acquisition. Before 
+learning a decision structure for the first time, the 
+supervisor has to provide an initial set of features 
+4Supported by acquisition tools, word/concept airs 
+are typically entered into the lexicon and the KB at the 
+same time, typically requiring less than a minute per 
+word or group of closely related words. 
+484 
+done-operation-p tree 
+START ~ . - -7-ff~" -"  "2 7. . - - -  
+do -~ - - _ ~: J J  -art 
+/ s j~  g ? I 
+do er - - .  - re er o re ? . ~" ."  shift n 'It s-verb 
+red 'uCe 2 . . ,~  
+reduce 1... reduce 3... 
+Figure 3: Example of a hybrid decision structure 
+that can be considered obviously relevant. Partic- 
+ularly during the early development of our system, 
+this set was increased whenever parse examples had 
+identical values for all current features but neverthe- 
+less demanded ifferent parse actions. Given a spe- 
+cific conflict pair of partially parsed sentences, the 
+supervisor would add a new relevant feature that dis- 
+criminates the two examples. We expect our feature 
+set to grow to eventually about 300 features when 
+scaling up further within the Wall Street Journal do- 
+main, and quite possibly to a higher number when 
+expanding into new domains. However, such feature 
+set additions require fairly little supervisor effort. 
+Given (1) a log file with the correct parse action 
+sequence of training sentences as acquired under su- 
+pervision and (2) a set of features, the system revis- 
+its the training sentences and computes values for 
+all features at each parse step. Together with the 
+recorded parse actions these feature vectors form 
+parse examples that serve as input to the learning 
+unit. Whenever the feature set is modified, this step 
+must be repeated, but this is unproblematic, because 
+this process is both fully automatic and fast. 
+4 Learning Decision Structures 
+Traditional statistical techniques also use features, 
+but often have to sharply limit their number (for 
+some trigram approaches to three fairly simple fea- 
+tures) to avoid the loss of statistical significance. 
+In parsing, only a very small number of features 
+are crucial over a wide range of examples, while 
+most features are critical in only a few examples, 
+being used to 'fine-tune' the decision structure for 
+special cases. So in order to overcome the antago- 
+nism between the importance of having a large num- 
+ber of features and the need to control the num- 
+ber of examples required for learning, particularly 
+when acquiring parse action sequence under super- 
+vision, we choose a decision-tree based learning al- 
+gorithm, which recursively selects the most discrim- 
+inating feature of the corresponding subset of train- 
+ing examples, eventually ignoring all locally irrele- 
+vant features, thereby tailoring the size of the final 
+decision structure to the complexity of the training 
+data. 
+While parse actions might be complex for the ac- 
+tion interpreter, they are atomic with respect o the 
+decision structure learner; e.g. "(R 2 TO VP AS 
+PFtED (OBJ PAT))" would be such an atomic clas- 
+sification. A set of parse examples, as already de- 
+scribed in the previous ection, is then fed into an 
+ID3-based learning routine that generates a deci- 
+sion structure, which can then 'classify' any given 
+parse state by proposing what parse action to per- 
+form next. 
+We extended the standard ID3 model (Quinlan, 
+1986) to more general hybrid decision structures. 
+In our tests, the best performing structure was a 
+decision list (Rivest, 1987) of hierarchical decision 
+trees, whose simplified basic structure is illustrated 
+in figure 3. Note that in the 'reduce operation tree', 
+the system first decides whether or not to perform 
+a reduction before deciding on a specific reduction. 
+Using our knowledge of similarity of parse actions 
+and the exceptionality vs. generality of parse action 
+groups, we can provide an overhead structure that 
+helps prevent data fragmentation. 
+485 
+5 Transfer and Generat ion 
+The output tree generated by the parser can be used 
+for translation. A transfer module recursively maps 
+the source language parse tree to an equivalent tree 
+in the target language, reusing the methods devel- 
+oped for parsing with only minor adaptations. The 
+main purpose of learning here is to resolve trans- 
+lation ambiguities, which arise for example when 
+translating the English "to knov\]' to German (wis- 
+sen/kennen) or Spanish (saber/conocer). 
+Besides word pair entries, the bilingual dictionary 
+also contains pairs of phrases and expressions in a 
+format closely resembling traditional (paper) dictio- 
+naries, e.g. "to comment on SOMETHING_l"/"sich 
+zu ETWAS_DAT_I ~iut3ern". Even if a complex 
+translation pair does not bridge a structural mis- 
+match, it can make a valuable contribution to dis- 
+ambiguation. Consider for example the term "inter- 
+est rate". Both element nouns are highly, ambigu- 
+ous with respect to German, but the English com- 
+pound conclusively maps to the German compound 
+"Zinssatz". We believe that an extensive collection 
+of complex translation pairs in the bilingual dictio- 
+nary is critical for translation quality and we are 
+confident hat its acquisition can be at least partially 
+automated by using techniques like those described 
+in (Smadja et al, 1996). Complex translation en- 
+tries are preprocessed using the same parser as for 
+normal text. During the transfer process, the result- 
+ing parse tree pairs are then accessed using pattern 
+matching. 
+The generation module orders the components of 
+phrases, adds appropriate punctuation, and propa- 
+gates morphologically relevant information in order 
+to compute the proper form of surface words in the 
+target language. 
+6 Wal l  S t reet  Journa l  Exper iments  
+~Ve now present intermediate results on training 
+and testing a prototype implementation of the sys- 
+tem with sentences from the Wall Street Journal, a 
+prominent corpus of 'real' text, as collected on the 
+ACL-CD. 
+In order to limit the size of the required lexicon, 
+we work on a reduced corpus of 105,356 sentences, 
+a tenth of the full corpus, that includes all those 
+sentences that are fully covered by the 3000 most 
+frequently occurring words (ignoring numbers etc.) 
+in the entire corpus. The first 272 sentences used in 
+this experiment vary in length from 4 to 45 words, 
+averaging at 17.1 words and 43.5 parse actions per 
+sentence. One of these sentence is "Canadian man- 
+ufacturers' new orders fell to $20.80 billion (Cana- 
+Tr. snt. 16 32 64 128 256 
+1 97.5% 1 98.4  I 
+Cr/snt I 2.5 1 2.1j 11. . I LI_I.L I 
+0 1 I 
+~ %  I 93.0% \[ 94.95 
+1791  9 s Is9  191.7 I  0.   6-57o 
+Str~L I 55 ~10.3~18.8%126.8% 
+Loops 13 6 0 1 1 
+Table 1: Evaluation results with varying number of 
+training sentences; with all 205 features and hybrid 
+decision structure; Train. = number of training sen- 
+tences; pr/prec. = precision; rec. = recall; I. = la- 
+beled; Tagging = tagging accuracy; Cr/snt = cross- 
+ings per sentence; Ops = correct operations; OpSeq 
+= Operation Sequence 
+labeled precision 
+95% - 
+90% - 
+85% - 
+80% - 
+75% I t I I I I I 
+16 32  64  128  256  512  1024 
+number of training sentences 
+Figure 4: Learning curve for labeled precision in ta- 
+ble 1. 
+dian) in January, down 4~o from December's $21.67 
+billion billion on a seasonally adjusted basis, Statis- 
+tics Canada, a federal agency, said.". 
+For our parsing test series, we use 17-fold cross- 
+validation. The corpus of 272 sentences that cur- 
+rently have parse action logs associated with them 
+is divided into 17 blocks of 16 sentences each. The 17 
+blocks are then consecutively used for testing. For 
+each of the 17 sub-tests, a varying number of sen- 
+tences from the other blocks is used for training the 
+parse decision structure, so that within a sub-test, 
+none of the training sentences are ever used as a test 
+sentence. The results of the 17 sub-tests of each se- 
+ries are then averaged. 
+486 
+Features 6 ' 25 50 100 205  
+Prec. 
+Recall 
+L. pr. 
+L. rec. 
+Tagging 
+Cr/snt 
+0 cr 
+< lc r  
+<2cr  
+< 3cr 
+< 4cr  
+Ops 
+OpSeq 
+Str&L 
+Loops 
+Va zTw wrr     
+I 87.3% ~ 88.7% 190.8%\] 91.7% 
+179.8% ~ 86.7% \] 87.2%188.6% 
+I 81.6% ~ 84.1% \[ 86.9% I 88.1% 
+1 97.6% 1 9;.9  1 98.1% 1 98.2% 
+157.4%1 59.6%170.6%172.1% 
+\[ 72A% \[ 73.9% \[ 80.5% \[ 84.2% 
+1 82.7% 1 84,9% \[ 88.6% 1 92.3% 
+1 89.6% 1 89,7% 1 93.8% 1 94.5% 
+I s.8 o 1 13.6  
+92--7W0 
+92.8% 
+89.8% 
+89.6% 
+98.4% 
+1.0 
+56.3% 
+73.5% 
+84.9% 
+93.0% 
+94.9% 
+91.7% 
+16.5% 
+2618% 
+Table 2: Evaluation results with varying number of 
+features; with 256 training sentences 
+Precision (pr.): 
+number of correct constituents in system parse 
+number of constituents in system parse 
+Recal l  (rec.): 
+number of correct constituents in system parse 
+number of constituents in logged parse 
+Cross ing brackets  (cr): number of constituents 
+which violate constituent boundaries with a con- 
+stituent in the logged parse. 
+Labe led  (l.) precision/recall measures not only 
+structural correctness, but also the correctness of 
+the syntactic label. Correct  operat ions  (Ops) 
+measures the number of correct operations during 
+a parse that is continuously corrected based on the 
+logged sequence. The correct operations ratio is im- 
+portant for example acquisition, because it describes 
+the percentage of parse actions that the supervisor 
+can confirm by just hitting the return key. A sen- 
+tence has a correct operat ing  sequence (OpSeq), 
+if the system fully predicts the logged parse action 
+sequence, and a correct s t ruc ture  and label ing 
+(Str~L), if the structure and syntactic labeling of 
+the final system parse of a sentence is 100% correct, 
+regardless of the operations leading to it. 
+The current set of 205 features was sufficient to 
+always discriminate xamples with different parse 
+actions, resulting in a 100% accuracy on sentences 
+already seen during training. While that percentage 
+is certainly less important than the accuracy figures 
+for unseen sentences, it nevertheless represents an 
+important upper ceiling. 
+Many of the mistakes are due to encountering con- 
+Type of deci- plain hier. plain 
+sion structure list list tree 
+Precision 87.8% 91.0% 87.6% 
+Recall 89.9% 88.2% 89.7% 
+Lab. precision 28.6% 87.4% 38.5% 
+Lab. recall 86.1% 84.7% 85.6% 
+Tagging ace. 97.9% 96.0% 97.9% 
+Crossings/snt 1.2 1.3 1.3 
+0crossings 55.2% 52.9% 51.5% 
+_< 1 crossings 72.8% 71.0% 65.8% 
+_~ 2 crossings 82.7% 82.7% 81.6% 
+< 3 crossings 89.0% 89.0% 90.1% 
+_< 4 crossings 93.4% 93.4% 93.4% 
+Ops 86.5% 90.3% 90.2% 
+OpSeq 12.9% 11.8% 13.6% 
+Str~L 22.4% 22.8% 21.7% 
+Endless loops 26 23 32 
+hybrid 
+tree 
+92.7% 
+92.8% 
+89.8% 
+89.6% 
+98.4% 
+1.0 
+56.3% 
+73.5% 
+84.9% 
+93 2% 
+94.9% 
+91.7% 
+16.5% 
+26.8% 
+1 
+Table 3: Evaluation results with varying types of 
+decision structures; with 256 training sentences and 
+205 features 
+structions that just have not been seen before at all, 
+typically causing several erroneous parse decisions in 
+a row. This observation further supports our expec- 
+tation, based on the results shown in table 1 and fig- 
+ure 4, that with more training sentences, the testing 
+accuracy for unseen sentences will still rise signifi- 
+cantly. 
+Table 2 shows the impact of reducing the feature 
+set to a set of N core features. While the loss of a few 
+specialized features will not cause a major degrada- 
+tion, the relatively high number of features used in 
+our system finds a clear justification when evaluating 
+compound test characteristics, uch as the number 
+of structurally completely correct sentences. When 
+25 or fewer features are used, all of them are syn- 
+tactic. Therefore the 25 feature test is a relatively 
+good indicator for the contribution of the semantic 
+knowledge base. 
+In another test, we deleted all 10 features relating 
+to the subcategorization table and found that the 
+only metrics with degrading values were those mea- 
+suring semantic role assignment; in particular, none 
+of the precision, recall and crossing bracket values 
+changed significantly. This suggests that, at least in 
+the presence of other semantic features, the subcat- 
+egorization table does not play as critical a role in 
+resolving structural ambiguity as might have been 
+expected. 
+Table 3 compares four different machine learning 
+variants: plain decision lists, hierarchical decision 
+487 
+lists, plain decision trees and a hybrid structure, 
+namely a decision list of hierarchical decision trees, 
+as sketched in figure 3. The results show that ex- 
+tensions to the basic decision tree model can signif- 
+icantly improve learning results. 
+System 
+Human translation 
+CONTEX on correct parse 
+CONTEX (full translation) 
+Logos 
+SYSTR.AN 
+Globalink 
+Syntax Semantics 
+1.18 1.41 
+2.20 2.19 
+2.36 2.38 
+2.57 3.24 
+2.68 3.35 
+3.30 3.83 
+Table 4: Translation evaluation results (best possi- 
+ble = 1.00, worst possible = 6.00) 
+Table 4 summarizes the evaluation results of 
+translating 32 randomly selected sentences from our 
+Wall Street Journal corpus from English to German. 
+Besides our system, CONTEX, we tested three com- 
+mercial systems, Logos, SYSTR.AN, and Globalink. 
+In order to better assess the contribution of the 
+parser, we also added a version that let our system 
+start with the correct parse, effectively just testing 
+the transfer and generation module. The resulting 
+translations, in randomized order and without iden- 
+tification, were evaluated by ten bilingual graduate 
+students, both native German speakers living in the 
+U.S. and native English speakers teaching college 
+level German. As a control, half of the evaluators 
+were also given translations by a bilingual human. 
+Note that the translation results using our parser 
+are fairly close to those starting with a correct parse. 
+This means that the errors made by the parser 
+have had a relatively moderate impact on transla- 
+tion quality. The transfer and generation modules 
+were developed and trained based on only 48 sen- 
+tences, so we expect a significant ranslation quality 
+improvement by further development of those mod- 
+ules. 
+Our system performed better than the commercial 
+systems, but this has to be interpreted with caution, 
+since our system was trained and tested on sentences 
+from the same lexically limited corpus (but of course 
+without overlap), whereas the other systems were 
+developed on and for texts from a larger variety of 
+domains, making lexical choices more difficult in par- 
+ticular. 
+Table 5 shows the correlation between various 
+parse and translation metrics. Labeled precision has 
+the strongest correlation with both the syntactic and 
+semantic translation evaluation grades. 
+"Metric 
+'Precision 
+Recall 
+Labeled precision 
+Labeled recall 
+Tagging accuracy 
+Number of crossing brackets J 
+Operations 
+Operation sequence 
+Syntax Semantics 
+-0.63 -0.63 
+-0.64 -0.66 
+-0.75 -0.78 
+-0.65 -0.65 
+-0.66 -0.56 
+0.58 0.54 
+-0.45 -0.41 
+-0.39 -0.36 
+Table 5: Correlation between various parse and 
+translation metrics. Values near -1.0 or 1.0 indi- 
+cate very strong correlation, whereas values near 0.0 
+indicate a weak or no correlation. Most correlation 
+values, incl. for labeled precision are negative, be- 
+cause a higher (better) labeled precision correlates 
+with a numerically lower (better) translation score 
+on the 1.0 (best) to 6.0 (worst) translation evalua- 
+tion scale. 
+7 Re la ted  Work  
+Our basic parsing and interactive training paradigm 
+is based on (Simmons and Yu, 1992). We have 
+extended their work by significantly increasing the 
+expressiveness of the parse action and feature lan- 
+guages, in particular by moving far beyond the few 
+simple features that were limited to syntax only, by 
+adding more background knowledge and by intro- 
+ducing a sophisticated machine learning component. 
+(Magerman, 1995) uses a decision tree model sim- 
+ilar to ours, training his system SPATTER. with parse 
+action sequences for 40,000 Wall Street Journal sen- 
+tences derived from the Penn Treebank (Marcus 
+et al, 1993). Questioning the traditional n-grams, 
+Magerman already advocates a heavier reliance on 
+contextual information. Going beyond Magerman's 
+still relatively rigid set of 36 features, we propose a 
+yet richer, basically unlimited feature language set. 
+Our parse action sequences are too complex to be 
+derived from a treebank like Penn's. Not only do 
+our parse trees contain semantic annotations, roles 
+and more syntactic detail, we also rely on the more 
+informative parse action sequence. While this neces- 
+sitates the involvement of a parsing supervisor for 
+training, we are able to perform deterministic pars- 
+ing and get aleady very good test results for only 
+256 training sentences. 
+(Collins, 1996) focuses on bigram lexical depen- 
+dencies (BLD). Trained on the same 40,000 sen- 
+tences as Spatter, it relies on a much more limited 
+type of context than our system and needs little 
+background knowledge. 
+488 
+Model 
+Labeled precision 
+Labeled recall 
+Crossings/sentence 
+Sent. with 0 cr. 
+Sent. with < 2 cr. 
+I SPATTER, I BLD I CONTEX 
+84.9% 86.3% 89.8% 
+84.6% 85.8% 89.6% 
+1.26 1.14 1.02 
+56.6% 59.9% 56.3% 
+81.4% 83.6% 84.9% 
+Table 6: Comparing our system CONTEX with 
+Magerman's SPATTER, and Collins' BLD; results for 
+SPATTER, and BLD are for sentences of up to 40 
+words. 
+Table 6 compares our results with SPATTER, and 
+BLD. The results have to be interpreted cautiously 
+since they are not based on the exact same sentences 
+and detail of bracketing. Due to lexical restrictions, 
+our average sentence length (17.1) is below the one 
+used in SPATTER and BLD (22.3), but some of our 
+test sentences have more than 40 words; and while 
+the Penn Treebank leaves many phrases uch as "the 
+New York Stock Exchange" without internal struc- 
+ture, our system performs a complete bracketing, 
+thereby increasing the risk of crossing brackets. 
+8 Conc lus ion  
+We try to bridge the gap between the typically hard- 
+to-scale hand-crafted approach and the typically 
+large-scale but context-poor statistical approach for 
+unrestricted text parsing. 
+Using 
+? a rich and unified context with 205 features, 
+? a complex parse action language that allows in- 
+tegrated part of speech tagging and syntactic 
+and semantic processing, 
+? a sophisticated decision structure that general- 
+izes traditional decision trees and lists, 
+? a balanced use of machine learning and micro- 
+modular background knowledge, i.e. very small 
+pieces of highly' independent information 
+? a modest number of interactively acquired ex- 
+amples from the Wall Street Journal, 
+our system CONTEX 
+? computes parse trees and translations fast, be- 
+cause it uses a deterministic single-pass parser, 
+? shows good robustness when encountering novel 
+constructions, 
+? produces good parsing results comparable to 
+those of the leading statistical methods, and 
+? delivers competitive results for machine trans- 
+lations. 
+While many limited-context s atistical approaches 
+have already reached a performance ceiling, we still 
+expect to significantly improve our results when in- 
+creasing our training base beyond the currently 256 
+sentences, because the learning curve hasn't flat- 
+tened out yet and adding substantially more exam- 
+ples is still very feasible. Even then the training 
+size will compare favorably with the huge number 
+of training sentences necessary for many statistical 
+systems. 
+Re ferences  
+E. Black, J. Lafferty, and S. Roukos. 1992. Devel- 
+opment and evaluation of a broad-coverage prob- 
+abilistic grammar of English-language computer 
+manuals. In 30th Proceedings of the A CL, pages 
+185-192. 
+M. J. Collins. 1996. A New Statistical Parser Based 
+on Bigram Lexical Dependencies. In 3~th Proceed- 
+ings of the ACL, pages 184-191. 
+U. Hermjakob. 1997. Learning Parse and Trans- 
+lation Decisions From Examples With Rich Con- 
+text. Ph.D. thesis, University of Texas at 
+Austin, Dept. of Computer Sciences TR 97-12. 
+file://ftp.cs.utexas.edu/pub/mooney/papers/herm 
+jakob-dissertation-97.ps.Z 
+D. M. Magerman. 1995. Statistical Decision-Tree 
+Models for Parsing In 33rd Proceedings of the 
+ACL, pages 276-283. 
+M. P. Marcus. 1980. A Theory of Syntactic Recog- 
+nition for Natural Language. MIT Press. 
+M. P. Marcus, B. Santorini, and M. A. Marcinkie- 
+wicz. 1993. Building a Large Annotated Corpus 
+of English: The Penn Treebank. In Computa- 
+tional Linguistics 19 (2), pages 184-191. 
+S. Nirenburg, J. Carbonell, M. Tomita, and K. 
+Goodman. 1992. Machine Translation: A 
+Knowledge-Based Approach. San Mateo, CA: 
+Morgan Kaufmann. 
+J. R. Quinlan. 1986. Induction of decision trees. In 
+Machine Learning I (I), pages 81-106. 
+R. L. Rivest. 1987. Learning Decision Lists. In 
+Machine Learning 2, pages 229-246. 
+R. F. Simmons and Yeong-Ho Yu. 1992. The Acqui- 
+sition and Use of Context-Dependent Grammars 
+for English. In Computational Linguistics 18 (4), 
+pages 391-418. 
+F. Smadja, K. R. KcKeown and V. Hatzivassiloglou. 
+1996. Translating Collocations for Bilingual Lex- 
+icons: A Statistical Approach. In Computational 
+Linguistics 22 (I), pages 1-38. 
+Globalink. http://www.globalink.com/home.html 
+Oct. 1996. 
+Logos. http://www.logos-ca.com/ Oct. 1996. 
+SYSTRAN. http:/ /systranmt.com/ Oct. 1996. 
+489 

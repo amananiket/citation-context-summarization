@@ -1,0 +1,558 @@
+Modular Graph Rewriting to Compute Semantics
+Guillaume Bonfante
+Nancy-Universite? - LORIA
+bonfante@loria.fr
+Bruno Guillaume
+INRIA - LORIA
+guillaum@loria.fr
+Mathieu Morey
+Nancy-Universite? - LORIA
+moreymat@loria.fr
+Guy Perrier
+Nancy-Universite? - LORIA
+perrier@loria.fr
+Abstract
+Taking an asynchronous perspective on the syntax-semantics interface, we propose to use modu-
+lar graph rewriting systems as the model of computation. We formally define them and demonstrate
+their use with a set of modules which produce underspecified semantic representations from a syn-
+tactic dependency graph. We experimentally validate this approach on a set of sentences. The results
+open the way for the production of underspecified semantic dependency structures from corpora an-
+notated with syntactic dependencies and, more generally, for a broader use of modular rewriting
+systems for computational linguistics.
+Introduction
+The aim of our work is to produce a semantic representation of sentences on a large scale using a formal
+and exact approach based on linguistic knowledge. In this perspective, the design of the syntax-semantics
+interface is crucial.
+Based on the compositionality principle, most models of the syntax-semantics interface use a syn-
+chronous approach: the semantic representation of a sentence is built step by step in parallel with its
+syntactic structure. According to the choice of the syntactic formalism, this approach is implemented in
+different ways: in a Context-Free Grammars (CFG) style framework, every syntactic rule of a grammar
+is associated with a semantic composition rule, as in the classical textbook by Heim and Kratzer (1998);
+following the principles introduced by Montague, Categorial Grammars use an homomorphism from the
+syntax to the semantics (Carpenter (1992)). HPSG integrates the semantic and syntactic representations
+in feature structures which combine by unification (Copestake et al (2005)). LFG follows a similar prin-
+ciple (Dalrymple (2001)). In a synchronous approach, the syntax-semantics interface closely depends on
+the grammatical formalism. Building such an interface can be very costly, especially if we aim at a large
+coverage for the grammar.
+In our work, we have chosen an asynchronous approach in the sense that we start from a given
+syntactic analysis of a sentence to produce a semantic representation. With respect to the synchronous
+approach, a drawback is that the reaction of the semantics on the syntax is delayed. On the other hand,
+the computation of the semantics is made relatively independent from the syntactic formalism. The only
+constraint is the shape of the output of the syntactic analysis.
+In the formalisms mentioned above, the syntactic structure most often takes the form of a phrase
+structure, but the choice of constituency for the syntax makes the relationship with the semantics more
+complicated. We have chosen dependency graphs, because syntactic dependencies are closely related
+to predicate-argument relations. Moreover, they can be enriched with relations derived from the syntax,
+which are usually ignored, such as the arguments of infinitives or the anaphora determined by the syntax.
+One may observe that our syntactic representation of sentences involves plain graphs and not trees.
+Indeed, these relations can give rise to multiple governors and dependency cycles. On the semantic side,
+65
+we have also chosen graphs, which are widely used in different formalisms and theories, such as DMRS
+(Copestake (2009)) or MTT (Mel?c?uk (1988)) .
+The principles being fixed, our problem was then to choose a model of computation well suited
+to transforming syntactic graphs into semantic graphs. The ?-calculus, which is widely used in formal
+semantics, is not a good candidate because it is appropriate for computing on trees but not on graphs. Our
+choice naturally went to graph rewriting. Graph rewriting is barely used in computational linguistics;
+it could be due to the difficulty to manage large sets of rules. Among the pioneers in the use of graph
+rewriting, we mention Hyvo?nen (1984); Bohnet and Wanner (2001); Crouch (2005); Jijkoun and de Rijke
+(2007); Be?daride and Gardent (2009); Chaumartin and Kahane (2010).
+A graph rewriting system is defined as a set of graph rewrite rules and a computation is a sequence
+of rewrite rule applications to a given graph. The application of a rule is triggered via a mechanism of
+pattern matching, hence a sub-graph is isolated from its context and the result is a local modification of
+the input. This allows a linguistic phenomenon to be easily isolated for applying a transformation.
+Since each step of computation is fired by some local conditions in the whole graph, it is well known
+that one has no grip on the sequence of rewriting steps. The more rules, the more interaction between
+rules, and the consistency of the whole rule system becomes difficult to maintain. This bothers our
+ambition of a large coverage for the grammar. To solve this problem, we propose to organize rules in
+modules. A module is a set of rules that is linguistically consistent and represents a particular step of
+the transformation. For instance, in our proposal, there is a module transforming the syntactic arguments
+of verbs, predicative nouns and adjectives into their semantic arguments. Another module resolves the
+anaphoric links which are internal to the sentence and determined by the syntax.
+From a computational point of view, the grouping of a small number of rules inside a module allows
+some optimizations in their application, thus leading to efficiency. For instance, the confluence of rewrit-
+ing is a critical feature ? one computes only one normal form, not all of them ? for the performance
+of the program. Since the underlying relation from syntax to semantics is not functional but relational,
+the system cannot be globally confluent. Then, it is particularly interesting to isolate subsets of conflu-
+ent rules. Second point, with a small number of rules, one gets much more control on their output. In
+particular, it is possible to automatically infer some invariant properties of graphs along the computation
+within a particular module. Thus, it simplifies the writing of the rules for the next modules. It is also
+possible to plan a strategy in the global evaluation process.
+It is well known that syntactic parsers produce outputs in various formats. As a by-product of our
+approach, we show that the choice of the input format (that is the syntax) seems to be of low importance
+overall. Indeed, as far as two formats contain the same linguistic information with different representa-
+tions, a system of rewrite rules can be designed to transform any graph from one format to another as a
+preliminary step. The same remark holds for the output formats.
+To illustrate our proposal, we have chosen the Paris7 TreeBank (hereafter P7TB) dependency format
+defined by Candito et al (2010) as the syntactic input format and the Dependency MRS format (hereafter
+DMRS) defined by Copestake (2009) as the semantic output format. We chose those two formats because
+the information they represent, if it is not complete, is relatively consensual and because both draw on
+large scale experiments: statistical dependency parsing for French1 on the one hand and the DELPH-IN
+project2 on the other hand.
+Actually, in our experiments, since we do not have an appropriate corpus annotated according to the
+P7TB standard, we used our syntactic parser LEOPAR3 whose outputs differ from this standard and we
+designed a rewriting system to go from one format to the other.
+The paper is organized as follows. In section 1, we define our graph rewriting calculus, the ?-calculus.
+In Section 2, we describe the particular rewriting system that is used to transform graphs from the syn-
+tactic P7TB format into the DMRS semantic format. In Section 3, we present experimental results on a
+test suite of sentences.
+1http://alpage.inria.fr/statgram/frdep/fr_stat_dep_parsing.html
+2http://www.delph-in.net/
+3http://leopar.loria.fr
+66
+1 The ?-calculus, a graph rewriting calculus
+Term rewriting and tree rewriting can be defined in a straightforward and canonical way. Graph rewriting
+is much more problematic and there is unfortunately no canonical definition of a graph rewriting system.
+Graph rewriting can be defined through a categorical approach like SPO or DPO (Rozenberg (1997)).
+But, in practice, it is much easier to use a more operational view of rewriting where modification of
+the graph (the ?right-hand side? of a rule) is defined by means of a set of commands; the control of the
+way rules are applied (the ?left hand-side?) still uses pattern matching as this is done in traditional graph
+rewriting.
+In this context, a rule is a pair of a pattern and a sequence of commands. We give below the formal
+materials about graphs, patterns, matchings and commands. We illustrate the section with examples of
+rules and of rewriting.
+1.1 Graph definition
+In the following, we suppose given a finite set L of edge labels corresponding to the kind of dependencies
+used to describe sentences. They may correspond to syntax or to semantics. For instance, we use
+L = {SUJ, OBJ, ARG1, ANT, . . .}.
+To decorate vertices, we use the standard notion of feature structures. Let N be a finite set of
+feature names and A be a finite set of atomic feature values. In our example, N = {cat,mood, . . .} and
+A = {passive, v, n, . . .}. A feature is a pair made of a feature name and a set of atomic values. The
+feature (cat, {v, aux}) means that the feature name cat is associated to either the value v or aux. In the
+sequel, we use the notation cat = v|aux for this feature. Two features f = v and f ? = v? are compatible
+whenever f = f ? and v ? v? 6= ?.
+A feature structure is a finite set of features such that each feature name occurs at most once. F de-
+notes the set of feature structures. Two feature structures are compatible if their respective features with
+the same name are pairwise compatible.
+A graph G is then defined by a 6-tuple (V, fs, E , lab, ?, ?) with:
+? a finite set V of vertices;
+? a labelling function fs from V to F ;
+? a finite set E of edges;
+? a labelling function lab from E to L;
+? two functions ? and ? from E to V which give the source and the target of each edge.
+Moreover, we require that two edges between the same couple of nodes cannot have the same label.
+1.2 Patterns and matchings
+Formally, a pattern is a graph and a matching ? of a pattern P = (V ?, fs?, E ?, lab?, ??, ? ?) into a graph
+G = (V, fs, E , lab, ?, ?) is an injective graph morphism from P to G. More precisely, ? is a couple of
+injective functions: ?V from V ? to V and ?E from E ? to E which:
+? respects vertex labelling: fs(?V(v)) and fs?(v) are compatible;
+? respects edge labelling: lab(?E(e)) = lab?(e);
+? respects edge sources: ?(?E(e)) = ?V(??(e));
+? respects edge targets: ?(?E(e)) = ?V(? ?(e)).
+67
+1.3 Commands
+Commands are low-level operations on graphs that are used to describe the rewriting of the graph within
+a rule application. In the description below, we suppose to be given a pattern matching ? : P ? G. We
+describe here the set of commands which we used in our experiment so far. Naturally, this set could be
+extended.
+? del edge(?, ?, `) removes the edge labelled ` between ? and ?. More formally, we suppose that
+? ? VP , ? ? VP andP contains an edge e from? to ? with label ` ? L. Then, del edge(?, ?, `)(G)
+is the graph G without the edge ?(e). In the following, we give only the intuitive definition of the
+command: thanks to injectivity of the matching ?, we implicitly forget the distinction between x
+and ?(x).
+? add edge(?, ?, `) adds an edge labelled ` between ? and ?. Such an edge is supposed not to exist
+in G.
+? shift edge(?, ?) modifies all edges that are incident to ?: each edge starting from ? is moved to
+start from ?; similarly each edge ending on ? is moved to end on ?;
+? del node(?) removes the ? node in G. If G contains edges starting from ? or ending on ?, they
+are silently removed.
+? add node(?) adds a new node with identifier ? (a fresh name).
+? add feat(?, f = v) adds the feature f = v to the node ?. If ? already contains a feature name f ,
+it is replaced by the new one.
+? copy feat(?, ?, f) copies the value of the feature named f from the node ? to the node ?. If ?
+does not contain a feature named f , nothing is done. If ? already contains a feature named f , it is
+replaced by the new value.
+Note that commands define a partial function on graphs: the action add edge(?, ?, `) is undefined
+on a graph which already contains an edge labelled ` from ? to ?.
+The action of a sequence of commands is the composition of actions of each command. Sequences
+of commands are supposed to be consistent with the pattern:
+? del edge always refers to an edge described in the pattern and not previously modified by a
+del edge or a shift edge command;
+? each command refers only to identifiers defined either in the pattern or in a previous add node;
+? no command refers to a node previously deleted by a del node command.
+Finally, we define a rewrite rule to be a pair of a pattern and a consistent sequence of commands.
+A first example of a rule is given below with the pattern on the left and the sequence of commands
+on the right. This rule called INIT PASSIVE is used to remove the node corresponding to the auxiliary
+of the passive construction and to modify the features accordingly.
+INIT PASSIVE
+?
+cat = v
+voice = active
+?
+cat = v
+voice = unk
+AUX PASS
+c1 = copy feat(?, ?,mood)
+c2 = copy feat(?, ?, tense)
+c3 = add feat(?, voice = passive)
+c4 = del edge(?, ?, AUX PASS)
+c5 = shift edge(?, ?)
+c6 = del node(?)
+Our second example (PASSIVE ATS) illustrates the add node command. It is used in a passive
+construction where the semantic subject of the verb is not realized syntactically.
+68
+PASSIVE ATS
+?
+cat = v
+voice = passive
+? ?
+SUJ ATS c1 = del edge(?, ?, SUJ)
+c2 = add edge(?, ?, OBJ)
+c3 = del edge(?, ?, ATS)
+c4 = add edge(?, ?, ATO)
+c5 = add feat(?, voice = active)
+c6 = add node(?)
+c7 = add edge(?, SUJ, ?)
+1.4 Rewriting
+We consider a graph G and a rewrite rule r = (P, [c1, . . . , ck]). We say that G? is obtained from G by a
+rewrite step with the r rule (written G ??r G?) if there is a matching morphism ? : P ? G and G? is
+obtained from G by applying the composition of commands ck ? . . . ? c1.
+Let us now illustrate two rewrite steps with the rules above. Consider the first graph below which is
+a syntactic dependency structure for the French sentence ?Marie est conside?re?e comme brillante? [Mary
+is considered as bright]. The second graph is obtained by application of the INIT PASSIVE rewrite rule
+and the last one with the PASSIVE ATS rewrite rule.
+Marie
+cat = np
+lemma = MARIE
+est
+cat = v
+lemma = E?TRE
+voice = active
+tense = present
+conside?re?e
+cat = v
+lemma = CONSIDE?RER
+voice = unk
+comme
+cat = prep
+lemma = COMME
+brillante
+cat = adj
+lemma = BRILLANT
+SUJ
+AUX PASS ATS OBJ
+Marie
+cat = np
+lemma = MARIE
+est conside?re?e
+cat = v
+lemma = CONSIDE?RER
+voice = passive
+tense = present
+comme
+cat = prep
+lemma = COMME
+brillante
+cat = adj
+lemma = BRILLANT
+SUJ ATS OBJ
+ Marie
+cat = np
+lemma = MARIE
+est conside?re?e
+cat = v
+lemma = CONSIDE?RER
+voice = active
+tense = present
+comme
+cat = prep
+lemma = COMME
+brillante
+cat = adj
+lemma = BRILLANT
+SUJ
+OBJ ATO OBJ
+1.5 Modules and normal forms
+A module contains a set of rewrite rules but, in order to have a finer control on the output of these
+modules, it is useful to declare some forbidden patterns. Hence a module is defined by a set R of rules
+and a set P of forbidden patterns.
+For a given module M = (R,P), we say that G? is an M-normal form of the graph G if there is a
+sequence of rewriting steps with rules of R from G to G?: G ??r1 G1 ??r2 G2 . . . ??rk G?, if no rule
+of R can be applied to G? and no pattern of P matches in G?.
+In our experiment, forbidden patterns are often used to control the subset of edges allowed in normal
+forms. For instance, the NORMAL module contains the forbidden pattern: AUX PASS . Hence, we
+can then safely suppose that no graph contains any AUX PASS edge afterward.
+2 From syntactic dependency graphs to semantic graphs
+Linguistic theories diverge on many issues including the exact definition of the linguistic levels and
+the relationships between them. Our aim here is not to commit to any linguistic theory but rather to
+69
+demonstrate that graph rewriting is an adequate and realistic computational framework for the syntax-
+semantics interface. Consequently, our approach is bound to neither the (syntactic and semantic) formats
+we have chosen nor the transformation modules we have designed; both are mainly meant to exemplify
+our proposal.
+2.1 Representational formats
+Our syntactic and semantic formats both rely on the notion of linguistic dependency. The syntactic
+format is an enrichment of the one which was designed to annotate the French Treebank (Abeille? and
+Barrier (2004)) with surface syntactic dependencies (Candito et al (2010)). The enrichment is twofold:
+? if they are present in the sentence, the deep arguments of infinitives and participles (from participial
+subordinate clauses) are marked with the usual labels of syntactic functions,
+? the anaphora relations that are predictable from the syntax (i.e. the antecedents of relative, reflexive
+and repeated pronouns) are marked with a special label ANT.
+This additional information can already be provided by many syntactic parsers and is particularly inter-
+esting to compute semantics.
+The semantic format is DependencyMinimal Recursion Semantics (DMRS) which was introduced by
+Copestake (2009) as a compact and easily readable equivalent to Robust Minimal Recursion Semantics
+(RMRS), which was defined by Copestake (2007). This underspecified semantic formalism was designed
+for large scale experiments without committing to fine-grained semantic choices. DMRS graphs contain
+the predicate-argument relations, the restriction of generalized quantifiers and the mode of combination
+between predicates. Predicate-argument relations are labelled ARGi, where i is an integer following a
+fixed order of obliqueness SUJ, OBJ, ATS, ATO, A-OBJ, DE-OBJ. . . . Naturally, the lexicon must be consistent
+with this ordering. The restrictions of generalized quantifiers are labelled RSTR ; their bodies are not
+overtly expressed but can be retrieved from the graph. There are three ways of combining predicates:
+? EQ when two predicates are elements of a same conjunction;
+? H when a predicate is in the scope of another predicate; it is not necessarily one of its arguments
+because quantifiers may occur between them;
+? NEQ for all other cases.
+2.2 Modular rewriting system
+Graph rewriting allows to proceed step by step to the transformation of a syntactic graph into a semantic
+one, by associating a rewrite rule to each linguistic rule. While the effect of every rule is local, grouping
+rules in modules allows a better control on the global effect of all rules.
+We do not have the space here to propose a system of rules that covers the whole French grammar.
+We however propose six modules which cover a significative part of this grammar (cleft clauses, coor-
+dination, enumeration, comparatives and ellipses are left aside but they can be handled by other rewrite
+modules):
+? NORMAL handles the regular syntactic transformations involving predicates: it computes tense
+and transforms all redistributions of arguments (passive and middle voices, impersonal construc-
+tions and the combination of them) to the active canonical form. This reduces the number of rules
+required to produce the predicate-argument relations in the ARG module below.
+? PREP removes affixes, prepositions and complementizers.
+? ARG transforms the verbal, nominal and adjectival predicative phrases into predicate-argument
+relations.
+70
+? DET translates the determiner dependencies (denoted DET) to generalized quantifiers.
+? MOD interprets the various modifier dependencies (denoted MOD), according to their specificity:
+adjectives, adverbs, adjunct prepositional phrases, participial clauses, relative clauses, adjunct
+clauses.
+? ANA interprets all anaphoric relations that are determined by the syntax (denoted ANT).
+Modules provide an easy way to control the order in which rules are fired. In order to properly set up the
+rules in modules, we first have to fix the global ordering of the modules. Some ordering constraints are
+evident: for instance, NORMAL must precede PREP, which must precede ARG. The rules we present in
+the following are based on the order NORMAL, PREP, ARG, DET, MOD, ANA.
+2.2.1 Normalization of syntactic dependencies
+The NORMAL module has two effects: it merges tense and voice auxiliaries with their past participle
+and brings all the argument redistributions back to the canonical active form. This module accounts
+for the passive and middle voices and the impersonal construction for verbs that are not essentially
+impersonal. The combination of the two voices with the impersonal construction is naturally expressed
+by the composition of the corresponding rewrite rules. The two rules given in section 1.4 are part of this
+module. The first rule (INIT PASSIVE) merges the past participle of the verb with its passive auxiliary.
+The auxiliary brings its mood and tense to the verb, which is marked as being passive. The second rule
+(PASSIVE ATS) transforms a passive verb with a subject and an attribute of the subject into its active
+equivalent with a semantically undetermined subject, an object (which corresponds to the subject of the
+passive form) and an attribute of the object (which corresponds to the attribute of the subject of the
+passive form).
+2.2.2 Erasure of affixes, prepositions and complementizers
+The PREP module removes affixes, prepositions and complementizers. For example, the rule given here
+merges prepositions with the attribute of the object that they introduce. The value of the preposition is
+kept to compute the semantics.
+PREP ATO
+?
+voice = active
+?
+cat = prep
+prep = ?
+?
+ATO OBJ c1 = copy feat(?, ?, prep)
+c2 = del edge(?, ?, OBJ)
+c3 = shift edge(?, ?)
+c4 = del node(?)
+2.2.3 From lexical predicative phrases to semantic predicates
+The ARG module transforms the syntactic arguments of a predicative word (a verb, a common noun or
+an adjective) into its semantic arguments. Following DMRS, the predicate-argument relations are not
+labelled with thematic roles but only numbered. The numbering reflects the syntactic obliqueness.
+ARG OBJ
+? ?
+cat = n|np|pro
+OBJ
+c1 = del edge(?, ?, OBJ)
+c2 = add edge(?, ?, ARG2)
+c3 = add edge(?, ?, NEQ)
+2.2.4 From determiners to generalized quantifiers
+DET reverts the determiner dependencies (labelled DET) from common nouns to determiners into depen-
+dencies of type RSTR from the corresponding generalized quantifier to the nominal predicate which is
+the core of their restriction.
+71
+DET
+?
+cat = det
+?
+cat = n
+DET
+c1 = del edge(?, ?, DET)
+c2 = add edge(?, ?, RSTR)
+c3 = add edge(?, ?, H)
+2.2.5 Interpretation of different kinds of modification
+MOD deals with the modifier dependencies (labelled MOD, MOD REL and MOD LOC), providing rules
+for the different kinds of modifiers. Adjectives and adverbs are translated as predicates whose first
+argument is the modified entity. The modifier and modified entities are in a conjunction (EQ), except
+for scopal adverbs which take scope (H) over the modified predicate. Because only lexical information
+enables to differentiate scopal from non-scopal adverbs, we consider all adverbs to be systematically
+ambiguous at the moment. Adjunct prepositional phrases (resp. clauses) have a similar rule except that
+their corresponding predicate is the translation of the preposition (resp. complementizer), which has
+two arguments: the modified entity and the noun (resp. verb) which heads the phrase (resp. clause).
+Participial and relative clauses exhibit a relation labelled EQ or NEQ between the head of the clause and
+the antecedent, depending on the restrictive or appositive type of the clause.
+2.2.6 Resolution of syntactic anaphora
+ANA deals with dependencies of type ANT and merges their source and their target. We apply them to
+reflexive, relative and repeated pronouns.
+3 Experiments
+For the experimentation, we are interested in a test suite which is at the same time small enough to be
+manually validated and large enough to cover a rich variety of linguistic phenomena. As said earlier, we
+use the P7 surface dependency format as input, so the first attempt at building a test suite is to consider
+examples in the guide which describes the format. By nature, an annotation guide tries to cover a large
+range of phenomena with a small set of examples.
+The latest version4 of this guide (Candito et al (2010)) contains 186 linguistic examples. In our cur-
+rent implementation of the semantic constructions, we leave out clefts, coordinations and comparatives.
+We also leave out a small set of exotic sentences for which we are not able to give a sensible syntactic
+structure. Finally, our experiment runs on 116 French sentences. Syntactic structures following P7 spec-
+ifications are obtained with some graph rewriting on the output of our parser. Each syntactic structure
+was manually checked and corrected when needed. Then, graph rewriting with the modules described in
+the previous section is performed.
+For all of these sentences, we produce at least one normal form. Even if DMRS is underspecified, our
+system can output several semantic representations for one syntactic structure (for instance, for appositive
+and restrictive relative clauses). We sometimes overgenerate because we do not use lexical information
+like the difference between scopal and non-scopal adverbs.
+The result for three sentences is given below and the full set is available on a web page 5.
+4version 1.1, january 2010
+5http://leopar.loria.fr/doku.php?id=iwcs2011
+72
+[012] ?Le franc?ais se parle de moins en moins dans les confe?rences.? [The French language is less and
+less spoken in conferences.]
+le
+cat=det
+fran?ais
+cat=n
+se
+cat=pro
+parle
+cat=v
+mood=ind
+tense=pres
+voice=unk
+de moins en moins
+cat=adv
+dans
+cat=prep
+prep=loc
+les
+cat=det
+conf?rences
+cat=n
+DET AFF_MOYEN MOD DET
+SUJ MOD_LOC OBJ
+/la/ct=dea=
+/s?tritnR/ct=dr
+S THPT
+/pt?la/ct=do?vvednre=arRadp?aRovncadtc=noa
+mTEQ NAG
+//
+mTE1 NAG
+/eaf?vnrRfarf?vnrR/ct=dteo
+mTE1 AG
+/etrR/ct=dp?app?apdlvc
+AG mTE1
+/cvrs2?arcaR/ct=dr
+NAG mTEQ
+/laR/ct=dea=
+S THPT
+[057] ?J?encourage Marie a` venir.? [I invite Mary to come.]
+je
+cat=pro
+encourage
+cat=v
+mood=ind
+tense=pres
+voice=unk
+Marie
+cat=np
+?
+cat=prep
+prep=?
+venir
+cat=v
+mood=inf
+voice=unk
+SUJ OBJ OBJ
+A-OBJ
+SUJ
+/je/cat=pro
+/encourage/cat=vmood=indtense=presvoice=active
+ARG1 NEQ
+/Marie/cat=np
+ARG2 NEQ
+/venir/cat=vmood=infprep=?voice=active
+ARG3 EQ
+ARG1 NEQ
+[106] ?La se?rie dont Pierre conna??t la fin? [The story Peter knows the end of]
+la
+cat=det
+s?rie
+cat=n
+dont
+cat=pro
+Pierre
+cat=np
+conna?t
+cat=v
+mood=ind
+tense=pres
+voice=unk
+la
+cat=det
+fin
+cat=n
+DET ANT SUJ DET
+OBJMOD_REL
+DE-OBJ
+/la/cat=det
+/s?rie/cat=n
+RSTR H
+/Pierre/cat=np
+/conna?t/cat=vmood=indtense=presvoice=active
+EQ
+NEQ ARG1
+/fin/cat=n
+NEQ ARG2
+/la/cat=det
+RSTR H
+ARG1 NEQ
+73
+Conclusion
+In this paper, we have shown the relevance of modular graph rewriting to compute semantic representa-
+tions from graph-shaped syntactic structures. The positive results of our experiments on a test suite of
+varied sentences make us confident that the method can apply to large corpora.
+The particular modular graph rewriting system presented in the paper was merely here to illustrate
+the method, which can be used for other input and output formats. There is another aspect to the flexi-
+bility of the method: we may start from the same system of rules and enrich it with new rules to get a
+finer semantic analysis ? if DMRS is considered as providing a minimal analysis ? or integrate lexi-
+cal information. The method allows the semantic ambiguity to remain unsolved within underspecified
+representations or to be solved with a rule system aiming at computing models of underspecified rep-
+resentations. Moreover, we believe that its flexibility makes graph rewriting a convenient framework to
+deal with idiomatic expressions.
+References
+Abeille?, A. and N. Barrier (2004). Enriching a french treebank. In Proceedings of LREC.
+Be?daride, P. and C. Gardent (2009). Semantic Normalisation : a Framework and an Experiment. In
+Proceedings of IWCS, Tilburg Netherlands.
+Bohnet, B. and L. Wanner (2001). On using a parallel graph rewriting formalism in generation. In
+Proceedings of EWNLG ?01, pp. 1?11. Association for Computational Linguistics.
+Candito, M., B. Crabbe?, and P. Denis (2010). Statistical french dependency parsing: Treebank conversion
+and first results. Proceedings of LREC2010.
+Candito, M., B. Crabbe?, and M. Falco (2010). De?pendances syntaxiques de surface pour le fran?cais.
+Carpenter, B. (1992). The logic of typed feature structures. Cambridge: Cambridge University Press.
+Chaumartin, F.-R. and S. Kahane (2010). Une approche paresseuse de l?analyse se?mantique ou comment
+construire une interface syntaxe-se?mantique a` partir d?exemples. In TALN 2010, Montreal, Canada.
+Copestake, A. (2007). Semantic composition with (robust) minimal recursion semantics. In Proceedings
+of the Workshop on Deep Linguistic Processing, pp. 73?80. Association for Computational Linguistics.
+Copestake, A. (2009). Invited Talk: Slacker semantics: Why superficiality, dependency and avoidance
+of commitment can be the right way to go. In Proceedings of EACL 2009, Athens, Greece, pp. 1?9.
+Copestake, A., D. Flickinger, C. Pollard, and I. Sag (2005). Minimal Recursion Semantics - an Introduc-
+tion. Research on Language and Computation 3, 281?332.
+Crouch, D. (2005). Packed Rewriting for Mapping Semantics to KR. In Proceedings of IWCS.
+Dalrymple, M. (2001). Lexical Functional Grammar. New York: Academic Press.
+Heim, I. and A. Kratzer (1998). Semantics in generative grammar. Wiley-Blackwell.
+Hyvo?nen, E. (1984). Semantic Parsing as Graph Language Transformation - a Multidimensional Ap-
+proach to Parsing Highly Inflectional Languages. In COLING, pp. 517?520.
+Jijkoun, V. and M. de Rijke (2007). Learning to transform linguistic graphs. In Second Workshop on
+TextGraphs: Graph-Based Algorithms for Natural Language Processing, Rochester, NY, USA.
+Mel?c?uk, I. (1988). Dependency Syntax: Theory and Practice. Albany: State Univ. of New York Press.
+Rozenberg, G. (Ed.) (1997). Handbook of Graph Grammars and Computing by Graph Transformations,
+Volume 1: Foundations. World Scientific.
+74

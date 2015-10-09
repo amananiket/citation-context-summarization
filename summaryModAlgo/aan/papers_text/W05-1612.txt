@@ -1,0 +1,1421 @@
+Explorations in Sentence Fusion?
+Erwin Marsi and Emiel Krahmer
+Communication and Cognition
+Faculty of Arts, Tilburg University
+P.O.Box 90153, NL-5000 LE Tilburg, The Netherlands
+{e.c.marsi, e.j.krahmer}@uvt.nl
+Abstract
+Sentence fusion is a text-to-text (revision-like) gen-
+eration task which takes related sentences as input
+and merges these into a single output sentence. In
+this paper we describe our ongoing work on de-
+veloping a sentence fusion module for Dutch. We
+propose a generalized version of alignment which
+not only indicates which words and phrases should
+be aligned but also labels these in terms of a small
+set of primitive semantic relations, indicating how
+words and phrases from the two input sentences re-
+late to each other. It is shown that human label-
+ers can perform this task with a high agreement (F-
+score of .95). We then describe and evaluate our
+adaptation of an existing automatic alignment al-
+gorithm, and use the resulting alignments, plus the
+semantic labels, in a generalized fusion and gen-
+eration algorithm. A small-scale evaluation study
+reveals that most of the resulting sentences are ad-
+equate to good.
+1 Introduction
+Traditionally, Natural Language Generation (NLG) is defined
+as the automatic production of ?meaningful texts in (...) hu-
+man language from some underlying non-linguistic represen-
+tation of information? [Reiter and Dale, 2000, xvii]. Re-
+cently, there is an increased interest in NLG applications
+that produce meaningful text from meaningful text rather than
+from abstract meaning representations. Such applications
+are sometimes referred to as text-to-text generation applica-
+tions (e.g., [Chandrasekar and Bangalore, 1997], [Knight and
+Marcu, 2002], [Lapata, 2003]), and may be likened to ear-
+lier revision-based generation strategies, e.g. [Robin, 1994]
+[Callaway and Lester, 1997]. Text-to-text generation is often
+motivated from practical applications such as summarization,
+sentence simplification, and sentence compression. One rea-
+son for the interest in such generation systems is the possi-
+bility to automatically learn text-to-text generation strategies
+from corpora of parallel text.
+?This work was carried out within the IMIX-IMOGEN (Inter-
+active Multimodal Output Generation) project, sponsored by the
+Netherlands Organization of Scientific Research (NWO).
+In this paper, we take a closer look at sentence fusion
+[Barzilay, 2003][Barzilay et al, 1999], one of the interesting
+variants in text-to-text generation. A sentence fusion module
+takes related sentences as input, and generates a single sen-
+tence summarizing the input sentences. The general strategy
+described in [Barzilay, 2003] is to first align the dependency
+structures of the two input sentences to find the common in-
+formation in both sentences. On the basis of this alignment,
+the common information is framed into an fusion tree (i.e.,
+capturing the shared information), which is subsequently re-
+alized in natural language by generating all traversals of the
+fusion tree and scoring their probability using an n-gram lan-
+guage model. Of the sentences thus generated the one with
+the lowest (length normalized) entropy is selected.
+Barzilay and co-workers apply sentence fusion in the con-
+text of multi-document summarization, where the input sen-
+tences typically come from multiple documents describing
+the same event, but sentence fusion seems to be useful for
+other applications as well. In question-answering, for in-
+stance, sentence fusion could be used to generate more com-
+plete answers. Many current QA systems use various parallel
+answer-finding strategies, each of which may produce an N-
+best list of answers (e.g., [Maybury, 2004]) In response to a
+question like ?What causes RSI?? one potential answer sen-
+tence could be:
+RSI can be caused by repeating the same sequence
+of movements many times an hour or day.
+And another might be:
+RSI is generally caused by a mixture of poor er-
+gonomics, stress and poor posture.
+These two incomplete answers might be fused into a more
+complete answer such as:
+RSI can be caused by a mixture of poor er-
+gonomics, stress, poor posture and by repeating the
+same sequence of movements many times an hour
+or day.
+The same process of sentence fusion can of course be applied
+to the whole list of N-best answers in order to derive a more
+specific, or even the most specific, answer, akin to taking the
+union of a number of sets. Likewise, we can rely on sentence
+fusion to derive a more general answer, or even the most gen-
+eral one (cf. intersection), in the hope that this will filter out
+irrelevant parts of the answer.
+Arguably, such applications call for a generalized version
+of sentence fusion, which may have consequences for the var-
+ious components (alignment, fusion and generation) of the
+sentence fusion pipeline. At the alignment level, we would
+like to have a better understanding of how words and phrases
+in the input sentences relate to each other. Rather than a bi-
+nary choice (align or not), one might want to distinguish more
+fine-grained relations such as overlap (if two phrases share
+some but not all of their content), paraphrases (if two phrases
+express the same information in different ways), entailments
+(if one phrase entails the other, but not vice versa), etc. Such
+an alignment strategy would be especially useful for applica-
+tions such as question answering and information extraction,
+where it is often important to know whether two sentences
+are paraphrases or stand in an entailment relation [Dagan and
+Glickman, 2004]. In the fusion module, we are interested in
+the possibilities to generate various kinds of fusions depend-
+ing on the relations between the respective sentences, e.g., se-
+lecting the more specific or the more general phrase depend-
+ing on whether the fusion tree is an intersection or a union
+one. Finally, the generation may be more complicated in the
+generalized version, and it is an interesting question whether
+the use of language models is equally suitable for different
+kinds of fusion.
+In this paper, we will explore some of these issues re-
+lated to a generalized version of sentence fusion. We start
+with the basic question whether it is possible at all to reli-
+ably align sentences, including different potential relations
+between words and phrases (section 2). We then present our
+ongoing work on sentence fusion, describing the current sta-
+tus and performance of the alignment algorithm (section 3),
+as well as the fusion and generation components (section 4).
+We end with discussion and description of future plans in sec-
+tion 5.
+2 Data collection and Annotation
+2.1 General approach
+Alignment has become standard practice in data-driven ap-
+proaches to machine translation (e.g. [Och and Ney, 2000]).
+Initially work focused on word-based alignment, but more re-
+cent research also addresses alignment at the higher levels
+(substrings, syntactic phrases or trees), e.g.,[Gildea, 2003].
+The latter approach seems most suitable for current purposes,
+where we want to express that a sequence of words in one
+sentence is related to a non-identical sequence of words in
+another sentence (a paraphrase, for instance). However, if
+we allow alignment of arbitrary substrings of two sentences,
+then the number of possible alignments grows exponentially
+to the number of tokens in the sentences, and the process of
+alignment ? either manually or automatically ? may become
+infeasible. An alternative, which seems to occupy the middle
+ground between word alignment on the one hand and align-
+ment of arbitrary substrings on the other, is to align syntac-
+tic analyses. Here, following [Barzilay, 2003], we will align
+sentences at the level of dependency structures. Unlike to
+[Barzilay, 2003], we are interested in a number of different
+alignment relations between sentences, and pay special atten-
+tion to the feasibility of this alignment task.
+verb:
+hebben
+verb:
+hebben
+hd/vc
+pron:
+ik
+hd/su
+adv:
+zo
+hd/mod hd/su
+noun:
+contact
+hd/obj1
+prep:
+met
+hd/pc
+prep:
+in de loop van
+hd/mod
+det:
+veel
+hd/det
+adv:
+heel
+hd/mod
+noun:
+persoon
+hd/obj1
+adj:
+serieus
+hd/mod
+det:
+veel
+hd/det
+adv:
+heel
+hd/mod
+noun:
+leven
+hd/obj1
+det:
+mijn
+hd/det
+Figure 1: Example dependency structure for the sentence Zo
+heb ik in the loop van mijn leven heel veel contacten gehad
+met heel veel serieuze personen. (lit. ?Thus have I in the
+course of my life very many contacts had with very many
+serious persons?).
+2.2 Corpus
+For evaluation and parameter estimation we have developed
+a parallel monolingual corpus consisting of two different
+Dutch translations of the French book ?Le petit prince? (the
+little prince) by Antoine de Saint-Exupe?ry (published 1943),
+one by Laetitia de Beaufort-van Hamel (1966) and one by
+Ernst Altena (2000). The texts were automatically tokenized
+and split into sentences, after which errors were manually
+corrected. Corresponding sentences from both translations
+were manually aligned; in most cases this was a one-to-one
+mapping but occasionally a single sentence in one version
+mapped onto two sentences in the other: Next, the Alpino
+parser for Dutch (e.g., [Bouma et al, 2001]) was used for
+part-of-speech tagging and lemmatizing all words, and for
+assigning a dependency analysis to all sentences. The POS
+labels indicate the major word class (e.g. verb, noun, pron,
+and adv). The dependency relations hold between tokens
+and are the same as used in the Spoken Dutch Corpus (see
+e.g., [van der Wouden et al, 2002]). These include depen-
+dencies such as head/subject, head/modifier and coordina-
+tion/conjunction. See Figure 1 for an example. If a full parse
+could not be obtained, Alpino produced partial analyses col-
+lected under a single root node. Errors in lemmatization, POS
+tagging, and syntactic dependency parsing were not subject to
+manual correction.
+2.3 Task definition
+A dependency analysis of a sentence S yields a labeled di-
+rected graph D = ?V,E?, where V (vertices) are the nodes,
+and E (edges) are the dependency relations. For each node
+v in the dependency structure for a sentence S, we define
+STR(v) as the substring of all tokens under v (i.e., the com-
+position of the tokens of all nodes reachable from v). For
+example, the string associated with node persoon in Figure 1
+is heel veel serieuze personen (?very many serious persons?).
+An alignment between sentences S and S? pairs nodes from
+the dependency graphs for both sentences. Aligning node v
+from the dependency graph D of sentence S with node v?
+from the graph D? of S? indicates that there is a relation be-
+tween STR(v) and STR(v?), i.e., between the respective sub-
+strings associated with v and v?. We distinguish five potential,
+mutually exclusive, relations between nodes (with illustrative
+examples):
+1. v equals v? iff STR(v) and STR(v?) are literally identical
+(abstracting from case and word order)
+Example: ?a small and a large boa-constrictor? equals
+?a large and a small boa-constrictor?;
+2. v restates v? iff STR(v) is a paraphrase of STR(v?) (same
+information content but different wording),
+Example: ?a drawing of a boa-constrictor snake? re-
+states ?a drawing of a boa-constrictor?;
+3. v specifies v? iff STR(v) is more specific than STR(v?),
+Example: ?the planet B 612? specifies ?the planet?;
+4. v generalizes v? iff STR(v?) is more specific than
+STR(v),
+Example: ?the planet? generalizes ?the planet B 612?;
+5. v intersects v? iff STR(v) and STR(v?) share some in-
+formational content, but also each express some piece of
+information not expressed in the other,
+Example: ?Jupiter and Mars? intersects ?Mars and
+Venus?
+Note that there is an intuitive relation with entailment here:
+both equals and restates can be understood as mutual entail-
+ment (i.e., if the root nodes of the analyses corresponding S
+and S? stand in an equal or restate relation, S entails S? and
+S? entails S), if S specifies S? then S also entails S? and if S
+generalizes S? then S is entailed by S?.
+An alignment between S and S? can now formally be
+defined on the basis of the respective dependency graphs
+D = ?V,E? and D? = ?V ?, E?? as a graph A = ?VA, EA?,
+such that
+EA = {?v, l, v?? | v ? V & v? ? V ? & l(STR(v), STR(v?))},
+where l is one of the five relations defined above. The nodes
+of A are those nodes from D en D? which are aligned, for-
+mally defined as
+VA = {v | ?v??l?v, l, v?? ? EA}?{v? | ?v?l?v, l, v?? ? EA}
+A complete example alignment can be found in the Appendix,
+Figure 3.
+(A1, A2) (A1? , A2?) (Ac, A1?) (Ac, A2?)
+#real: 322 323 322 322
+#pred: 312 321 323 321
+#correct: 293 315 317 318
+precision: .94 .98 .98 .99
+recall: .91 .98 .98 .99
+F-score: .92 .98 .98 .99
+Table 1: Interannotator agreement with respect to align-
+ment between annotators 1 and 2 before (A1, A2) and after
+(A1? , A2?) revision , and between the consensus and annota-
+tor 1 (Ac, A1?) and annotator 2 (Ac, A2?) respectively.
+2.4 Alignment tool
+For creating manual alignments, we developed a special-
+purpose annotation tool called Gadget (?Graphical Aligner of
+Dependency Graphs and Equivalent Tokens?). It shows, side
+by side, two sentences, as well as their respective dependency
+graphs. When the user clicks on a node v in the graph, the cor-
+responding string (STR(v)) is shown at the bottom. The tool
+enables the user to manually construct an alignment graph on
+the basis of the respective dependency graphs. This is done
+by focusing on a node in the structure for one sentence, and
+then selecting a corresponding node (if possible) in the other
+structure, after which the user can select the relevant align-
+ment relation. The tool offers additional support for folding
+parts of the graphs, highlighting unaligned nodes and hiding
+dependency relation labels. See Figure 4 in the Appendix for
+a screen shot of Gadget.
+2.5 Results
+All text material was aligned by the two authors. They started
+doing the first ten sentences of chapter one together in order
+to get a feel for the task. They continued with the remaining
+sentences from chapter one individually. The total number
+of nodes in the two translations of the chapter was 445 and
+399 respectively. Inter-annotator agreement was calculated
+for two aspects: alignment and relation labeling. With respect
+to alignment, we calculated the precision, recall and F-score
+(with ? = 1) on aligned node pairs as follows:
+precision(Areal, Apred) = | Areal ?Apred || Apred | (1)
+recall(Areal, Apred) = | Areal ?Apred || Areal | (2)
+F -score = 2? precision? recallprecision+ recall (3)
+where Areal is the set of all real alignments (the reference or
+golden standard), Apred is the set of all predicted alignments,
+and Apred?Areal is the set al correctly predicted alignments.
+For the purpose of calculating inter-annotator agreement, one
+of the annotations (A1) was considered the ?real? alignment,
+the other (A2) the ?predicted?. The results are summarized in
+Table 1 in column (A1, A2).
+Next, both annotators discussed the differences in align-
+ment, and corrected mistaken or forgotten alignments. This
+improved their agreement as shown in column (A1? , A2?). In
+(A1, A2) (A1? , A2?) (Ac, A1?) (Ac, A2?)
+precision: .86 .96 .98 .97
+recall: .86 .95 .97 .97
+F-score: .85 .95 .97 .97
+?: .77 .92 .96 .96
+Table 2: Inter-annotator agreement with respect to alignment
+relation labeling between annotators 1 and 2 before (A1, A2)
+and after (A1? , A2?) revision , and between the consensus and
+annotator 1 (Ac, A1?) and annotator 2 (Ac, A2?) respectively.
+addition, they agreed on a single consensus annotation (Ac).
+The last two columns of Table 1 show the results of evalu-
+ating each of the revised annotations against this consensus
+annotation. The F-score of .96 can therefore be regarded as
+the upper bound on the alignment task.
+In a similar way, the agreement was calculated for the task
+of labeling the alignment relations. Results are shown in Ta-
+ble 2, where the measures are weighted precision, recall and
+F-score. For instance, the precision is the weighted sum of
+the separate precision scores for each of the five relations.
+The table also shows the ?-score, which is another commonly
+used measure for inter-annotator agreement [Carletta, 1996].
+Again, the F-score of .97 can be regarded as the upper bound
+on the relation labeling task.
+We think these numbers indicate that the labeled alignment
+task is well defined and can be accomplished with a high level
+of inter-annotator agreement.
+3 Automatic alignment
+In this section, we describe the alignment algorithm that we
+use (section 3.1), and evaluate its performance (section 3.2).
+3.1 Tree alignment algorithm
+The tree alignment algorithm is based on [Meyers et al,
+1996], and similar to that used in [Barzilay, 2003]. It cal-
+culates the match between each node in dependency tree D
+against each node in dependency tree D?. The score for each
+pair of nodes only depends on the similarity of the words
+associated with the nodes and, recursively, on the scores of
+the best matching pairs of their descendants. For an efficient
+implementation, dynamic programming is used to build up a
+score matrix, which guarantees that each score will be calcu-
+lated only once.
+Given two dependency trees D and D?, the algorithm
+builds up a score function S(v, v?) for matching each node
+v in D against each node v? in D?, which is stored in a ma-
+trix M . The value S(v, v?) is the score for the best match
+between the two subtrees rooted at v in D and at v? in D?.
+When a value for S(v, v?) is required, and is not yet in the
+matrix, it is recursively computed by the following formula:
+S(v, v?) = max
+?
+?
+?
+TREEMATCH(v, v?)
+maxi=1,...,n S(vi, v?)
+maxj=1,...,m S(v, v?j)
+(4)
+where v1, . . . , vn denote the children of v and v?1, . . . , v?m de-
+note the children of v?. The three terms correspond to the
+three ways that nodes can be aligned: (1) v can be directly
+aligned to v?; (2) any of the children of v can be aligned to v?;
+(3) v can be aligned to any of the children of v?. Notice that
+the last two options imply skipping one or more edges, and
+leaving one or more nodes unaligned.1
+The function TREEMATCH(v, v?) is a measure of how well
+the subtrees rooted at v and v? match:
+TREEMATCH(v, v?) = NODEMATCH(v, v?) +
+max
+p ? P(v,v?)
+?
+? ?
+(i,j) ? p
+(
+RELMATCH(??v i,??v ?j) + S(vi, v?j)
+)
+?
+?
+Here ??v i denotes the dependency relation from v to vi.
+P(v, v?) is the set of all possible pairings of the n children
+of v against the m children of v?, which is the power set of
+{1, . . . , n} ? {1, . . . ,m}. The summation in (5) ranges over
+all pairs, denoted by (i, j), which appear in a given pairing
+p ? P(v, v?). Maximizing this summation thus amounts to
+finding the optimal alignment of children of v to children of
+v?.
+NODEMATCH(v, v?) ? 0 is a measure of how well the
+label of node v matches the label of v?.
+RELMATCH(??v i,??v ?j) ? 0 is a measure for how well the
+dependency relation between node v and its child vi matches
+that of the dependency relation between node v? and its child
+vj .
+Since the dependency graphs delivered by the Alpino
+parser were usually not trees, they required some modifica-
+tion in order to be suitable input for the tree alignment al-
+gorithm. We first determined a root node, which is defined
+as a node from which all other nodes in the graph can be
+reached. In the rare case of multiple root nodes, an arbi-
+trary one was chosen. Starting from this root node, any cyclic
+edges were temporarily removed during a depth-first traver-
+sal of the graph. The resulting directed acyclic graphs may
+still have some amount of structure sharing, but this poses no
+problem for the algorithm.
+3.2 Evaluation of automatic alignment
+We evaluated the automatic alignment of nodes, abstracting
+from relation labels, as we have no algorithm for automatic
+labeling of these relations yet. The baseline is achieved by
+aligning those nodes with stand in an equals relation to each
+other, i.e., a node v in D is aligned to a node v? in D? iff
+STR(v) =STR(v?). This alignment can be constructed rela-
+tively easy.
+The alignment algorithm is tested with the following
+NODEMATCH function:
+NODEMATCH(v, v?) =
+?
+??????
+??????
+10 if STR(v) = STR(v?)
+5 if LABEL(v) = LABEL(v?)
+2 if LABEL(v) is a synonym
+hyperonym or hyponym
+of LABEL(v?)
+0 otherwise
+1In the original formulation of the algorithm by [Meyers et al,
+1996], there is a penalty for skipping edges.
+Alignment : Prec : Rec : F-score:
+baseline .87 .41 .56
+algorithm without wordnet .84 .82 .83
+algorithm with wordnet .86 .84 .85
+Table 3: Precision, recall and F-score on automatic alignment
+It reserves the highest value for a literal string match, a some-
+what lower value for matching lemmas, and an even lower
+value in case of a synonym, hyperonym or hyponym relation.
+The latter relations are retrieved from the Dutch part of Eu-
+roWordnet [Vossen, 1998]. For the RELMATCH function, we
+simply used a value of 1 for identical dependency relations,
+and 0 otherwise. These values were found to be adequate in a
+number of test runs on two other, manually aligned chapters
+(these chapters were not used for the actual evaluation). In the
+future we intend to experiment with automatic optimizations.
+We measured the alignment accuracy defined as the per-
+centage of correctly aligned node pairs, where the consen-
+sus alignment of the first chapter served as the golden stan-
+dard. The results are summarized in Table 3. In order to test
+the contribution of synonym and hyperonym information for
+node matching, performance is measured with and without
+the use of Eurowordnet. The results show that the algorithm
+improves substantially on the baseline. The baseline already
+achieves a relatively high score (an F-score of .56), which
+may be attributed to the nature of our material: the translated
+sentence pairs are relatively close to each other and may show
+a sizeable amount of literal string overlap. The alignment al-
+gorithm (without use of EuroWordnet) loses a few points on
+precision, but improves a lot on recall (a 200% increase with
+respect to the baseline), which in turn leads to a substantial
+improvement on the overall F-score. The use of Euroword-
+net leads to a small increase (two points) on both precision
+and recall (and thus to small increase on F-score). Yet, in
+comparison with the gold standard human score for this task
+(.95), there is clearly room for further improvement.
+4 Merging and generation
+The remaining two steps in the sentence fusion process are
+merging and generation. In general, merging amounts to de-
+ciding which information from either sentence should be pre-
+served, whereas generation involves producing a grammat-
+ically correct surface representation. In order to get an idea
+about the baseline performance, we explored a simple, some-
+what naive string-based approach. Below, the pseudocode
+is shown for merging two dependency trees in order to get
+restatements. Given a labeled alignment A between depen-
+dency graphs D and D?, if there is a restates relation between
+node v from D and node v? from D?, we add the string real-
+ization of v? as an alternative to those of v.
+RESTATE(A)
+1 for each edge ?v, l, v?? ? EA
+2 do if l = restates
+3 then STR(v) ? STR(v) ? STR(v?)
+The same procedure is followed in order to get specifications:
+SPECIFY(A)
+1 for each edge ?v, l, v?? ? EA
+2 do if l = generalizes
+3 then STR(v) ? STR(v) ? STR(v?)
+The generalization procedure adds the option to omit the re-
+alization of a modifier that is not aligned:
+GENERALIZE(D,A)
+1 for each edge ?v, l, v?? ? EA
+2 do if l = specifies
+3 then STR(v) ? STR(v) ? STR(v?)
+4 for each edge ?v, l, v?? ? ED
+5 do if l ? MOD-DEP-RELS and v /? EA
+6 then STR(v) ? STR(v) ? NIL
+where MOD-DEP-REL is the set of dependency relations be-
+tween a node and a modifier (e.g. head/mod and head/predm).
+Each procedure is repeated twice, once adding substrings
+from D into D? and once the other way around. Next, we
+traverse the dependency trees and generate all string realiza-
+tions, extending the list of variants for each node that has mul-
+tiple realizations. Finally, we filter out multiple copies of the
+same string, as well as strings that are identical to the input
+sentences.
+This procedure for merging and generation was applied to
+the 35 sentence pairs from the consensus alignment of chapter
+one of ?Le Petit Prince?. Overall this gave rise to 194 restate-
+ment, 62 specifications and 177 generalizations, with some
+sentence pairs leading to many variants and others to none at
+all. Some output showed only minor variations, for instance,
+substitution of a synonym. However, others revealed surpris-
+ingly adequate generalizations or specifications. Examples of
+good and bad output are given in Figure 2.
+As expected, many of the resulting variants are ungram-
+matical, because constraints on word order, agreement or sub-
+categorisation are violated. Following work on statistical sur-
+face generation [Langkilde and Knight, 1998] and other work
+on sentence fusion [Barzilay, 2003], we tried to filter un-
+grammatical variants with an n-gram language model. The
+Cambridge-CMU Statistical Modeling Toolkit v2 was used to
+train a 3-gram model on over 250M words from the Twente
+Newscorpus , using back-off and Good-Turing smoothing.
+Variants were ranked in order of increasing entropy. We
+found, however, that the ranking was often inadequate, show-
+ing ungrammatical variants at the top and grammatical vari-
+ants in the lower regions.
+To gain some insight into the general performance of the
+merging and generation strategy, we performed a small eval-
+uation test in which the two authors independently judged all
+generated variants in terms of three categories:
+1. Perfect: no problems in either semantics or syntax;
+2. Acceptable: understandable, but with some minor flaws
+in semantics or grammar;
+3. Nonsense: serious problems in semantics or grammar
+Table 4 shows the number of sentences in each of the three
+categories per judge, broken down in restatements, general-
+ization and specifications. The ?-score on this classification
+Input1: Zo
+Thus
+heb
+have
+ik
+I
+in
+in
+de
+the
+loop
+course
+van
+of
+mijn
+my
+leven
+life
+heel
+very
+veel
+many
+contacten
+contacts
+gehad
+had
+met
+with
+heel
+very
+veel
+many
+serieuze
+serious
+personen
+persons
+Input2: Op
+In
+die
+that
+manier
+way
+kwam
+came
+ik
+I
+in
+in
+het
+the
+leven
+life
+met
+with
+massa?s
+masses-of
+gewichtige
+weighty/important
+mensen
+people
+in
+in
+aanraking
+touch
+Restate: op
+in
+die
+that
+manier
+way
+heb
+have
+ik
+I
+in
+in
+de
+the
+loop
+course
+van
+of
+mijn
+my
+leven
+life
+heel
+very
+veel
+many
+contacten
+contacts
+gehad
+had
+met
+with
+heel
+very
+veel
+many
+serieuze
+serious
+personen
+persons
+Specific: op
+in
+die
+that
+manier
+way
+kwam
+have
+ik
+I
+in
+in
+de
+the
+loop
+course
+van
+of
+mijn
+my
+leven
+life
+met
+with
+massa?s
+masses-of
+gewichtige
+weighty/important
+mensen
+people
+in
+in
+aanraking
+touch
+General: zo
+thus
+heb
+have
+ik
+I
+in
+in
+het
+the
+leven
+life
+veel
+many
+contacten
+contacts
+gehad
+had
+met
+with
+veel
+many
+serieuze
+serious
+personen
+persons
+Input1: En
+And
+zo
+so
+heb
+have
+ik
+I
+op
+at
+mijn
+my
+zesde
+sixth
+jaar
+year
+een
+a
+prachtige
+wonderful
+loopbaan
+career
+als
+as
+kunstschilder
+art-painter
+laten
+let
+varen
+sail
+.
+Input2: Zo
+Thus
+kwam
+came
+het
+it
+,
+,
+dat
+that
+ik
+I
+op
+at
+zesjarige
+six-year
+leeftijd
+age
+een
+a
+schitterende
+bright
+schildersloopbaan
+painter-career
+liet
+let
+varen
+sail
+.
+Specific: en
+and
+zo
+so
+heb
+have
+ik
+I
+op
+at
+mijn
+my
+zesde
+sixth
+jaar
+year
+als
+as
+kunstschilder
+art-painter
+laten
+let
+een
+a
+schitterende
+bright
+schildersloopbaan
+painter-career
+varen
+sail
+General: zo
+so
+kwam
+came
+het
+it
+dat
+that
+ik
+I
+op
+at
+leeftijd
+age
+een
+a
+prachtige
+wonderful
+loopbaan
+career
+liet
+let
+varen
+sail
+Figure 2: Examples of good (top) and bad (bottom) sentence fusion output
+Restate: Specific: General:
+J1 J2 J1 J2 J1 J2
+Perfect: 109 104 28 22 89 86
+Acceptable: 44 58 15 16 34 24
+Nonsense: 41 32 19 24 54 67
+Total: 194 62 177
+Table 4: Results of the evaluation of the sentence fusion out-
+put as the number of sentences in each of the three categories
+perfect, acceptable and nonsense per judge (J1 and J2), bro-
+ken down in restatements, generalizations and specifications.
+task is .75, indicating a moderate to good agreement between
+the judges. Roughly half of the generated restatements and
+generalization are perfect, while this is not the case for spec-
+ifications. We have no plausible explanation for this yet.
+We think we can conclude from this evaluation that sen-
+tence fusion is a viable and interesting approach for produc-
+ing restatements, generalization and specifications. However,
+there is certainly further work to do; the procedure for merg-
+ing dependency graphs should be extended, and the realiza-
+tion model clearly requires more linguistic sophistication in
+particular to deal with word order, agreement and subcate-
+gorisation constraints.
+5 Discussion and Future work
+In this paper we have described our ongoing work on sen-
+tence fusion for Dutch. Starting point was the sentence fusion
+model proposed by [Barzilay et al, 1999; Barzilay, 2003]
+in which dependency analyses of pairs of sentences are first
+aligned, after which the aligned parts (representing the com-
+mon information) are fused. The resulting fused dependency
+tree is subsequently transfered into natural language. Our
+new contributions are primarily in two areas. First, we carried
+out an explicit evaluation of the alignment ? both human and
+automatic alignment ? whereas [Barzilay, 2003] only evalu-
+ates the output of the complete sentence fusion process. We
+found that annotators can reliably align phrases and assign
+relation labels to them, and that good results can be achieved
+with automatic alignment, certainly above an informed base-
+line, albeit still below human performance. Second, Barzi-
+lay and co-workers developed their sentence fusion model in
+the context of multi-document summarization, but arguably
+the approach could also be applicable for applications such
+as question answering or information extraction. This seems
+to call for a more refined version of sentence fusion, which
+has consequences for alignment, merging and realization. We
+have therefore introduced five different types of semantic re-
+lations between strings, namely equals, restates, specifies,
+generalizes and intersects. This increases the expressiveness
+of the representation, and supports generating restatements,
+generalizations and specifications. Finally, we described and
+evaluated our first results on sentence realization based on
+these refined alignments, with promising results.
+Similar work is described in [Pang et al, 2003], who de-
+scribe a syntax-based algorithm that builds word lattices from
+parallel translations which can be used to generate new para-
+phrases. Their alignment algorithm is less refined, and there
+is only type of alignment and hence output (only restate-
+ments), but their mapping of aligned trees to a word lattice
+(or FSA) seems worthwhile to explore in combination with
+the approach we have proposed here.
+One of the issues that remains to be addressed in future
+work is the effect of parsing errors. Such errors were not
+manually corrected, but during manual alignment, however,
+we sometimes found that substrings could not be properly
+aligned because the parser failed to identify them as syntac-
+tic constituents. The repercussions of this for the generation
+should be investigated by comparing the results obtained here
+with alignments on perfect parses. Furthermore, our work on
+automatic alignment so far only concerned the alignment of
+nodes, not the determination of the relation type. We intend
+to address this task with machine learning, initially relying
+on shallow features such as the length of the respective token
+strings and the amount of overlap. It is also clear that more
+work is needed on merging and surface realization. One pos-
+sible direction here is to exploit the relatively rich linguistic
+representation of the input sentences (POS tags, lemmas and
+dependency structures), for instance, along the lines of [Ban-
+galore and Rambow, 2000]. Yet another issue concerns the
+type of text material. The sentence pairs from our current cor-
+pus are relatively close, in the sense that there is usually a 1-
+to-1 mapping between sentences, and both translations more
+or less convey the same information. Although this seems a
+good starting point to study alignment, we intend to continue
+with other types of text material in future work. For instance,
+in extending our work to the actual output of a QA system,
+we expect to encounter sentences with far less overlap. Of
+particular interest to us is also whether sentence fusion can
+be shown to improve the quality of QA system output.
+References
+[Bangalore and Rambow, 2000] Srinivas Bangalore and
+Owen Rambow. Exploiting a probabilistic hierar-
+chical model for generation. In Proceedings of the
+17th conference on Computational linguistics, pages
+42?48, Morristown, NJ, USA, 2000. Association for
+Computational Linguistics.
+[Barzilay et al, 1999] R. Barzilay, K. McKeown, and M. El-
+haded. Information fusion in the context of multi-
+document summarization. In Proceedings of the 37th An-
+nual Meeting of the Association for Computational Lin-
+guistics (ACL-99), Maryland, 1999.
+[Barzilay, 2003] R. Barzilay. Information Fusion for Multi-
+document Summarization. Ph.D. Thesis, Columbia Uni-
+versity, 2003.
+[Bouma et al, 2001] Gosse Bouma, Gertjan van Noord, and
+Robert Malouf. Alpino: Wide-coverage computational
+analysis of dutch. In Computational Linguistics in The
+Netherlands 2000. 2001.
+[Callaway and Lester, 1997] C. Callaway and J. Lester. Dy-
+namically improving explanations: A revision-based ap-
+proach to explanation generation. In Proceedings of the
+15th International Joint Conference on Artificial Intelli-
+gence (IJCAI 1997), pages 952?958, Nagoya, Japan, 1997.
+[Carletta, 1996] Jean Carletta. Assessing agreement on clas-
+sification tasks: the kappa statistic. Comput. Linguist.,
+22(2):249?254, 1996.
+[Chandrasekar and Bangalore, 1997] R. Chandrasekar and
+S. Bangalore. Automatic induction of rules for text simpli-
+fication. Knowledge-based Systems, 10(3):183?190, 1997.
+[Dagan and Glickman, 2004] I. Dagan and O. Glickman.
+Probabilistic textual entailment: Generic applied mod-
+elling of language variability. In Learning Methods for
+Text Understanding and Mining, Grenoble, 2004.
+[Gildea, 2003] D. Gildea. Loosely tree-based alignment for
+machine translation. In Proceedings of the 41st Annual
+Meeting of the ACL, Sapporo, Japan, 2003.
+[Imamura, 2001] K. Imamura. Hierarchical phrase align-
+ment harmonized with parsing. In Proceedings of the
+6th Natural Language Processing Pacific Rim Symposium
+(NLPRS 2001), pages 377?384, Tokyo, Japan, 2001.
+[Knight and Marcu, 2002] K. Knight and D. Marcu. Sum-
+marization beyond sentence extraction: A probabilistic ap-
+proach to sentence compression. Artificial Intelligence,
+139(1):91?107, 2002.
+[Langkilde and Knight, 1998] Irene Langkilde and Kevin
+Knight. Generation that exploits corpus-based statistical
+knowledge. In Proceedings of the 36th conference on As-
+sociation for Computational Linguistics, pages 704?710,
+Morristown, NJ, USA, 1998. Association for Computa-
+tional Linguistics.
+[Lapata, 2003] M. Lapata. Probabilistic text structuring: Ex-
+periments with sentence ordering. In Proceedings of the
+41st Annual Meeting of the Association for Computational
+Linguistics, pages 545?552, Sapporo, 2003.
+[Maybury, 2004] M. Maybury. New Directions in Question
+Answering. AAAI Press, 2004.
+[Meyers et al, 1996] A. Meyers, R. Yangarber, and R. Gr-
+isham. Alignment of shared forests for bilingual cor-
+pora. In Proceedings of 16th International Conference on
+Computational Linguistics (COLING-96), pages 460?465,
+Copenhagen, Denmark, 1996.
+[Och and Ney, 2000] Franz Josef Och and Hermann Ney.
+Statistical machine translation. In EAMT Workshop, pages
+39?46, Ljubljana, Slovenia, 2000.
+[Pang et al, 2003] Bo Pang, Kevin Knight, and Daniel
+Marcu. Syntax-based alignment of multiple translations:
+Extracting paraphrases and generating new sentences. In
+HLT-NAACL, 2003.
+[Reiter and Dale, 2000] E. Reiter and R. Dale. Building Nat-
+ural Language Generation Systems. Cambridge University
+Press, Cambridge, 2000.
+[Robin, 1994] J. Robin. Revision-based generation of Nat-
+ural Language Summaries Providing Historical Back-
+ground. Ph.D. Thesis, Columbia University, 1994.
+[van der Wouden et al, 2002] T. van der Wouden, H. Hoek-
+stra, M. Moortgat, B. Renmans, and I. Schuurman. Syntac-
+tic analysis in the spoken dutch corpus. In Proceedings of
+the third International Conference on Language Resources
+and Evaluation, pages 768?773, Las Palmas, Canary Is-
+lands, Spain, 2002.
+[Vossen, 1998] Piek Vossen, editor. EuroWordNet: a multi-
+lingual database with lexical semantic networks. Kluwer
+Academic Publishers, Norwell, MA, USA, 1998.
+6 Appendix
+he
+bb
+en
+ko
+m
+en
+he
+bb
+en
+ik
+ik
+o
+p
+in
+in
+ a
+an
+ra
+ki
+ng
+m
+e
+t
+zo
+co
+n
+ta
+ct
+m
+e
+t
+in
+ d
+e 
+lo
+op
+ v
+an
+ve
+e
+l
+he
+el
+pe
+rs
+oo
+n
+se
+rie
+us
+ve
+e
+l
+m
+a
+ss
+a
+ge
+wi
+ch
+tig
+he
+el
+le
+ve
+n m
+ijn
+le
+ve
+n
+he
+t
+m
+a
+n
+ie
+r
+di
+e
+m
+e
+n
+s
+Fi
+gu
+re
+3:
+D
+ep
+en
+de
+nc
+y
+st
+ru
+ct
+ur
+es
+an
+d
+al
+ig
+nm
+en
+tf
+or
+th
+e
+se
+n
+te
+nc
+es
+Zo
+he
+b
+ik
+in
+de
+lo
+op
+va
+n
+m
+ijn
+le
+ve
+n
+he
+el
+ve
+el
+co
+n
+ta
+ct
+en
+ge
+ha
+d
+m
+et
+he
+el
+ve
+el
+se
+ri
+eu
+ze
+pe
+rs
+o
+n
+en
+.
+(li
+t.?
+Th
+us
+ha
+v
+e
+Ii
+n
+th
+e
+co
+u
+rs
+e
+o
+fm
+y
+lif
+e
+v
+er
+y
+m
+an
+y
+co
+n
+ta
+ct
+s
+ha
+d
+w
+ith
+v
+er
+y
+m
+an
+y
+se
+rio
+us
+pe
+rs
+on
+s?
+)a
+n
+d
+O
+p
+di
+em
+a
+n
+ie
+rk
+wa
+m
+ik
+in
+he
+tl
+ev
+en
+m
+et
+m
+a
+ss
+a
+?s
+ge
+w
+ic
+ht
+ig
+e
+m
+en
+se
+n
+in
+a
+a
+n
+ra
+ki
+ng
+.
+.
+(li
+t.
+?
+In
+th
+at
+w
+ay
+ca
+m
+e
+Ii
+n
+th
+e
+lif
+e
+w
+ith
+m
+as
+s-
+o
+fw
+ei
+gh
+ty
+/im
+po
+rta
+nt
+pe
+op
+le
+in
+to
+uc
+h?
+).
+Th
+e
+al
+ig
+nm
+en
+tr
+el
+at
+io
+ns
+ar
+e
+eq
+ua
+ls
+(do
+tte
+dg
+ra
+y),
+re
+st
+at
+es
+(so
+lid
+gr
+ay
+),s
+pe
+ci
+fie
+s(
+do
+tte
+db
+la
+ck
+),a
+n
+d
+in
+te
+rs
+ec
+ts
+(da
+sh
+ed
+gr
+ay
+).
+Fo
+r
+th
+e
+sa
+ke
+o
+ft
+ra
+ns
+pa
+re
+nc
+y,
+de
+pe
+nd
+en
+cy
+re
+la
+tio
+ns
+ha
+v
+e
+be
+en
+o
+m
+itt
+ed
+.
+Fi
+gu
+re
+4:
+Sc
+re
+en
+sh
+ot
+o
+fG
+ad
+ge
+t,
+th
+e
+to
+ol
+u
+se
+d
+fo
+ra
+lig
+ni
+ng
+de
+pe
+nd
+en
+cy
+st
+ru
+ct
+ur
+es
+o
+fs
+en
+te
+nc
+es
+.

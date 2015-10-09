@@ -1,0 +1,797 @@
+Proceedings of NAACL HLT 2007, pages 73?80,
+Rochester, NY, April 2007. c?2007 Association for Computational Linguistics
+Coreference or Not: A Twin Model for Coreference Resolution
+Xiaoqiang Luo
+IBM T.J. Watson Research Center
+1101 Kitchawan Road
+Yorktown Heights, NY 10598, U.S.A.
+{xiaoluo}@us.ibm.com
+Abstract
+A twin-model is proposed for coreference res-
+olution: a link component, modeling the coref-
+erential relationship between an anaphor and
+a candidate antecedent, and a creation com-
+ponent modeling the possibility that a phrase
+is not coreferential with any candidate an-
+tecedent. The creation model depends on all
+candidate antecedents and is often expensive
+to compute; Therefore constraints are imposed
+on feature forms so that features in the cre-
+ation model can be efficiently computed from
+feature values in the link model. The pro-
+posed twin-model is tested on the data from
+the 2005 Automatic Content Extraction (ACE)
+task and the proposed model performs bet-
+ter than a thresholding baseline without tuning
+free parameter.
+1 Introduction
+Coreference resolution aims to find multiple mentions
+of an entity (e.g., PERSON, ORGANIZATION) in a
+document. In a typical machine learning-based coref-
+erence resolution system (Soon et al, 2001; Ng and
+Cardie, 2002b; Yang et al, 2003; Luo et al, 2004), a
+statistical model is learned from training data and is
+used to measure how likely an anaphor 1 is corefer-
+ential to a candidate antecedent. A related, but often
+overlooked, problem is that the anaphor may be non-
+coreferential to any candidate, which arises from sce-
+narios such as an identified anaphor is truly generic and
+1In this paper, ?anaphor? includes all kinds of phrases to
+be resolved, which can be named, nominal or pronominal
+phrases.
+there does not exist an antecedent in the discourse con-
+text, or an anaphor is the first mention (relative to pro-
+cessing order) in a coreference chain.
+In (Soon et al, 2001; Ng and Cardie, 2002b),
+the problem is treated by thresholding the scores re-
+turned by the coreference model. That is, if the max-
+imum coreference score is below a threshold, then the
+anaphor is deemed non-referential to any candidate an-
+tecedent. The threshold approach does not model non-
+coreferential events directly, and is by no means the op-
+timal approach to the problem. It also introduces a free
+parameter which has to be set by trial-and-error. As an
+improvement, Ng and Cardie (2002a) and Ng (2004)
+train a separate model to classify an anaphor as either
+anaphoric or non-anaphoric. The output of this clas-
+sifier can be used either as a pre-filter (Ng and Cardie,
+2002a) so that non-anaphoric anaphors will not be pre-
+cessed in the coreference system, or as a set of features
+in the coreference model (Ng, 2004). By rejecting any
+anaphor classified as non-anaphoric in coreference res-
+olution, the filtering approach is meant to handle non-
+anaphoric phrases (i.e., no antecedent exists in the dis-
+course under consideration), not the first mention in a
+coreference chain.
+In this paper, coreference is viewed as a process of
+sequential operations on anaphor mentions: an anaphor
+can either be linked with its antecedent if the antecedent
+is available or present. If the anaphor, on the other
+hand, is discourse new (relative to the process order),
+then a new entity is created. Corresponding to the two
+types of operations, a twin-model is proposed to re-
+solve coreferential relationships in a document. The
+first component is a statistical model measuring how
+likely an anaphor is coreferential to a candidate an-
+tecedent; The second one explicitly models the non-
+73
+coreferential events. Both models are trained automat-
+ically and are used simultaneously in the coreference
+system. The twin-model coreference system is tested
+on the 2005 ACE (Automatic Content Extraction, see
+(NIST, 2005)) data and the best performance under
+both ACE-Value and entity F-measure can be obtained
+without tuning a free parameter.
+The rest of the paper is organized as follows. The
+twin-model is presented in Section 2. A maximum-
+entropy implementation and features are then presented
+in Section 3. The experimental results on the 2005
+ACE data is presented in Section 4. The proposed twin-
+model is compared with related work in Section 5 be-
+fore the paper is concluded.
+2 Coreference Model
+A phrasal reference to an entity is called a mention. A
+set of mentions referring to the same physical object is
+said to belong to the same entity. For example, in the
+following sentence:
+(I) John said Mary was his sister.
+there are four mentions: John, Mary, his, and
+sister. John and his belong to the same entity
+since they refer to the same person; So do Mary and
+sister. Furthermore, John and Mary are named
+mentions, sister is a nominal mention and his is a
+pronominal mention.
+In our coreference system, mentions are processed
+sequentially, though not necessarily in chronological
+order. For a document with n mentions {mi : 1 ? i ?
+n}, at any time t(t > 1), mention m1 through mt?1
+have been processed and each mention is placed in one
+of Nt(Nt ? (t?1)) entities: Et = {ej : 1 ? j ? Nt}.
+Index i in mi indicates the order in which it is pro-
+cessed, not necessarily the order in which it appears in
+a document. The basic step is to extend Et to Et+1
+with mt.
+Let us use the example in Figure 1 to illustrate how
+this is done. Note that Figure 1 contains one possible
+processing order for the four mentions in Example (I):
+first name mentions are processed, followed by nom-
+inal mentions, followed by pronominal mentions. At
+time t = 1, there is no existing entity and the mention
+m1=John is placed in an initial entity (entity is signi-
+fied by a solid rectangle). At time t = 2, m2=Mary
+is processed and a new entity containing Mary is cre-
+ated. At time t = 3, the nominal mention m3=sister
+is processed. At this point, the set of existing entities
+E3 =
+{
+{John}, {Mary}
+}
+.
+m3 is linked with the existing entity {Mary}. At the
+last step t = 4, the pronominal mention his is linked
+with the entity {John}.
+The above example illustrates how a sequence of
+coreference steps lead to a particular coreference result.
+Conversely, if the processing order is known and fixed,
+every possible coreference result can be decomposed
+and mapped to a unique sequence of such coreference
+steps. Therefore, if we can score the set of coreference
+sequences, we can score the set of coreference results
+as well.
+In general, when determining if a mention mt is
+coreferential with any entity in Et, there are two types
+of actions: one is that mt is coreferential with one of
+the entities; The other is that mt is not coreferential
+with any. It is important to distinguish the two cases
+for the following reason: if mt is coreferential with an
+entity ej , in most cases it is sufficient to determine the
+relationship by examining mt and ej , and their local
+context; But if mt is not coreferential with any existing
+entities, we need to consider mt with all members in
+Et. This observation leads us to propose the following
+twin-model for coreference resolution.
+The first model, P (L|ej , mt), is conditioned on an
+entity ej and the current mention mt and measure how
+likely they are coreferential. L is a binary variable, tak-
+ing value 1 or 0, which represents positive and nega-
+tive coreferential relationship, respectively. The second
+model, on the other hand, P (C|Et, mt), is conditioned
+on the past entities Et and the current mention mt. The
+random variable C is also binary: when C is 1, it means
+that a new entity {mt} will be created. In other words,
+the second model measures the probability that mt is
+not coreferential to any existing entity. To avoid con-
+fusion in the subsequent presentation, the first model
+will be written as Pl(?|ej , mt) and called link model;
+The second model is written as Pc(?|Et, mt) and called
+creation model.
+For the time being, let?s assume that we have the link
+and creation model at our disposal, and we will show
+how they can be used to score coreference decisions.
+Given a set of existing entities Et = {ej}Nt1 , formed
+by mentions {mi}t?1i=1, and the current mention mt,
+there are Nt + 1 possible actions: we can either link
+mt with an existing entity ej (j = 1, 2, ? ? ? , Nt), or
+create a new entity containing mt. The link action be-
+tween ej and mt can be scored by Pl(1|ej , mt) while
+the creation action can be measured by Pc(1|Et, mt).
+Each possible coreference outcome consists of n such
+actions {at : t = 1, 2, ? ? ? , n}, each of which can be
+scored by either the link model Pl(?|ej , mt) or the cre-
+74
+John
+John
+Mary
+John
+Mary
+sister
+John
+his
+Mary
+sister
+John Mary sister his
+t=1 t=2 t=3 t=4
+E1={}
+m3 m4m2m1
+E3E2 E4
+Figure 1: Coreference process for the four mentions in Example (I). Mentions in a document are processed se-
+quentially: first name mentions, then nominal mentions, and then pronominal mentions. A dashed arrow signifies
+that a new entity is created, while a solid arrow means that the current mention is linked with an existing entity.
+ation model Pc(?|Et, mt). Denote the score for ac-
+tion at by S(at|at?11 ), where dependency of at on
+a1 through at?1 is emphasized. The coreference re-
+sult corresponding to the action sequence is written as
+En({ai}ni=1). When it is clear from context, we will
+drop {ai}ni=1 and write En only.
+With this notation, the score for a coreference out-
+come En({ai}ni=1) is the product of individual scores
+assigned to the corresponding action sequence {ai}ni=1,
+and the best coreference result is the one with the high-
+est score:
+E?n = arg max
+En
+S(En)
+= arg max
+{at}n1
+n
+?
+t=1
+S(at|at?11 ). (1)
+Given n mentions, the number of all possible
+entity outcomes is the Bell Number (Bell, 1934):
+B(n) = 1e
+??
+k=0
+kn
+k! . Exhaustive search is out of the
+question. Thus, we organize hypotheses into a Bell
+Tree (Luo et al, 2004) and use a beam search with the
+following pruning strategy: first, a maximum beam size
+(typically 20) S is set, and we keep only the top S hy-
+potheses; Second, a relative threshold r (we use 10?5)
+is set to prune any hypothesis whose score divided by
+the maximum score falls below the threshold.
+To give an concrete example, we use the example
+in Figure 1 again. The first step at t = 1 creates a
+new entity and is therefore scored by Pc(1|{},John);
+the second step also creates an entity and is scored
+by Pc(1|{John},Mary); the step t = 3, how-
+ever, links sister with {Mary} and is scored by
+Pl(1|{Mary},sister); Similarly, the last step is
+scored by Pl(1|{John},his). The score for this
+coreference outcome is the product of the four num-
+bers:
+S(
+{
+{John,his}, {Mary,sister}
+}
+)
+=Pc(1|{},John)Pc(1|{John},Mary)?
+Pl(1|{Mary},sister)?
+Pl(1|{John},his). (2)
+Other coreference results for these four mentions can
+be scored similarly. For example, if his at the last
+step is linked with {Mary,sister}, the score would
+be:
+S(
+{
+{John}, {Mary,sister,his}
+}
+)
+=Pc(1|{},John)Pc(1|{John},Mary)?
+Pl(1|{Mary},sister)?
+Pl(1|{Mary,sister},his). (3)
+At testing time, (2) and (3), among other possible out-
+comes, will be searched and compared, and the one
+with the highest score will be output as the coreference
+result.
+Examples in (2) and (3) indicate that the link model
+Pl(?|ej , mt) and creation model Pc(?|Et, mt) form an
+integrated coreference system and are applied simul-
+taneously at testing time. As will be shown in the next
+section, features in the creation model Pc(?|Et, mt) can
+be computed from their counterpart in the link model
+Pl(?|ej , mt) under some mild constraints. So the two
+models? training procedures are tightly coupled. This
+is different from (Ng and Cardie, 2002a; Ng, 2004)
+where their anaphoricty models are trained indepen-
+dently of the coreference model, and it is either used
+as a pre-filter, or its output is used as features in the
+coreference model. The creation model Pc(?|Et, mt)
+proposed here bears similarity to the starting model
+75
+in (Luo et al, 2004). But there is a crucial differ-
+ence: the starting model in (Luo et al, 2004) is an
+ad-hoc use of the link scores and is not learned auto-
+matically, while Pc(?|Et, mt) is fully trained. Training
+Pc(?|Et, mt) is covered in the next section.
+3 Implementation
+3.1 Feature Structure
+To implement the twin model, we adopt the log linear
+or maximum entropy (MaxEnt) model (Berger et al,
+1996) for its flexibility of combining diverse sources of
+information. The two models are of the form:
+Pl(L|ej , mt) =
+exp
+(
+?
+k ?kgk(ej , mt, L)
+)
+Y (ej , mt)
+(4)
+Pc(C|Et, mt) =
+exp
+(
+?
+i ?ihi(Et, mt, C)
+)
+Z(Et, mt)
+, (5)
+where L and C are binary variables indicating either
+mt is coreferential with ej , or mt is used to create a
+new entity. Y (ej , mt) and Z(ej , mt) are normalization
+factors to ensure that Pl(?|ej , mt) and Pc(?|Et, mt) are
+probabilities; ?k and ?i are the weights for feature
+gk(ej , mt, L) and hi(Et, mt, C), respectively. Once
+the set of features functions are selected, algorithm
+such as improved iterative scaling (Berger et al, 1996)
+or sequential conditional generalized iterative scal-
+ing (Goodman, 2002) can be used to find the optimal
+parameter values of {?k} and {?i}.
+Computing features {gk(ej , mt, ?)} for the link
+model Pl(L|ej , mt) 2 is relatively straightforward:
+given an entity ej and the current mention mt, we
+just need to characterize things such as lexical similar-
+ity, syntactic relationship, and/or semantic compatibil-
+ity of the two. It is, however, very challenging to com-
+pute the features {hi(Et, mt, ?)} for the creation model
+Pc(?|Et, mt) since its conditioning includes a set of en-
+tities Et, whose size grows as more and more mentions
+are processed. The problem exists because the decision
+of creating a new entity with mt has to be made after
+examining all preceding entities. There is no reason-
+able modeling assumption one can make to drop some
+entities in the conditioning.
+To overcome the difficulty, we impose the follow-
+ing constraints on the features of the link and creation
+2The link model is actually implemented as:
+Pl(L|ej , mt) ? maxm??ej P?l(L|ej , m?, mt). Some
+features are computed on a pair of mentions (m?, mt) while
+some are computed at entity level. See (Luo and Zitouni,
+2005) and (Daume? III and Marcu, 2005).
+model:
+gk(ej , mt, L) =g(1)k (ej , mt)g
+(2)
+k (L) (6)
+hi(Et, mt, C) =h(1)i
+(
+{g(1)k (e, mt) : e ? Et}
+)
+?
+h(2)i (C), for some k. (7)
+(6) states that a feature in the link model is separable
+and can be written as a product of two functions: the
+first one, g(1)k (?, ?), is a binary function depending on
+the conditioning part only; the second one, g(2)k (?), is
+an indicator function depending on the prediction part
+L only. Like g(2)k (?), h
+(2)
+i (?) is also a binary indicator
+function.
+(7) implies that features in the creation model
+are also separable; Moreover, the conditioning part
+h(1)i
+(
+{g(1)k (e, mt) : e ? Et}
+)
+, also a binary function,
+only depends on the function values of the set of link
+features {g(1)k (e, mt) : e ? Et} (for some k). In other
+words, once {g(1)k (e, mt) : e ? Et} and C are known,
+we can compute hi(Et, mt, C) without actually com-
+paring mt with any entity in Et. Using binary features
+is a fairly mild constraint as non-binary features can be
+replaced by a set of binary features through quantiza-
+tion.
+How fast h(1)i
+(
+{g(1)k (e, mt) : e ? Et}
+)
+can be com-
+puted depends on how h(1)i is defined. In most cases
+? as will be shown in Section 3.2, it boils down test-
+ing if any member in {g(1)k (e, mt) : e ? Et} is non-
+zero; or counting how many non-zero members there
+are in {g(1)k (e, mt) : e ? Et}. Both are simple op-
+erations that can be carried out quickly. Thus, the as-
+sumption (7) makes it possible to compute efficiently
+hi(Et, mt, C).
+3.2 Features in the Creation Model
+We describe features used in our coreference system.
+We will concentrate on features used in the creation
+model since those in the link model can be found in
+the literature (Soon et al, 2001; Ng and Cardie, 2002b;
+Yang et al, 2003; Luo et al, 2004). In particular,
+we show how features in the creation model can be
+computed from a set of feature values from the link
+model for a few example categories. Since g(2)k (?) and
+h(2)i (?) are simple indicator functions, we will focus on
+g(1)k (?, ?) and h
+(1)
+i (?).
+3.2.1 Lexical Features
+This set of features computes if two surface strings
+(spellings of two mentions) match each other, and are
+76
+applied to name and nominal mentions only. For the
+link model, a lexical feature g(1)k (ej , mt) is 1 if ej con-
+tains a mention matches mt, where a match can be ex-
+act, partial, or one is an acronym of the other.
+Since gk(ej , mt) is binary, one corresponding fea-
+ture used in the creation model is the disjunction of the
+values in the link model, or
+h(1)i (Et, mt) = ?e?Et{g
+(1)
+k (e, mt)}, (8)
+where ? is a binary ?or? operator. The intuition is that
+if there is any mention in Et matching mt, then the
+probability to create a new entity with mt should be
+low; Conversely, if none of the mentions in Et matches
+mt, then mt is likely to be the first mention of a new
+entity.
+Take t = 2 in Figure 1 as an example. There is
+only one partially-established entity {John}, so E2 =
+{John}, and m2 = Mary. The exact string match
+feature g(1)em(?, ?) would be
+g(1)em({John},Mary) = 0,
+and the corresponding string match feature in the cre-
+ation model is
+h(1)em({John},Mary) = ?e?Et{g(1)em(e,Mary)}
+= 0.
+Disjunction is not the only operation we can use.
+Another possibility is counting how many times mt
+matches mentions in Et, so (8) becomes:
+h(1)i (Et, mt) = Q
+[
+?
+e?Et
+{g(1)k (e, mt)}
+]
+, . (9)
+where Q[?] quantizes raw counts into bins.
+3.2.2 Attribute Features
+In the link model, features in this category compare
+the properties of the current mention mt with that of an
+entity ej . Properties of a mention or an entity, when-
+ever applicable, include gender, number, entity type,
+reflexivity of pronouns etc. Similar to what done in
+the lexical feature, we again synthesize a feature in the
+creation model by taking the disjunction of the corre-
+sponding set of feature values in the link model, or
+h(1)i (Et, mt) = ?e?Et{g
+(1)
+k (e, mt)},
+where g(1)k (e, mt) takes value 1 if entity e and mention
+mt share the same property; Otherwise its value is 0.
+The intuition is that if there is an entity having the same
+property as the current mention, then the probability for
+the current mention to be linked with the entity should
+be higher than otherwise; Conversely, if none of the en-
+tities in Et shares a property with the current mention,
+the probability for the current mention to create a new
+entity ought to be higher.
+Consider the gender attribute at t = 4 in Fig-
+ure 1. Let g(1)gender(?, ?) be the gender feature in the
+link model, assume that we know the gender of John,
+Mary and his. Then g(1)gender({{John},his) is 1,
+while g(1)gender({Mary, sister},his) is 0. There-
+fore, the gender feature for the creation model would
+be
+h(1)gender(
+{
+{John},{Mary, sister}
+}
+, his)
+=0 ? 1 = 1,
+which means that there is at least one mention which
+has the same the gender of the current mention mt.
+3.2.3 Distance Feature
+Distance feature needs special treatment: while it
+makes sense to talk about the distance between a pair
+of mentions, it is not immediately clear how to compute
+the distance between a set of entities Et and a mention
+mt. To this end, we compute the minimum distance be-
+tween the entities and the current mention with respect
+to a ?fired? link feature, as follows.
+For a particular feature g(1)k (?, ?) in the link model,
+define the minimum distance to be
+d?(Et, mt; gk) = min{d(m, mt) : m ? Et,
+and g(1)k (m, mt) = 1}, (10)
+where d(m, mt) is the distance between mention mand
+mt. The distance itself can be the number of tokens,
+or the number of intervening mentions, or the number
+of sentences. The minimum distance d?(Et, mt; gk) is
+quantized and represented as binary feature in the cre-
+ation model. The idea here is to encode what is the
+nearest place where a feature fires.
+Again as an example, consider the gender attribute at
+t = 4 in Figure 1. Assuming that d(m, mt) is the num-
+ber of tokens. Since only John matches the gender of
+his,
+d?(E4, m4; ggender) = 3.
+The number is then quantized and used as a binary fea-
+ture to encode the information that ?there is a mention
+whose gender matches the current mention within in a
+token distance range including 3.?
+77
+In general, binary features in the link model which
+measure the similarity between an entity and a mention
+can be turned into features in the creation model in the
+same manner as described in Section 3.2.1 and 3.2.2.
+For example, syntactic features (Ng and Cardie, 2002b;
+Luo and Zitouni, 2005) can be computed this way and
+are used in our system.
+4 Experiments
+4.1 Data and Evaluation Metric
+We report the experimental results on ACE 2005
+data (NIST, 2005). The dataset consists of 599 doc-
+uments from a rich and diversified sources, which in-
+clude newswire articles, web logs, and Usenet posts,
+transcription of broadcast news, broadcast conversa-
+tions and telephone conversations. We reserve the last
+16% documents of each source as the test set and use
+the rest of the documents as the training set. Statistics
+such as the number of documents, words, mentions and
+entities of this data split is tabulated in Table 1.
+DataSet #Docs #Words #Mentions #Entities
+Training 499 253771 46646 16102
+Test 100 45659 8178 2709
+Total 599 299430 54824 18811
+Table 1: Statistics of ACE 2005 data: number of docu-
+ments, words, mentions and entities in the training and
+test set.
+The link and creation model are trained at the same
+time. Besides the basic feature categories described in
+Section 3.2, we also compute composite features by
+taking conjunctions of the basic features. Features are
+selected by their counts with a threshold of 8.
+ACE-Value is the official score reported in the ACE
+task and will be used to report our coreference system?s
+performance. Its detailed definition can be found in the
+official evaluation document 3. Since ACE-Value is a
+weighted metric measuring a coreference system?s rel-
+ative value, and it is not sensitive to certain type of
+errors (e.g., false-alarm entities if these entities con-
+tain correct mentions), we also report results using un-
+weighted entity F-measure.
+4.2 Results
+To compare the proposed twin model with simple
+thresholding (Soon et al, 2001; Ng and Cardie, 2002b),
+3The official evaluation document can be found at:
+www.nist.gov/speech/tests/ace/ace05/doc/
+ace05-evalplan.v3.pdf.
+ 55
+ 60
+ 65
+ 70
+ 75
+ 80
+ 85
+ 90
+ 95
+ 0.1  0.2  0.3  0.4  0.5  0.6  0.7  0.8  0.9
+Pe
+rfo
+rm
+an
+ce
+Threshold
+Performances vs. Threshold
+Baseline-EntF
+Twin-EntF
+Baseline-ACEVal
+Twin-ACEVal
+Figure 2: Performance comparison between a thresh-
+olding baseline and the twin-model: lines with square
+points are the entity F-measure (x100) results; lines
+with triangle points are ACE-Value (in %). Solid lines
+are baseline while dashed lines are twin-model.
+we first train our twin model. To simulate the thresh-
+olding approach, a baseline coreference system is cre-
+ated by replacing the creation model with a constant,
+i.e.,
+Pc(1|Et, mt) = ?, (11)
+where ? is a number between 0 and 1. At testing time,
+a new entity is created with score ? when
+Pl(1|ej , mt) < ?, ?ej ? Et.
+The decision rule simply implies that if the scores be-
+tween the current mention mt and all candidate entities
+ej ? Et are below the threshold ?, a new entity will be
+created.
+Performance comparison between the baseline and
+the twin-model is plotted in Figure 2. X-axis is the
+threshold varying from 0.1 to 0.9 with a step size 0.1.
+Two metrics are used to compare the results: two lines
+with square data points are the entity F-measure results,
+and two lines with triangle points are ACE-Value. Note
+that performances for the twin-model are constant since
+it does not use thresholding.
+As shown in the graph, the twin-model (two dashed
+lines) always outperforms the baseline (two solid
+lines). A ?bad? threshold impacts the entity F-measure
+much more than ACE-Value, especially in the region
+with high threshold value. Note that a large ? will lead
+to more false-alarm entities. The graph suggests that
+ACE-Value is much less sensitive than the un-weighted
+F-measure in measuring false-alarm errors. For exam-
+ple, at ? = 0.9, the baseline F-measure is 0.591 while
+78
+the twin model F-measure is 0.848, a 43.5% difference;
+On the other hand, the corresponding ACE-Values are
+84.5% (baseline) vs. 88.4% (twin model), a mere 4.6%
+relative difference. There are at least two reasons: first,
+ACE-Value discounts importance of nominal and pro-
+noun entities, so more nominal and pronoun entity er-
+rors are not reflected in the metric; Second, ACE-Value
+does not penalize false-alarm entities if they contain
+correct mentions. The problem associated with ACE-
+Value is the reason we include the entity F-measure re-
+sults.
+Another interesting observation is that an optimal
+threshold for the entity F-measure is not necessarily op-
+timal for ACE-Value, and vice versa: ? = 0.3 is the
+best threshold for the entity F-measure, while ? = 0.5
+is optimal for ACE-Value. This is highlighted in Ta-
+ble 2, where row ?B-opt-F? contains the best results op-
+timizing the entity F-measure (at ? = 0.3), row ?B-opt-
+AV? contains the best results optimizing ACE-Value (at
+? = 0.5), and the last line ?Twin-model? contains the
+results of the proposed twin-model. It is clear from
+Table 2 that thresholding cannot be used to optimize
+the entity F-measure and ACE-Value simultaneously.
+A sub-optimal threshold could be detrimental to an un-
+weighted metric such as the entity F-measure. The pro-
+posed twin model eliminates the need for threshold-
+ing, a benefit of using the principled creation model.
+In practice, the optimal threshold is a free parameter
+that has to be tuned every time when a task, dataset and
+model changes. Thus the proposed twin model is more
+portable when a task or dataset changes.
+System F-measure ACE-Value
+B-opt-F 84.7 87.5
+B-opt-AV 81.1 88.0
+Twin-model 84.8 88.4
+Table 2: Comparison between the thresholding base-
+line and the twin model: optimal threshold depends on
+performance metric. The proposed twin-model outper-
+forms the baseline without tuning the free parameter.
+5 Related Work
+Some earlier work (Lappin and Leass, 1994; Kennedy
+and Boguraev, 1996) use heuristic to determine
+whether a phrase is anaphoric or not. Bean and Riloff
+(1999) extracts rules from non-anaphoric noun phrases
+and noun phrases patterns, which are then applied to
+test data to identify existential noun phrases. It is in-
+tended as as pre-filtering step before a coreference res-
+olution system is run. Ng and Cardie (2002a) trains a
+separate anaphoricity classifier in addition to a corefer-
+ence model. The anaphoricity classifier is applied as a
+filter and only anaphoric mentions are later considered
+by the coreference model. Ng (2004) studies what is
+the best way to make use of anaphoricity information
+and concludes that the constrained-based and globally-
+optimized approach works the best. Poesio et al (2004)
+contains a good summary of recent research work on
+discourse new or anaphoricity. Luo et al (2004) uses
+a start model to determine whether a mention is the
+first one in a coreference chain, but it is computed ad
+hoc without training. Nicolae and Nicolae (2006) con-
+structs a graph where mentions are nodes and an edge
+represents the likelihood two mentions are in an entity,
+and then a graph-cut algorithm is employed to produce
+final coreference results.
+We take the view that determining whether an
+anaphor is coreferential with any candidate antecedent
+is part of the coreference process. But we do recog-
+nize that the disparity between the two types of events:
+while a coreferential relationship can be resolved by
+examining the local context of the anaphor and its an-
+tecedent, it is necessary to compare the anaphor with
+all the preceding candidates before it can be declared
+that it is not coreferential with any. Thus, a creation
+component Pc(?|Et, mt) is needed to model the second
+type of events. A problem arising from the adoption of
+the creation model is that it is very expensive to have
+a conditional model depending on all preceding enti-
+ties Et. To solve this problem, we adopt the MaxEnt
+model and impose some reasonable constraints on the
+feature functions, which makes it possible to synthe-
+size features in the creation model from those of the
+link model. The twin model components are intimately
+trained and used simultaneously in our coreference sys-
+tem.
+6 Conclusions
+A twin-model is proposed for coreference resolution:
+one link component computes how likely a mention is
+coreferential with a candidate entity; the other compo-
+nent, called creation model, computes the probability
+that a mention is not coreferential with any candidate
+entity. Log linear or MaxEnt approach is adopted for
+building the two components. The twin components
+are trained and used simultaneously in our coreference
+system.
+The creation model depends on all preceding enti-
+ties and is often expensive to compute. We impose
+some reasonable constraints on feature functions which
+79
+makes it feasible to compute efficiently the features in
+the creation model from a subset of link feature val-
+ues. We test the proposed twin-model on the ACE 2005
+data and the proposed model outperforms a threshold-
+ing baseline. Moreover, it is observed that the optimal
+threshold in the baseline depends on performance met-
+ric, while the proposed model eliminates the need of
+tuning the optimal threshold.
+Acknowledgments
+This work was partially supported by the Defense Ad-
+vanced Research Projects Agency under contract No.
+HR0011-06-2-0001. The views and findings contained
+in this material are those of the authors and do not
+necessarily reflect the position or policy of the U.S.
+government and no official endorsement should be in-
+ferred.
+I would like to thank Salim Roukos for helping to
+improve the writing of the paper. Suggestions and com-
+ments from three anonymous reviewers are also grate-
+fully acknowledged.
+References
+David L. Bean and Ellen Riloff. 1999. Corpus-based
+identification of non-anaphoric noun phrases. In
+Proc. ACL.
+E.T. Bell. 1934. Exponential numbers. Amer. Math.
+Monthly, pages 411?419.
+Adam L. Berger, Stephen A. Della Pietra, and Vincent
+J. Della Pietra. 1996. A maximum entropy approach
+to natural language processing. Computational Lin-
+guistics, 22(1):39?71, March.
+Hal Daume? III and Daniel Marcu. 2005. A large-
+scale exploration of effective global features for a
+joint entity detection and tracking model. In Proc. of
+HLT and EMNLP, pages 97?104, Vancouver, British
+Columbia, Canada, October. Association for Com-
+putational Linguistics.
+Joshua Goodman. 2002. Sequential conditional gener-
+alized iterative scaling. In Pro. of the 40th ACL.
+Christopher Kennedy and Branimir Boguraev. 1996.
+Anaphora for everyone: Pronominal anaphora reso-
+lution without a parser. In Proceedings of COLING-
+96 (16th International Conference on Computa-
+tional Linguistics), Copenhagen,DK.
+Shalom Lappin and Herbert J. Leass. 1994. An algo-
+rithm for pronominal anaphora resolution. Compu-
+tational Linguistics, 20(4), December.
+Xiaoqiang Luo and Imed Zitouni. 2005. Multi-
+lingual coreference resolution with syntactic fea-
+tures. In Proc. of Human Language Technology
+(HLT)/Empirical Methods in Natural Language Pro-
+cessing (EMNLP).
+Xiaoqiang Luo, Abe Ittycheriah, Hongyan Jing, Nanda
+Kambhatla, and Salim Roukos. 2004. A mention-
+synchronous coreference resolution algorithm based
+on the bell tree. In Proc. of ACL.
+Vincent Ng and Claire Cardie. 2002a. Identifying
+anaphoric and non-anaphoric noun phrases to im-
+prove coreference resolution. In Proceedings of
+COLING.
+Vincent Ng and Claire Cardie. 2002b. Improving ma-
+chine learning approaches to coreference resolution.
+In Proc. of ACL, pages 104?111.
+Vincent Ng. 2004. Learning noun phrase anaphoric-
+ity to improve conference resolution: Issues in rep-
+resentation and optimization. In Proceedings of the
+42nd Meeting of the Association for Computational
+Linguistics (ACL?04), Main Volume, pages 151?158,
+Barcelona, Spain, July.
+Cristina Nicolae and Gabriel Nicolae. 2006. BEST-
+CUT: A graph algorithm for coreference resolution.
+In Proceedings of the 2006 Conference on Empiri-
+cal Methods in Natural Language Processing, pages
+275?283, Sydney, Australia, July. Association for
+Computational Linguistics.
+NIST. 2005. ACE 2005 evaluation.
+www.nist.gov/speech/tests/ace/ace05/index.htm.
+M. Poesio, O. Uryupina, R. Vieira, M. Alexandrov-
+Kabadjov, and R. Goulart. 2004. Discourse-new de-
+tectors for definite description resolution: A survey
+and a preliminary proposal. In ACL 2004: Workshop
+on Reference Resolution and its Applications, pages
+47?54, Barcelona, Spain, July.
+Wee Meng Soon, Hwee Tou Ng, and Chung Yong Lim.
+2001. A machine learning approach to coreference
+resolution of noun phrases. Computational Linguis-
+tics, 27(4):521?544.
+Xiaofeng Yang, Guodong Zhou, Jian Su, and
+Chew Lim Tan. 2003. Coreference resolution us-
+ing competition learning approach. In Proc. of the
+41st ACL.
+80

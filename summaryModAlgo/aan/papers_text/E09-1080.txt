@@ -1,0 +1,905 @@
+Proceedings of the 12th Conference of the European Chapter of the ACL, pages 701?709,
+Athens, Greece, 30 March ? 3 April 2009. c?2009 Association for Computational Linguistics
+Unsupervised Methods for Head Assignments
+Federico Sangati, Willem Zuidema
+Institute for Logic, Language and Computation
+University of Amsterdam, the Netherlands
+{f.sangati,zuidema}@uva.nl
+Abstract
+We present several algorithms for assign-
+ing heads in phrase structure trees, based
+on different linguistic intuitions on the role
+of heads in natural language syntax. Start-
+ing point of our approach is the obser-
+vation that a head-annotated treebank de-
+fines a unique lexicalized tree substitution
+grammar. This allows us to go back and
+forth between the two representations, and
+define objective functions for the unsu-
+pervised learning of head assignments in
+terms of features of the implicit lexical-
+ized tree grammars. We evaluate algo-
+rithms based on the match with gold stan-
+dard head-annotations, and the compar-
+ative parsing accuracy of the lexicalized
+grammars they give rise to. On the first
+task, we approach the accuracy of hand-
+designed heuristics for English and inter-
+annotation-standard agreement for Ger-
+man. On the second task, the implied lex-
+icalized grammars score 4% points higher
+on parsing accuracy than lexicalized gram-
+mars derived by commonly used heuris-
+tics.
+1 Introduction
+The head of a phrasal constituent is a central
+concept in most current grammatical theories and
+many syntax-based NLP techniques. The term is
+used to mark, for any nonterminal node in a syn-
+tactic tree, the specific daughter node that fulfills
+a special role; however, theories and applications
+differ widely in what that special role is supposed
+to be. In descriptive grammatical theories, the
+role of the head can range from the determinant of
+agreement or the locus of inflections, to the gover-
+nor that selects the morphological form of its sis-
+ter nodes or the constituent that is distributionally
+equivalent to its parent (Corbett et al, 2006).
+In computational linguistics, heads mainly
+serve to select the lexical content on which the
+probability of a production should depend (Char-
+niak, 1997; Collins, 1999). With the increased
+popularity of dependency parsing, head annota-
+tions have also become a crucial level of syntac-
+tic information for transforming constituency tree-
+banks to dependency structures (Nivre et al, 2007)
+or richer syntactic representations (e.g., Hocken-
+maier and Steedman, 2007).
+For the WSJ-section of the Penn Treebank, a set
+of heuristic rules for assigning heads has emerged
+from the work of (Magerman, 1995) and (Collins,
+1999) that has been employed in a wide variety of
+studies and proven extremely useful, even in rather
+different applications from what the rules were
+originally intended for. However, the rules are
+specific to English and the treebank?s syntactic an-
+notation, and do not offer much insights into how
+headedness can be learned in principle or in prac-
+tice. Moreover, the rules are heuristic and might
+still leave room for improvement with respect to
+recovering linguistic head assignment even on the
+Penn WSJ corpus; in fact, we find that the head-
+assignments according to the Magerman-Collins
+rules correspond only in 85% of the cases to de-
+pendencies such as annotated in PARC 700 De-
+pendency Bank (see section 5).
+Automatic methods for identifying heads are
+therefore of interest, both for practical and more
+fundamental linguistic reasons. In this paper we
+investigate possible ways of finding heads based
+on lexicalized tree structures that can be extracted
+from an available treebank. The starting point
+of our approach is the observation that a head-
+annotated treebank (obeying the constraint that ev-
+ery nonterminal node has exactly one daughter
+marked as head) defines a unique lexicalized tree
+substitution grammar (obeying the constraint that
+every elementary tree has exactly one lexical an-
+chor). This allows us to go back and forth between
+701
+the two representations, and define objective func-
+tions for the unsupervised learning of head assign-
+ments in terms of features of the implicit Lexical-
+ized Tree Substitution Grammars.
+Using this grammar formalism (LTSGs) we will
+investigate which objective functions we should
+optimize for recovering heads. Should we try to
+reduce uncertainty about the grammatical frames
+that can be associated with a particular lexical
+item? Or should we assume that linguistic head
+assignments are based on the occurrence frequen-
+cies of the productive units they imply?
+We present two new algorithms for unsuper-
+vised recovering of heads ? entropy minimization
+and a greedy technique we call ?familiarity max-
+imization? ? that can be seen as ways to opera-
+tionalize these last two linguistic intuitions. Both
+algorithms are unsupervised, in the sense that they
+are trained on data without head annotations, but
+both take labeled phrase-structure trees as input.
+Our work fits well with several recent ap-
+proaches aimed at completely unsupervised learn-
+ing of the key aspects of syntactic structure: lex-
+ical categories (Schu?tze, 1993), phrase-structure
+(Klein and Manning, 2002; Seginer, 2007),
+phrasal categories (Borensztajn and Zuidema,
+2007; Reichart and Rappoport, 2008) and depen-
+dencies (Klein and Manning, 2004).
+For the specific task addressed in this paper ?
+assigning heads in treebanks ? we only know of
+one earlier paper: Chiang and Bikel (2002). These
+authors investigated a technique for identifying
+heads in constituency trees based on maximiz-
+ing likelihood, using EM, under a Tree Insertion
+Grammar (TIG)model1. In this approach, headed-
+ness in some sense becomes a state-split, allowing
+for grammars that more closely match empirical
+distributions over trees. The authors report some-
+what disappointing results, however: the automat-
+ically induced head-annotations do not lead to sig-
+nificantly more accurate parsers than simple left-
+most or rightmost head assignment schemes2.
+In section 2 we define the grammar model we
+will use. In section 3 we describe the head-
+assignment algorithms. In section 4, 5 and 6 we
+1The space over the possible head assignments that these
+authors consider ? essentially regular expressions over CFG
+rules ? is more restricted than in the current work where we
+consider a larger ?domain of locality?.
+2However, the authors? approach of using EM for induc-
+ing latent information in treebanks has led to extremely ac-
+curate constituency parsers, that neither make use of nor pro-
+duce headedness information; see (Petrov et al, 2006)
+then describe our evaluations of these algorithms.
+2 Lexicalized Tree Grammars
+In this section we define Lexicalised Tree Substi-
+tution Grammars (LTSGs) and show how they can
+be read off unambiguously from a head-annotated
+treebank. LTSGs are best defined as a restriction
+of the more general Probabilistic Tree Substitution
+Grammars, which we describe first.
+2.1 Tree Substitution Grammars
+A tree substitution grammar (TSG) is a 4-tuple
+?Vn, Vt, S, T ? where Vn is the set of nonterminals;
+Vt is the set of of terminals; S ? Vn is the start
+symbol; and T is the set of elementary trees, hav-
+ing root and internal nodes in Vn and leaf nodes in
+Vn?Vt. Two elementary trees ? and ? can be com-
+bined by means of the substitution operation ? ??
+to produce a new tree, only if the root of ? has the
+same label of the leftmost nonterminal leaf of ?.
+The combined tree corresponds to ? with the left-
+most nonterminal leaf replaced with ?. When the
+tree resulting from a series of substitution opera-
+tions is a complete parse tree, i.e. the root is the
+start symbol and all leaf nodes are terminals, we
+define the sequence of the elementary trees used
+as a complete derivation.
+A probabilistic TSG defines a probabilistic
+space over the set of elementary trees: for every
+? ? T , P (?) ? [0, 1] and
+?
+? ?:r(? ?)=r(?) P (?
+?) =
+1, where r(?) returns the root node of ? . Assum-
+ing subsequent substitutions are stochastically in-
+dependent, we define the probability of a deriva-
+tion as the product of the probability of its elemen-
+tary trees. If a derivation d consists of n elemen-
+tary trees ?1 ? ?2 ? . . . ? ?n, we have:
+P (d) =
+n?
+i=1
+P (?i) (1)
+Depending on the set T of elementary trees, we
+might have different derivations producing the
+same parse tree. For any given parse tree t, we
+define ?(t) as the set of its derivations licensed by
+the grammar. Since any derivation d ? ?(t) is a
+possible way to construct the parse tree, we will
+compute the probability of a parse tree as the sum
+of the probabilities of its derivations:
+P (t) =
+?
+d??(t)
+?
+??d
+P (?) (2)
+702
+Lexicalized Tree Substitution Grammars are de-
+fined as TSGs with the following contraint on the
+set of elementary trees T : every ? in T must have
+at least one terminal (the lexical anchor) among
+its leaf nodes. In this paper, we are only con-
+cerned with single-anchored LTSGs, in which all
+elementary trees have exactly one lexical anchor.
+Like TSGs, LTSGs have a weak generative ca-
+pacity that is context-free; but whereas PTSGs are
+both probabilistically and in terms of strong gen-
+erative capacity richer than PCFGs (Bod, 1998),
+LTSG are more restricted (Joshi and Schabes,
+1991). This limits the usefulness of LTSGs for
+modeling the full complexity of natural language
+syntax; however, computationally, LTSGs have
+many advantages over richer formalisms and for
+the current purposes represent a useful compro-
+mise between linguistic adequacy and computa-
+tional complexity.
+2.2 Extracting LTSGs from a head-annotated
+corpus
+In this section we will describe a method for as-
+signing to each word token that occurs in the cor-
+pus a unique elementary tree. This method de-
+pends on the annotation of heads in the treebank,
+such as for instance provided for the Penn Tree-
+bank by the Magerman-Collins head-percolation
+rules. We adopt the same constraint as used in this
+scheme, that each nonterminal node in every parse
+tree must have exactly one of its children anno-
+tated as head. Our method is similar to (Chiang,
+2000), but is even simpler in ignoring the distinc-
+tion between arguments and adjuncts (and thus the
+sister-adjunction operation). Figure 1 shows an
+example parse tree enriched with head-annotation:
+the suffix -H indicates that the specific node is the
+head of the production above it.
+S
+NP
+NNP
+Ms.
+NNP-H
+Haag
+VP-H
+V-H
+plays
+NP
+NNP-H
+Elianti
+Figure 1: Parse tree of the sentence ?Ms. Haag
+plays Elianti? annotated with head markers.
+Once a parse tree is annotated with head mark-
+ers in such a manner, we will be able to extract
+for every leaf its spine. Starting from each lexical
+production we need to move upwards towards the
+root on a path of head-marked nodes until we find
+the first internal node which is not marked as head
+or until we reach the root of the tree. In the ex-
+ample above, the verb of the sentence ?plays? is
+connected through head-marked nodes to the root
+of the tree. In this way we can extract the 4 spines
+from the parse tree in figure 1, as shown in fig-
+ure 2.
+NNP
+Ms.
+NP
+NNP-H
+Haag
+S-H
+VP-H
+V-H
+plays
+NP
+NNP-H
+Elianti
+Figure 2: The lexical spines of the tree in fig. 1.
+It is easy to show that this procedure yields a
+unique spine for each of its leaves, when applied
+to a parse tree where all nonterminals have a single
+head-daughter and all terminals are generated by a
+unary production. Having identified the spines, we
+convert them to elementary trees, by completing
+every internal node with the other daughter nodes
+not on the spine. In this way we have defined a
+way to obtain a derivation of any parse tree com-
+posed of lexical elementary trees. The 4 elemen-
+tary trees completed from the previous paths are in
+figure 3 with the substitution sites marked with ?.
+NNP
+Ms.
+NP
+NNP? NNP-H
+Haag
+S-H
+NP? VP-H
+V-H
+plays
+NP?
+NP
+NNP-H
+Elianti
+Figure 3: The extracted elementary trees.
+3 Head Assignment Algorithms
+We investigate two novel approaches to automat-
+ically assign head dependencies to a training cor-
+pus where the heads are not annotated: entropy
+minimization and familiarity maximization. The
+baselines for our experiments will be given by the
+Magerman and Collins scheme together with the
+random, the leftmost daughter, and the rightmost
+daughter-based assignments.
+703
+3.1 Baselines
+The Magerman-Collins scheme, and very similar
+versions, are well-known and described in detail
+elsewhere (Magerman, 1995; Collins, 1999; Ya-
+mada and Matsumoto, 2003); here we just men-
+tion that it is based on a number of heuristic rules
+that only use the labels of nonterminal nodes and
+the ordering of daughter nodes. For instance if the
+root label of a parse tree is S, the head-percolation
+scheme will choose to assign the head marker to
+the first daughter from the left, labeled with TO.
+If no such label is present, it will look for the first
+IN. If no IN is found, it will look for the first VP,
+and so on. We used the freely available software
+?Treep? (Chiang and Bikel, 2002) to annotate the
+Penn WSJ treebank with heads.
+We consider three other baselines, that are ap-
+plicable to other treebanks and other languages as
+well: RANDOM, where, for every node in the tree-
+bank, we choose a random daughter to be marked
+as head; LEFT, where the leftmost daughter is
+marked; and RIGHT, where the rightmost daughter
+is marked.
+3.2 Minimizing Entropy
+In this section we will describe an entropy based
+algorithm, which aims at learning the simplest
+grammar fitting the data. Specifically, we take a
+?supertagging? perspective (Bangalore and Joshi,
+1999) and aim at reducing the uncertainty about
+which elementary tree (supertag) to assign to a
+given lexical item. We achieve this by minimizing
+an objective function based on the general defini-
+tion of entropy in information theory.
+The entropy measure that we are going to de-
+scribe is calculated from the bag of lexicalized el-
+ementary trees T extracted from a given training
+corpus of head annotated parse trees. We define
+Tl as a discrete stochastic variable, taking as val-
+ues the elements from the set of all the elementary
+trees having l as lexical anchor {?l1 , ?l2 , . . . , ?ln}.
+Tl thus takes n possible values with specific prob-
+abilities; its entropy is then defined as:
+H(Tl) = ?
+n?
+i=1
+p(?li) log2 p(?li) (3)
+The most intuitive way to assign probabilities to
+each elementary tree is considering its relative fre-
+quency in T . If f(?) is the frequency of the frag-
+ment ? and f(l) is the total frequency of fragments
+with l as anchor we will have:
+p(?lj ) =
+f(?lj )
+f(lex(?lj ))
+=
+f(?lj )
+n?
+i=1
+f(?li))
+(4)
+We will then calculate the entropy H(T ) of our
+bag of elementary trees by summing the entropy of
+each single discrete stochastic variable Tl for each
+choice of l:
+H(T ) =
+|L |?
+l=1
+H(Tl) (5)
+In order to minimize the entropy, we apply a
+hill-climbing strategy. The algorithm starts from
+an already annotated tree-bank (for instance using
+the RANDOM annotator) and iteratively tries out
+a random change in the annotation of each parse
+tree. Only if the change reduces the entropy of the
+entire grammar it is kept. These steps are repeated
+until no further modification which could reduce
+the entropy is possible. Since the entropy measure
+is defined as the sum of the function p(?) log2 p(?)
+of each fragment ? , we do not need to re-calculate
+the entropy of the entire grammar, when modify-
+ing the annotation of a single parse tree. In fact:
+H(T ) = ?
+|L |?
+l=1
+n?
+i=1
+p(?li) log2 p(?li)
+= ?
+|T |?
+j=1
+p(?j) log2 p(?j)
+(6)
+For each input parse tree under consideration,
+the algorithm selects a non-terminal node and tries
+to change the head annotation from its current
+head-daughter to a different one. As an example,
+considering the parse tree of figure 1 and the inter-
+nal node NP (the leftmost one), we try to annotate
+its leftmost daughter as the new head. When con-
+sidering the changes that this modification brings
+on the set of the elementary trees T , we understand
+that there are only 4 elementary trees affected, as
+shown in figure 4.
+After making the change in the head annotation,
+we just need to decrease the frequencies of the old
+trees by one unit, and increase the ones of the new
+trees by one unit. The change in the entropy of our
+grammar can therefore be computed by calculat-
+ing the change in the partial entropy of these four
+704
+NP
+NNP NNP
+Haag
+NNP
+Ms.
+NP
+NNP
+Ms.
+NNP
+NNP
+Haag
+?h ?d ? ?h ?
+?
+d
+Figure 4: Lexical trees considered in the EN-
+TROPY algorithm when changing the head ass-
+ingnment from the second NNP to the first NNP
+of the leftmost NP node of figure 1. ?h is the old
+head tree; ?d the old dependent tree; ? ?d the new
+dependent tree; ? ?h the new head tree.
+elementary trees before and after the change. If
+such change results in a lower entropy of the gram-
+mar, the new annotation is kept, otherwise we go
+back to the previous annotation. Although there is
+no guarantee our algorithm finds the global min-
+imum, it is very efficient and succeeds in drasti-
+cally minimize the entropy from a random anno-
+tated corpus.
+3.3 Maximizing Familiarity
+The main intuition behind our second method is
+that we like to assign heads to a tree t in such
+a way that the elementary trees that we can ex-
+tract from t are frequently observed in other trees
+as well. That is, we like to use elementary trees
+which are general enough to occur in many possi-
+ble constructions.
+We start with building the bag of all one-anchor
+lexicalized elementary trees from the training cor-
+pus, consistent with any annotation of the heads.
+This operation is reminiscent of the extraction of
+all subtrees in Data-Oriented Parsing (Bod, 1998).
+Fortunately, and unlike DOP, the number of possi-
+ble lexicalised elementary trees is not exponential
+in sentence length n, but polynomial: it is always
+smaller than n2 if the tree is binary branching.
+Next, for each node in the treebank, we need
+to select a specific lexical anchor, among the ones
+it dominates, and annotate the nodes in the spine
+with head annotations. Our algorithm selects the
+lexical anchor which maximizes the frequency of
+the implied elementary tree in the bag of elemen-
+tary trees. In figure 5, algorithm 1 (right) gives the
+pseudo-code for the algorithm, and the tree (left)
+shows an example of its usage.
+3.4 Spine and POS-tag reductions
+The two algorithms described in the previous two
+sections are also evaluated when performing two
+possible generalization operations on the elemen-
+tary trees, which can be applied both alone or in
+combination:
+? in the spine reduction, lexicalized trees are
+transformed to their respective spines. This
+allows to merge elementary trees that are
+slightly differing in argument structures.
+? in the POStag reduction, every lexical item
+of every elementary tree is replaced by its
+POStag category. This allows for merging el-
+ementary trees with the same internal struc-
+ture but differing in lexical production.
+4 Implementation details
+4.1 Using CFGs for TSG parsing
+When evaluating parsing accuracy of a given
+LTSG, we use a CKY PCFG parser. We will
+briefly describe how to set up an LTSG parser us-
+ing the CFG formalism. Every elementary tree
+in the LTSG should be treated by our parser as
+a unique block which cannot be further decom-
+posed. But to feed it to a CFG-parser, we need
+to break it down into trees of depth 1. In order to
+keep the integrity of every elementary tree we will
+assign to its internal node a unique label. We will
+achieve this by adding ?@i? to each i-th internal
+node encountered in T .
+Finally, we read off a PCFG from the elemen-
+tary trees, assigning to each PCFG rule a weight
+proportional to the weight of the elementary tree it
+is extracted from. In this way the PCFG is equiv-
+alent to the original LTSG: it will produce exactly
+the same derivation trees with the same probabil-
+ities, although we would have to sum over (expo-
+nentially) many derivations to obtain the correct
+probabilities of a parse tree (derived tree). We ap-
+proximate parse probability by computing the n-
+best derivations and summing over the ones that
+yield the same parse tree (by removing the ?@i?-
+labels). We then take the parse tree with highest
+probability as best parse of the input sentence.
+4.2 Unknown words and smoothing
+We use a simple strategy to deal with unknown
+words occurring in the test set. We replace all the
+words in the training corpus occurring once, and
+all the unknown words in the test set, with a spe-
+cial *UNKNOWN* tag. Moreover we replace all
+the numbers in the training and test set with a spe-
+cial *NUMBER* tag.
+705
+Algorithm 1: MaximizeFamiliarity(N)
+Input: a non-terminal node N of a parsetree.
+begin
+L = null;MAX = ?1;
+foreach leaf l underN do
+?Nl = lex. tree rooted in N and anchored in l;
+F = frequency of ?Nl ;
+if F > MAX then
+L = l;MAX = F ;
+Mark all nodes in the path fromN to L with heads;
+foreach substitution siteNi of ?NL do
+MaximizeFamiliarity(Ni);
+end
+Figure 5: Left: example of a parse tree in an instantiation of the ?Familiarity? algorithm. Each arrow,
+connecting a word to an internal node, represents the elementary tree anchored in that word and rooted
+in that internal node. Numbers in parentheses give the frequencies of these trees in the bag of subtrees
+collected from WSJ20. The number below each leaf gives the total frequency of the elementary trees
+anchored in that lexical item. Right: pseudo-code of the ?Familiarity? algorithm.
+Even with unknown words treated in this way,
+the lexicalized elementary trees that are extracted
+from the training data are often too specific to
+parse all sentences in the test set. A simple strat-
+egy to ensure full coverage is to smooth with the
+treebank PCFG. Specifically, we add to our gram-
+mars all CFG rules that can be extracted from the
+training corpus and give them a small weight pro-
+portional to their frequency3. This in general will
+ensure coverage, i.e. that all the sentences in the
+test set can be successfully parsed, but still priori-
+tizing lexicalized trees over CFG rules4.
+4.3 Corpora
+The evaluations of the different models were car-
+ried out on the Penn Wall Street Journal corpus
+(Marcus et al, 1993) for English, and the Tiger
+treebank (Brants et al, 2002) for German. As gold
+standard head annotations corpora, we used the
+Parc 700 Dependency Bank (King et al, 2003) and
+the Tiger Dependency Bank (Forst et al, 2004),
+which contain independent reannotations of ex-
+tracts of the WSJ and Tiger treebanks.
+5 Results
+We evaluate the head annotations our algorithms
+find in two ways. First, we compare the head
+annotations to gold standard manual annotations
+3In our implementation, each CFG rule frequency is di-
+vided by a factor 100.
+4In this paper, we prefer these simple heuristics over more
+elaborate techniques, as our goal is to compare the merits of
+the different head-assignment algorithms.
+of heads. Second, we evaluate constituency pars-
+ing performance using an LTSG parser (trained
+on the various LTSGs), and a state-of-the-art
+parser (Bikel, 2004).
+5.1 Gold standard head annotations
+Table 1 reports the performance of different al-
+gorithms against gold standard head annotations
+of the WSJ and the Tiger treebank. These an-
+notations were obtained by converting the depen-
+dency structures of the PARC corpus (700 sen-
+tences from section 23) and the Tiger Dependency
+Bank (2000 sentences), into head annotations5.
+Since the algorithm doesn?t guarantee that the re-
+covered head annotations always follow the one-
+head-per-node constraint, when evaluating the ac-
+curacy of head annotations of different algorithms,
+we exclude the cases in which in the gold cor-
+pus no head or multiple heads are assigned to the
+daughters of an internal node6, as well as cases in
+which an internal node has a single daughter.
+In the evaluation against gold standard de-
+pendencies for the PARC and Tiger dependency
+banks, we find that the FAMILIARITY algorithm
+when run with POStags and Spine conversion ob-
+tains around 74% recall for English and 69% for
+German. The different scores of the RANDOM as-
+signment for the two languages can be explained
+5This procedure is not reported here for reasons of space,
+but it is available for other researchers (together with the ex-
+tracted head assignments) at http://staff.science.
+uva.nl/?fsangati.
+6After the conversion, the percentage of incorrect heads
+in PARC 700 is around 9%; in Tiger DB it is around 43%.
+706
+by their different branching factors: trees in the
+German treebank are typically more flat than those
+in the English WSJ corpus. However, note that
+other settings of our two annotation algorithms do
+not always obtain better results than random.
+When focusing on the Tiger results, we ob-
+serve that the RIGHT head assignment recall is
+much better than the LEFT one. This result is in
+line with a classification of German as a predomi-
+nantly head-final language (in contrast to English).
+More surprisingly, we find a relatively low recall
+of the head annotation in the Tiger treebank, when
+compared to a gold standard of dependencies for
+the same sentences as given by the Tiger depen-
+dency bank. Detailed analysis of the differences
+in head assigments between the two approaches
+is left for future work; for now, we note that our
+best performing algorithm approaches the inter-
+annotation-scheme agreement within only 10 per-
+centage points7.
+5.2 Constituency Parsing results
+Table 2 reports the parsing performances of our
+LTSG parser on different LTSGs extracted from
+the WSJ treebank, using our two heuristics to-
+gether with the 4 baseline strategies (plus the re-
+sult of a standard treebank PCFG). The parsing re-
+sults are computed on WSJ20 (WSJ sentences up
+to length 20), using sections 02-21 for training and
+section 22 for testing.
+We find that all but one of the head-assignment
+algorithms lead to LTSGs that without any fine-
+tuning perform better than the treebank PCFG. On
+this metric, our best performing algorithm scores
+4 percentage points higher than the Magerman-
+Collins annotation scheme (a 19% error reduc-
+tion). The poor results with the RIGHT assign-
+ment, in contrast with the good results with the
+LEFT baseline (performing even better than the
+Magerman-Collins assignments), are in line with
+the linguistic tradition of listing English as a pre-
+dominantly head-initial language. A surprising
+result is that the RANDOM-assignment gives the
+7We have also used the various head-assignments to con-
+vert the treebank trees to dependency structures, and used
+these in turn to train a dependency parser (Nivre et al, 2005).
+Results from these experiments confirm the ordering of the
+various unsupervised head-assignment algorithms. Our best
+results, with the FAMILIARITY algorithm, give us an Unla-
+beled Attachment Score (UAS) of slightly over 50% against
+a gold standard obtained by applying the Collins-Magerman
+rules to the test set. This is much higher than the three base-
+lines, but still considerably worse than results based on su-
+pervised head-assignments.
+best performing LTSG among the baselines. Note,
+however, that this strategy leads to much wield-
+ier grammars; with many more elementary trees
+than for instance the left-head assignment, the
+RANDOM strategy is apparently better equipped
+to parse novel sentences. Both the FAMILIAR-
+ITY and the ENTROPY strategy are at the level of
+the random-head assignment, but do in fact lead to
+much more compact grammars.
+We have also used the same head-enriched tree-
+bank as input to a state-of-the-art constituency
+parser8 (Bikel, 2004), using the same training and
+test set. Results, shown in table 3, confirm that
+the differences in parsing success due to differ-
+ent head-assignments are relatively minor, and that
+even RANDOM performs well. Surprisingly, our
+best FAMILIARITY algorithm performs as well as
+the Collins-Magerman scheme.
+LFS UFS |T|
+PCFG 78.23 82.12 -
+RANDOM 82.70 85.54 64k
+LEFT 80.05 83.21 46k
+Magerman-Collins 79.01 82.67 54k
+RIGHT 73.04 77.90 49k
+FAMILIARITY 84.44 87.22 42k
+ENTROPY-POStags 82.81 85.80 64k
+FAMILIARITY-Spine 82.67 85.35 47k
+ENTROPY-POStags-Spine 82.64 85.55 64k
+Table 2: Parsing accuracy on WSJ20 of the LTSGs
+extracted from various head assignments, when
+computing the most probable derivations for ev-
+ery sentence in the test set. The Labeled F-Score
+(LFS) and unlabeled F-Score (UFS) results are re-
+ported. The final column gives the total number of
+extracted elementary trees (in thousands).
+LFS UFS
+Magerman-Collins 86.20 88.35
+RANDOM 84.58 86.97
+RIGHT 81.62 84.41
+LEFT 81.13 83.95
+FAMILIARITY-POStags 86.27 88.32
+FAMILIARITY-POStags-Spine 85.45 87.71
+FAMILIARITY-Spine 84.41 86.83
+FAMILIARITY 84.28 86.53
+Table 3: Evaluation on WSJ20 of various head as-
+signments on Bikel?s parser.
+8Although we had to change a small part of the code,
+since the parser was not able to extract heads from an en-
+riched treebank, but it was only compatible with rule-based
+assignments. For this reason, results are reported only as a
+base of comparison.
+707
+Gold = PARC 700 % correct
+Magerman-Collins 84.51
+LEFT 47.63
+RANDOM 43.96
+RIGHT 40.70
+FAMILIARITY-POStags-Spine 74.05
+FAMILIARITY-POStags 51.10
+ENTROPY-POStags-Spine 43.23
+FAMILIARITY-Spine 39.68
+FAMILIARITY 37.40
+Gold = Tiger DB % correct
+Tiger TB Head Assignment? 77.39
+RIGHT 52.59
+RANDOM 38.66
+LEFT 18.64
+FAMILIARITY-POStags-Spine 68.88
+FAMILIARITY-POStags 41.74
+ENTROPY-POStags-Spine 37.99
+FAMILIARITY 26.08
+FAMILIARITY-Spine 22.21
+Table 1: Percentage of correct head assignments against gold standard in Penn WSJ and Tiger.
+? The Tiger treebank already comes with built-in head labels, but not for all categories. In this case the
+score is computed only for the internal nodes that conform to the one head per node constraint.
+6 Conclusions
+In this paper we have described an empirical inves-
+tigation into possible ways of enriching corpora
+with head information, based on different linguis-
+tic intuitions about the role of heads in natural lan-
+guage syntax. We have described two novel algo-
+rithms, based on entropy minimization and famil-
+iarity maximization, and several variants of these
+algorithms including POS-tag and spine reduction.
+Evaluation of head assignments is difficult, as
+no widely agreed upon gold standard annotations
+exist. This is illustrated by the disparities between
+the (widely used) Magerman-Collins scheme and
+the Tiger-corpus head annotations on the one
+hand, and the ?gold standard? dependencies ac-
+cording to the corresponding Dependency Banks
+on the other. We have therefore not only evalu-
+ated our algorithms against such gold standards,
+but also tested the parsing accuracies of the im-
+plicit lexicalized grammars (using three different
+parsers). Although the ordering of the algorithms
+on performance on these various evaluations is dif-
+ferent, we find that the best performing strategies
+in all cases and for two different languages are
+with variants of the ?familiarity? algorithm.
+Interestingly, we find that the parsing results are
+consistently better for the algorithms that keep the
+full lexicalized elementary trees, whereas the best
+matches with gold standard annotations are ob-
+tained by versions that apply the POStag and spine
+reductions. Given the uncertainty about the gold
+standards, the possibility remains that this reflects
+biases towards the most general headedness-rules
+in the annotation practice rather than a linguisti-
+cally real phenomenon.
+Unsupervised head assignment algorithms can
+be used for the many applications in NLP where
+information on headedness is needed to convert
+constituency trees into dependency trees, or to
+extract head-lexicalised grammars from a con-
+stituency treebank. Of course, it remains to be
+seen which algorithm performs best in any of these
+specific applications. Nevertheless, we conclude
+that among currently available approaches, i.e.,
+our two algorithms and the EM-based approach of
+(Chiang and Bikel, 2002), ?familiarity maximiza-
+tion? is the most promising approach for automatic
+assignments of heads in treebanks.
+From a linguistic point of view, our work can
+be seen as investigating ways in which distribu-
+tional information can be used to determine head-
+edness in phrase-structure trees. We have shown
+that lexicalized tree grammars provide a promis-
+ing methodology for linking alternative head as-
+signments to alternative dependency structures
+(needed for deeper grammatical structure, includ-
+ing e.g., argument structure), as well as to alterna-
+tive derivations of the same sentences (i.e. the set
+of lexicalized elementary trees need to derive the
+given parse tree). In future work, we aim to extend
+these results by moving to more expressive gram-
+matical formalisms (e.g., tree adjoining grammar)
+and by distinguishing adjuncts from arguments.
+Acknowledgments We gratefully acknowledge
+funding by the Netherlands Organization for Sci-
+entific Research (NWO): FS is funded through
+a Vici-grant ?Integrating Cognition? (277.70.006)
+to Rens Bod and WZ through a Veni-grant ?Dis-
+covering Grammar? (639.021.612). We thank
+Rens Bod, Yoav Seginer, Reut Tsarfaty and
+three anonymous reviewers for helpful comments,
+Thomas By for providing us with his dependency
+bank and Joakim Nivre and Dan Bikel for help in
+adapting their parsers to work with our data.
+708
+References
+S. Bangalore and A.K. Joshi. 1999. Supertagging: An
+approach to almost parsing. Computational Linguis-
+tics, 25(2):237?265.
+D.M. Bikel. 2004. Intricacies of Collins? Parsing
+Model. Computational Linguistics, 30(4):479?511.
+R. Bod. 1998. Beyond Grammar: An experience-
+based theory of language. CSLI, Stanford, CA.
+G. Borensztajn, and W. Zuidema. 2007. Bayesian
+Model Merging for Unsupervised Constituent La-
+beling and Grammar Induction. Technical Report,
+ILLC.
+S. Brants, S. Dipper, S. Hansen, W. Lezius, and
+G. Smith. 2002. The TIGER treebank. In Proceed-
+ings of the Workshop on Treebanks and Linguistic
+Theories, Sozopol.
+T. By. 2007. Some notes on the PARC 700 dependency
+bank. Natural Language Engineering, 13(3):261?
+282.
+E. Charniak. 1997. Statistical parsing with a context-
+free grammar and word statistics. In Proceedings of
+the fourteenth national conference on artificial intel-
+ligence, Menlo Park. AAAI Press/MIT Press.
+D. Chiang and D.M. Bikel. 2002. Recovering
+latent information in treebanks. Proceedings of
+the 19th international conference on Computational
+linguistics-Volume 1, pages 1?7.
+D. Chiang. 2000. Statistical parsing with an
+automatically-extracted tree adjoining grammar. In
+Proceedings of the 38th Annual Meeting of the ACL.
+M. Collins. 1999. Head-Driven Statistical Models for
+Natural Language Parsing. Ph.D. thesis, University
+of Pennsylvania.
+G. Corbett, N. Fraser, and S. McGlashan, editors.
+2006. Heads in Grammatical Theory. Cambridge
+University Press.
+M. Forst, N. Bertomeu, B. Crysmann, F. Fouvry,
+S. Hansen-Schirra, and V. Kordoni. 2004. To-
+wards a dependency-based gold standard for Ger-
+man parsers.
+J. Hockenmaier and M. Steedman. 2007. CCGbank:
+A corpus of ccg derivations and dependency struc-
+tures extracted from the penn treebank. Comput.
+Linguist., 33(3):355?396.
+A.K. Joshi and Y. Schabes. 1991. Tree-adjoining
+grammars and lexicalized grammars. Technical re-
+port, Department of Computer & Information Sci-
+ence, University of Pennsylvania.
+T. King, R. Crouch, S. Riezler, M. Dalrymple, and
+R. Kaplan. 2003. The PARC 700 dependency bank.
+D. Klein and C.D. Manning. 2002. A generative
+constituent-context model for improved grammar in-
+duction. In Proceedings of the 40th Annual Meeting
+of the ACL.
+D. Klein and C.D. Manning. 2004. Corpus-based
+induction of syntactic structure: models of depen-
+dency and constituency. In Proceedings of the 42nd
+Annual Meeting of the ACL.
+D.M. Magerman. 1995. Statistical decision-tree mod-
+els for parsing. In Proceedings of the 33rd Annual
+Meeting of the ACL.
+M.P. Marcus, B. Santorini, and M.A. Marcinkiewicz.
+1993. Building a large annotated corpus of En-
+glish: The Penn Treebank. Computational Linguis-
+tics, 19(2).
+J. Nivre and J. Hall. 2005. MaltParser: A Language-
+Independent System for Data-Driven Dependency
+Parsing. In Proceedings of the Fourth Workshop
+on Treebanks and Linguistic Theories (TLT2005),
+pages 137?148.
+J. Nivre, J. Hall, S. Ku?bler, R. McDonald, J. Nils-
+son,S. Riedel, and D. Yuret. 2007. The conll 2007
+shared task on dependency parsing. In Proc. of the
+CoNLL 2007 Shared Task., June.
+J. Nivre. 2007. Inductive Dependency Parsing. Com-
+putational Linguistics, 33(2).
+S. Petrov, L. Barrett, R. Thibaux, and D. Klein.
+2006. Learning accurate, compact, and interpretable
+tree annotation. In Proceedings ACL-COLING?06,
+pages 443?440.
+R. Reichart and A. Rappoport. 2008. Unsupervised
+Induction of Labeled Parse Trees by Clustering with
+Syntactic Features. In Proceedings Coling.
+H. Schu?tze. 1993. Part-of-speech induction from
+scratch. In Proceedings of the 31st annual meeting
+of the ACL.
+Y. Seginer 2007. Learning Syntactic Structure. Ph.D.
+thesis, University of Amsterdam.
+H. Yamada, and Y. Matsumoto. 2003. Statistical De-
+pendency Analysis with Support Vector Machines.
+In Proceedings of the Eighth International Work-
+shop on Parsing Technologies. Nancy, France.
+709

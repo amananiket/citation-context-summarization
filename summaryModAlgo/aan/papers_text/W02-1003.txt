@@ -1,0 +1,1036 @@
+An Incremental Decision List Learner
+Joshua Goodman
+Microsoft Research
+One Microsoft Way
+Redmond, WA 98052
+joshuago@microsoft.com
+Abstract
+We demonstrate a problem with the stan-
+dard technique for learning probabilistic
+decision lists. We describe a simple, in-
+cremental algorithm that avoids this prob-
+lem, and show how to implement it effi-
+ciently. We also show a variation that adds
+thresholding to the standard sorting algo-
+rithm for decision lists, leading to similar
+improvements. Experimental results show
+that the new algorithm produces substan-
+tially lower error rates and entropy, while
+simultaneously learning lists that are over
+an order of magnitude smaller than those
+produced by the standard algorithm.
+1 Introduction
+Decision lists (Rivest, 1987) have been used for a
+variety of natural language tasks, including accent
+restoration (Yarowsky, 1994), word sense disam-
+biguation (Yarowsky, 2000), finding the past tense of
+English verbs (Mooney and Califf, 1995), and sev-
+eral other problems. We show a problem with the
+standard algorithm for learning probabilistic deci-
+sion lists, and we introduce an incremental algorithm
+that consistently works better. While the obvious im-
+plementation for this algorithm would be very slow,
+we also show how to efficiently implement it. The
+new algorithm produces smaller lists, while simul-
+taneously substantially reducing entropy (by about
+40%), and error rates (by about 25% relative.)
+Decision lists are a very simple, easy to understand
+formalism. Consider a word sense disambiguation
+task, such as distinguishing the financial sense of the
+word ?bank? from the river sense. We might want the
+decision list to be probabilistic (Kearns and Schapire,
+1994) so that, for instance, the probabilities can be
+propagated to an understanding algorithm. The de-
+cision list for this task might be:
+IF ?water? occurs nearby, output ?river: .95?, ?fi-
+nancial: .05?
+ELSE IF ?money? occurs nearby, output ?river: .1?,
+?financial: .9?
+ELSE IF word before is ?left?, output ?river: .8?,
+?financial: .2?
+ELSE IF ?Charles? occcurs nearby, output ?river:
+.6?, ?financial: .4?
+ELSE output ?river: .5?, ?financial: .5?
+The conditions of the list are checked in order, and
+as soon as a matching rule is found, the algorithm
+outputs the appropriate probability and terminates.
+If no other rule is used, the last rule always triggers,
+ensuring that some probability is always returned.
+The standard algorithm for learning decision lists
+(Yarowsky, 1994) is very simple. The goal is to min-
+imize the entropy of the decision list, where entropy
+represents how uncertain we are about a particular de-
+cision. For each rule, we find the expected entropy
+using that rule, then sort all rules by their entropy,
+and output the rules in order, lowest entropy first.
+Decision lists are fairly widely used for many rea-
+sons. Most importantly, the rule outputs they produce
+are easily understood by humans. This can make de-
+cision lists useful as a data analysis tool: the decision
+list can be examined to determine which factors are
+most important. It can also make them useful when
+the rules must be used by humans, such as when pro-
+ducing guidelines to help doctors determine whether
+a particular drug should be administered. Decision
+lists also tend to be relatively small and fast and easy
+                                            Association for Computational Linguistics.
+                      Language Processing (EMNLP), Philadelphia, July 2002, pp. 17-24.
+                         Proceedings of the Conference on Empirical Methods in Natural
+to apply in practice.
+Unfortunately, as we will describe, the standard al-
+gorithm for learning decision lists has an important
+flaw: it often chooses a rule order that is suboptimal
+in important ways. In particular, sometimes the al-
+gorithm will use a rule that appears good ? has lower
+average entropy ? in place of one that is good ? low-
+ers the expected entropy given its location in the list.
+We will describe a simple incremental algorithm that
+consistently works better than the basic sorting al-
+gorithm. Essentially, the algorithm builds the list in
+reverse order, and, before adding a rule to the list,
+computes how much the rule will reduce entropy at
+that position. This computation is potentially very
+expensive, but we show how to compute it efficiently
+so that the algorithm can still run quickly.
+2 The Algorithms
+In this section, we describe the traditional algorithm
+for decision list learning in more detail, and then mo-
+tivate our new algorithm, and finally, describe our
+new algorithm and variations on it in detail. For sim-
+plicity only, we will state all algorithms for the binary
+output case; it should be clear how to extend all of
+the algorithms to the general case.
+2.1 Traditional Algorithm
+Decision list learners attempt to find models that
+work well on test data. The test data consists of a se-
+ries of inputs x
+1
+, ..., x
+n
+, and we are trying to predict
+the corresponding results y
+1
+, ..., y
+n
+. For instance, in
+a word sense disambiguation task, a given x
+i
+could
+represent the set of words near the word, and y
+i
+could represent the correct sense of the word. Given
+a model D which predicts probabilities P
+D
+(y|x),
+the standard way of defining how well D works is
+the entropy of the model on the test data, defined
+as
+?
+n
+i=1
+?log
+2
+P
+D
+(y
+i
+|x
+i
+). Lower entropy is better.
+There are many justifications for minimizing entropy.
+Among others, the ?true? probability distribution has
+the lowest possible entropy. Also, minimizing train-
+ing entropy corresponds to maximizing the probabil-
+ity of the training data.
+Now, consider trying to learn a decision list. As-
+sume we are given a list of possible questions,
+q
+1
+, ..., q
+n
+. In our word sense disambiguation ex-
+ample, the questions might include ?Does the word
+?water? occur nearby,? or more complex ones, such
+as ?does the word ?Charles? occur nearby and is the
+word before ?river.?? Let us assume that we have
+some training data, and that the system has two out-
+puts (values for y), 0 and 1. Let C(q
+i
+, 0) be the
+number of times that, when q
+i
+was true in the train-
+ing data, the output was 0, and similarly for C(q
+i
+, 1).
+Let C(q
+i
+) be the total number of times that q
+i
+was
+true. Now, given a test instance, x, y for which q
+i
+(x)
+is true, what probability would we assign to y = 1?
+The simplest answer is to just use the probability in
+the training data,C(q
+i
+, 1)/C(q
+i
+). Unfortunately, this
+tends to overfit the training data. For instance, if q
+i
+was true only once in the training data, then, depend-
+ing on the value for y that time, we would assign a
+probability of 1 or 0. The former is clearly an over-
+estimate, and the latter is clearly an underestimate.
+Therefore, we smooth our estimates (Chen and Good-
+man, 1999). In particular, we used the interpolated
+absolute discounting method. Since both the tradi-
+tional algorithm and the new algorithm use the same
+smoothing method, the exact smoothing technique
+will not typically affect the relative performance of
+the algorithms. Let C(0) be the total number of ys
+that were zero in the training, and let C(1) be the to-
+tal number of ys that were one. Then, the ?unigram?
+probability y is P (y) = C(y)
+C(0)+C(1)
+. Let N(q
+i
+) be the
+number of non-zero ys for a given question. In par-
+ticular, in the two class case, N(q
+i
+) will be 0 if there
+were no occurences of the question q
+i
+, 1 if training
+samples for q
+i
+always had the same value, and 2 if
+both 1 and 0 values occurred. Now, we pick some
+value d (using heldout data) and discount all counts
+by d. Then, our probability distribution is
+P (y|q
+i
+) =
+?
+?
+?
+(C(q
+i
+,y)?d)
+C(q
+i
+)
++
+dN(q
+i
+)
+C(q
+i
+)
+P (y) if C(q
+i
+, y) > 0
+dN(q
+i
+)
+C(q
+i
+)
+P (y) otherwise
+Now, the predicted entropy for a question q
+i
+is just
+entropy(q
+i
+) = ?P (0|q
+i
+)log
+2
+P (0|q
+i
+)?P (1|q
+i
+)log
+2
+P (1|q
+i
+)
+The typical training algorithm for decision lists is
+very simple. Given the training data, compute the
+predicted entropy for each question. Then, sort the
+questions by their predicted entropy, and output a
+decision list with the questions in order. One of the
+questions should be the special question that is al-
+ways TRUE, which returns the unigram probability.
+Any question with worse entropy than TRUE will
+show up later in the list than TRUE, and we will
+never get to it, so it can be pruned away.
+2.2 New Algorithm
+Consider two weathermen in Seattle in the winter.
+Assume the following (overly optimistic) model of
+Seattle weather. If today there is no wind, then to-
+morrow it rains. On one in 50 days, it is windy, and,
+the day after that, the clouds might have been swept
+away, leading to only a 50% chance of rain. So,
+overall, we get rain on 99 out of 100 days. The lazy
+weatherman simply predicts that 99 out of 100 days,
+it will rain, while the smart weatherman gives the true
+probabilities (i.e. 100% chance of rain tomorrow if
+no wind today, 50% chance of rain tomorrow if wind
+today.)
+Consider the entropy of the two weathermen.
+The lazy weatherman always says ?There is a 99%
+chance of rain tomorrow; my average entropy is
+?.99? log
+2
+.99 ? .01 ? log
+2
+.01 = .081 bits.? The
+smart weatherman, if there is no wind, says ?100%
+chance of rain tomorrow; my entropy is 0 bits.? If
+there is wind, however, the smart weatherman says,
+?50% chance of rain tomorrow; my entropy is 1 bit.?
+Now, if today is windy, who should we trust? The
+smart weatherman, whose expected entropy is 1 bit,
+or the lazy weatherman, whose expected entropy is
+.08 bits, which is obviously much better.
+The decision list equivalent of this is as follows.
+Using the classic learner, we learn as follows. We
+have three questions: if TRUE then predict rain with
+probability .99 (expected entropy = .081). If NO
+WIND then predict rain with probability 1 (expected
+entropy = 0). If WIND then predict rain with proba-
+bility 1/2 (expected entropy = 1). When we sort these
+by expected entropy, we get:
+IF NO WIND, output ?rain: 100%? (entropy 0)
+ELSE IF TRUE, output ?rain: 99%? (entropy .081)
+ELSE IF WIND, output ?rain: 50%? (entropy 1)
+Of course, we never reach the third rule, and on windy
+days, we predict rain with probabiliy .99!
+The two weathermen show what goes wrong with
+a naive algorithm; we can easily do much better. For
+the new algorithm, we start with a baseline ques-
+tion, the question which is always TRUE and pre-
+list = { TRUE }
+do
+for each question q
+i
+entropyReduce(i) =
+entropy(list)? entropy(prepend(q
+i
+, list))
+l = i such that entropyReduce(i) is largest
+if entropyReduce(l) <  then
+return list
+else
+list = prepend(q
+l
+, list)
+Figure 1: New Algorithm, Simple Version
+dicts the unigram probabilities. Then, we find the
+question which if asked before all other questions
+would decrease entropy the most. This is repeated
+until some minimum improvement, , is reached.1
+Figure 1 shows the new algorithm; the notation
+entropy(list) denotes the training entropy of a poten-
+tial decision list, and entropy(prepend(q
+i
+, list)) indi-
+cates the training entropy of list with the question ?If
+q
+i
+then output p(y|q
+i
+)? prepended.
+Consider the Parable of the Two Weathermen. The
+new learning algorithm starts with the baseline: If
+TRUE then predict rain with probability 99% (en-
+tropy .081). Then it prepends the rule that reduces
+the entropy the most. The entropy reduction from
+the question ?NO WIND? is .081? .99 = .08, while
+the entropy for the question ?WIND? is 1 bit for
+the new question, versus .5 ? 1 + .5 ? ?log
+2
+.01 =
+.5 + .5 ? 6.64 = 3.82, for the old, for a reduction
+of 2.82 bits, so we prepend the ?WIND? question.
+Finally, we learn (at the top of the list), that if ?NO
+WIND?, then rain 100%, yielding the following de-
+cision list:
+IF NO WIND, output ?rain: 100%? (entropy 0)
+ELSE IF WIND, output ?rain: 50%? (entropy 1)
+ELSE IF TRUE, output ?rain: 99%? (entropy .081)
+Of course, we never reach the third rule.
+Clearly, this decision list is better. Why did our
+entropy sorter fail us? Because sometimes a smart
+learner knows when it doesn?t know, while a dumb
+rule, like our lazy weatherman who ignores the wind,
+doesn?t know enough to know that in the current sit-
+1This means we are building the tree bottom up; it would be
+interesting to explore building the tree top-down, similar to a
+decision tree, which would probably also work well.
+list = {TRUE}
+for each training instance x
+j
+, y
+j
+instanceEnt(j) = ?log
+2
+p(y
+j
+)
+for each question q
+i
+// Now we compute entropyReduce(i) =
+// entropy(TRUE)? entropy(q
+i
+,TRUE)
+entropyReduce(i) = 0
+for each x
+j
+, y
+j
+such that q
+i
+(x
+j
+)
+entropyReduce(i) += log
+2
+p(y
+j
+)? log
+2
+p(y
+j
+|q
+i
+)
+do
+l = argmax
+i
+entropyReduce(i)
+if entropyReduce(l) <  then
+return list
+else
+list = prepend(q
+l
+, list)
+for each x
+j
+, y
+j
+such that q
+l
+(x
+j
+)
+for each k such that q
+k
+(x
+j
+)
+entropyReduce(k) += instanceEnt(j)
+instanceEnt(j) = ?log
+2
+p(y
+j
+|q
+l
+)
+for each k such that q
+k
+(x
+j
+)
+entropyReduce(k) ?= instanceEnt(j)
+Figure 2: New Algorithm, Efficient Version
+uation, the problem is harder than usual.
+2.2.1 Efficiency
+Unfortunately, the algorithm of Figure 1, if imple-
+mented in a straight-forward way, will be extremely
+inefficient. The problem is the inner loop, which
+requires computing entropy(prepend(q
+i
+, list)). The
+naive way of doing this is to run all of the training
+data through each possible decision list. In practice,
+the actual questions tend to be pairs or triples of sim-
+ple questions. For instance, an actual question might
+be ?Is word before ?left? and word after ?of??? Thus,
+the total number of questions can be very large, and
+running all the data through the possible new decision
+lists for each question would be extremely slow.
+Fortunately, we can precompute entropyReduce(i)
+and incrementally update it. In order to do so, we also
+need to compute, for each training instance x
+j
+, y
+j
+the
+entropy with the current value of list. Furthermore,
+we store for each question q
+i
+the list of instances
+x
+j
+, y
+j
+such that q
+i
+(x
+j
+) is true. With these changes,
+the algorithm runs very quickly. Figure 2 gives the
+efficient version of the new algorithm.
+for each question q
+i
+compute entropy(i)
+list = questions sorted by entropy(i)
+remove questions worse than TRUE
+for each training instance x
+j
+, y
+j
+instanceEnt(j) = ?log
+2
+p(y
+j
+)
+for each question q
+i
+in list in reverse order
+entropyReduce = 0
+for each x
+j
+, y
+j
+such that q
+i
+(x
+j
+)
+entropyReduce +=
+instanceEnt(j)? log
+2
+p(y
+j
+|q
+i
+)
+if entropyReduce < 
+remove q
+i
+from list
+else
+for each x
+j
+, y
+j
+such that q
+i
+(x
+j
+)
+instanceEnt(j) = log
+2
+p(y
+j
+|q
+i
+)
+Figure 3: Compromise: Delete Bad Questions
+Note that this efficient version of the algorithm
+may consume a large amount of space, because of the
+need to store, for each question q
+i
+, the list of training
+instances for which the question is true. There are a
+number of speed-space tradeoffs one can make. For
+instance, one could change the update loop from
+for each x
+j
+, y
+j
+such that q
+i
+(x
+j
+)
+to
+for each x
+j
+, y
+j
+if q
+i
+(x
+j
+) then ...
+There are other possible tradeoffs. For instance, typ-
+ically, each question q
+i
+is actually written as a con-
+junction of simple questions, which we will denote
+Q
+i
+j
+. Assume that we store the list of instances that
+are true for each simple question Q
+i
+j
+, and that q
+i
+is of
+the form Q
+i
+1
+&Q
+i
+2
+&...&Q
+i
+I
+. Then we can write an
+update loop in which we first find the simple question
+with the smallest number of true instances, and loop
+over only these instances when finding the instances
+for which q
+i
+is true:
+k = argmin
+j
+number instances such that Q
+i
+j
+for each x
+j
+, y
+j
+such that Q
+i
+k
+(x
+j
+)
+if q
+i
+(x
+j
+) then ...
+2.3 Compromise Algorithm
+Notice the original algorithm can actually allow rules
+which make things worse. For instance, in our lazy
+weatherman example, we built this decision list:
+IF NO WIND, output ?rain: 100%? (entropy 0)
+ELSE IF TRUE, output ?rain: 99%? (entropy .081)
+ELSE IF WIND, output ?rain: 50%? (entropy 1)
+Now, the second rule could simply be deleted, and the
+decision list would actually be much better (although
+in practice we never want to delete the ?TRUE? ques-
+tion to ensure that we always output some probabil-
+ity.) Since the main reason to use decision lists is be-
+cause of their understandability and small size, this
+optimization will be worth doing even if the full im-
+plementation of the new algorithm is too complex.
+The compromise algorithm is displayed in Figure 3.
+When the value of  is 0, only those rules that improve
+entropy on the training data are included. When the
+value of  is ??, all rules are included (the stan-
+dard algorithm). Even when a benefit is predicted,
+this may be due to overfitting; we can get further
+improvements by setting the threshold to a higher
+value, such as 3, which means that only rules that
+save at least three bits ? and thus are unlikely to lead
+to overfitting ? are added.
+3 Previous Work
+There has been a modest amount of previous work
+on improving probabilistic decision lists, as well as
+a fair amount of work in related fields, especially in
+transformation-based learning (Brill, 1995).
+First, we note that non-probabilistic decision lists
+and transformation-based learning (TBL) are actu-
+ally very similar formalisms. In particular, as ob-
+served by Roth (1998), in the two-class case, they
+are identical. Non-probabilistic decision lists learn
+rules of the form ?If q
+i
+then output y? while TBLs
+output rules of the form ?If q
+i
+and current-class is
+y
+?
+, change class to y?. Now, in the two class case, a
+rule of the form ?If q
+i
+and current-class is y?, change
+class to y? is identical to one of the form ?If q
+i
+change
+class to y?, since either way, all instances for which
+q
+i
+is TRUE end up with value y. The other difference
+between decision lists and TBLs is the list ordering.
+With a two-class TBL, one goes through the rules
+from last-to-first, and finds the last one that applies.
+With a decision list, one goes through the list in or-
+der, and finds the first one that applies. Thus in the
+two-class case, simply by changing rules of the form
+?If q
+i
+and current-class is y?, change class to y? to
+?If q
+i
+output y?, and reversing the rule order, we can
+change any TBL to an equivalent non-probabilistic
+decision list, and vice-versa. Notice that our incre-
+mental algorithm is analogous to the algorithm used
+by TBLs: in TBLs, at each step, a rule is added that
+minimizes the training data error rate. In our prob-
+abilistic decision list learner, at each step, a rule is
+added that minimizes the training data entropy.
+Roth notes that this equivalence does not hold in
+an important case: when the answers to questions
+are not static. For instance, in part-of-speech tagging
+(Brill, 1995), when the tag of one word is changed, it
+changes the answers to questions for nearby words.
+We call such problems ?dynamic.?
+The near equivalence of TBLs and decision lists is
+important for two reasons. First, it shows the connec-
+tion between our work and previous work. In partic-
+ular, our new algorithm can be thought of as a prob-
+abilistic version of the Ramshaw and Marcus (1994)
+algorithm, for speeding up TBLs. Just as that al-
+gorithm stores the expected error rate improvement
+of each question, our algorithm stores the expected
+entropy improvement. (Actually, the Ramshaw and
+Marcus algorithm is somewhat more complex, be-
+cause it is able to deal with dynamic problems such
+as part-of-speech tagging.) Similarly, the space-
+efficient algorithm using compound questions at
+the end of Section 2.2.1 can be thought of as a
+static probabilistic version of the efficient TBL of
+Ngai and Florian (2001).
+The second reason that the connection to TBLs is
+important is that it shows us that probabilistic de-
+cision lists are a natural way to probabilize TBLs.
+Florian et al (2000) showed one way to make prob-
+abilistic versions of TBLs, but the technique is some-
+what complicated. It involved conversion to a deci-
+sion tree, and then further growing of the tree. Their
+technique does have the advantage that it correctly
+handles the multi-class case. That is, by using a
+decision tree, it is relatively easy to incorporate the
+current state, while the decision list learner ignores
+that state. However, this is not clearly an advantage
+? adding extra dependencies introduces data sparse-
+ness, and it is an empirical question whether depen-
+dencies on the current state are actually helpful. Our
+probabilistic decision lists can thus be thought of as
+a competitive way to probabilize TBLs, with the ad-
+vantage of preserving the list-structure and simplicity
+of TBL, and the possible disadvantage of losing the
+dependency on the current state.
+Yarowsky (1994) suggests two improvements to
+the standard algorithm. First, he suggests an op-
+tional, more complex smoothing algorithm than the
+one we applied. His technique involves estimating
+both a probability based on the global probability
+distribution for a question, and a local probability,
+given that no questions higher in the list were TRUE,
+and then interpolating between the two probabilities.
+He also suggests a pruning technique that eliminates
+90% of the questions while losing 3% accuracy; as
+we will show in Section 4, our technique or varia-
+tions eliminate an even larger percentage of ques-
+tions while increasing accuracy. Yarowsky (2000)
+also considered changing the structure of decision
+lists to include a few splits at the top, thus combining
+the advantages of decision trees and decision lists.
+The combination of this hybrid decision list and the
+improved smoothing was the best performer for par-
+ticipating systems in the 1998 senseval evaluation.
+Our technique could easily be combined with these
+techniques, presumably leading to even better results.
+However, since we build our decision lists from last
+to first, rather than first to last, the local probability is
+not available as the list is being built. But there is no
+reason we could not interpolate the local probability
+into a final list. Similarly, in Yarowsky?s technique,
+the local probability is also not available at the time
+the questions are sorted.
+Our algorithm can be thought of as a natural prob-
+abilistic version of a non-probabilistic decision list
+learner which prepends rules (Webb, 1994). One
+difficulty that that approach has is ranking rules. In
+the probabilistic framework, using entropy reduction
+and smoothing seems like a natural solution.
+4 Experimental Results and Discussion
+In this section, we give experimental results, showing
+that our new algorithm substantially outperforms the
+standard algorithm. We also show that while accu-
+racy is competitive with TBLs, two linear classifiers
+are more accurate than the decision list algorithms.
+Many of the problems that probabilistic decision
+list algorithms have been used for are very similar: in
+a given text context, determine which of two choices
+is most appropriate. Accent restoration (Yarowsky,
+1994), word sense disambiguation (Yarowsky, 2000),
+and other problems all fall into this framework, and
+typically use similar feature types. We thus chose
+one problem of this type, grammar checking, and
+believe that our results should carry over at least
+to these other, closely related problems. In partic-
+ular, we chose to use exactly the same training, test,
+problems, and feature sets used by Banko and Brill
+(2001a; 2001b). These problems consisted of try-
+ing to guess which of two confusable words, e.g.
+?their? or ?there?, a user intended. Banko and Brill
+chose this data to be representative of typical machine
+learning problems, and, by trying it across data sizes
+and different pairs of words, it exhibits a good deal of
+different behaviors. Banko and Brill used a standard
+set of features, including words within a window of
+2, part-of-speech tags within a window of 2, pairs of
+word or tag features, and whether or not a given word
+occurred within a window of 9. Altogether, they had
+55 feature types. They used all features of each type
+that occurred at least twice in the training data.
+We ran our comparisons using 7 different algo-
+rithms. The first three were variations on the stan-
+dard probabilistic decision list learner. In particular,
+first we ran the standard sorted decision list learner,
+equivalent to the algorithm of Figure 3, with a thresh-
+old of negative infinity. That is, we included all rules
+that had a predicted entropy at least as good as the
+unigram distribution, whether or not they would ac-
+tually improve entropy on the training data. We call
+this ?Sorted: ??.? Next, we ran the same learner
+with a threshold of 0 (?Sorted: 0?): that is, we in-
+cluded all rules that had a predicted entropy at least
+as good as the unigram distribution, and that would
+at least improve entropy on the training data. Then
+we ran the algorithm with a threshold of 3 (?Sorted:
+3?), in an attempt to avoid overfitting. Next, we ran
+our incremental algorithm, again with a threshold of
+reducing training entropy by at least 3 bits.
+In addition to comparing the various decision list
+algorithms, we also tried several other algorithms.
+First, since probabilistic decision lists are probabilis-
+tic analogs of TBLs, we compared to TBL (Brill,
+1995). Furthermore, after doing our research on de-
+cision lists, we had several successes using simple
+linear models, such as a perceptron model and a max-
+imum entropy (maxent) model (Chen and Rosenfeld,
+1999). For the perceptron algorithm, we used a varia-
+tion that includes a margin requirement, ? (Zaragoza
+wj
+= 0
+for 100 iterations or until no change
+for each training instance x
+j
+, y
+j
+if q(x
+j
+) ? w
+j
+? y
+j
+< ?
+w
+j
++= q(x
+j
+)? y
+j
+Figure 4: Perceptron Algorithm with Margin
+1M 10M 50M
+Sorted: ?? 14.27% 8.88% 6.23%
+Sorted: 0 13.16% 8.43% 5.84%
+Sorted: 3 10.23% 6.30% 3.94%
+Incremental: 3 10.80% 6.33% 4.09%
+Transformation 10.36% 5.14% 4.00%
+Maxent 8.60% 4.42% 2.62%
+Perceptron 8.22% 3.96% 2.65%
+Figure 5: Geometric Mean of Error Rate across
+Training Sizes
+and Herbrich, 2000). Figure 4 shows this incredibly
+simple algorithm. We use q(x
+j
+) to represent the vec-
+tor of answers to questions about input x
+j
+; w
+j
+is a
+weight vector; we assume that the output, y
+j
+is -1 or
++1; and ? is a margin. We assume that one of the
+questions is TRUE, eliminating the need for a sepa-
+rate threshold variable. When ? = 0, the algorithm
+reduces to the standard perceptron algorithm. The
+inclusion of a non-zero margin and running to con-
+vergence guarantees convergence for separable data
+to a solution that works nearly as well as a linear
+support vector machine (Krauth and Mezard, 1987).
+Given the extreme simplicity of the algorithm and the
+fact that it works so well (not just compared to the
+algorithms in this paper, but compared to several oth-
+ers we have tried), the perceptron with margin is our
+favorite algorithm when we don?t need probabilities,
+and model size is not an issue.
+Most of our algorithms have one or more parame-
+ters that need to be tuned. We chose 5 additional con-
+fusable word pairs for parameter tuning and chose
+parameter values that worked well on entropy and
+error rate across data sizes, as measured on these 5
+additional word pairs. For the smoothing discount
+value we used 0.7. For thresholds for both the sorted
+and the incremental learner, we used 3 bits. For the
+perceptron algorithm, we set ? to 20. For TBL?s min-
+imum number of errors to fix, the traditional value of
+1M 10M 50M
+Sorted: ?? 1065 10388 38893
+Sorted: 0 831 8293 31459
+Sorted: 3 45 462 1999
+Incremental: 3 21 126 426
+Transformation 15 77 244
+Maxent 1363 12872 46798
+Perceptron 1363 12872 46798
+Figure 6: Geometric Mean of Model Sizes across
+Training Sizes 1M 10M 50M
+Sorted: ?? 0.91 0.70 0.55
+Sorted: 0 0.81 0.64 0.47
+Sorted: 3 0.47 0.43 0.29
+Incremental: 3 0.49 0.36 0.25
+Maxent 0.44 0.27 0.18
+Figure 7: Arithmetic Mean of Entropy across Train-
+ing Sizes
+2 worked well. For the maxent model, for smooth-
+ing, we used a Gaussian prior with 0 mean and 0.3
+variance. Since sometimes one learning algorithm
+is better at one size, and worse at another, we tried
+three training sizes: 1, 10 and 50 million words.
+In Figure 5, we show the error rates of each algo-
+rithm at different training sizes, averaged across the
+10 words in the test set. We computed the geomet-
+ric mean of error rate, across the ten word pairs. We
+chose the geometric mean, because otherwise, words
+with the largest error rates would disproportionately
+dominate the results. Figure 6, shows the geometric
+mean of the model sizes, where the model size is the
+number of rules. For maxent and perceptron mod-
+els, we counted size as the total number of features,
+since these models store a value for every feature.
+For Sorted: ?? and Sorted: 0, the size is similar to
+a maxent or perceptron model ? almost every rule is
+used. Sorted: 3 drastically reduces the model size ?
+by a factor of roughly 20 ? while improving perfor-
+mance. Incremental: 3 is smaller still, by about an
+additional factor of 2 to 5, although its accuracy is
+slightly worse than Sorted: 3. Figure 7 shows the en-
+tropy of each algorithm. Since entropy is logarthmic,
+we use the arithmetic mean.
+Notice that the traditional probabilistic decision
+list learning algorithm ? equivalent to Sorted: ??
+? always has a higher error rate, higher entropy, and
+larger size than Sorted: 0. Similarly, Sorted: 3 has
+lower entropy, higher accuracy, and smaller models
+than Sorted: 0. Finally, Incremental: 3 has slightly
+higher error rates, but slightly lower entropies, and
+1/2 to 1/5 as many rules. If one wants a probabilistic
+decision list learner, this is clearly the algorithm to
+use. However, if probabilities are not needed, then
+TBL can produce lower error rates, with still fewer
+rules. On the other hand, if one wants either the low-
+est entropies or highest accuracies, then it appears
+that linear models, such as maxent or the perceptron
+algorithm with margin work even better, at the ex-
+pense of producing much larger models.
+Clearly, the new algorithm works very well when
+small size and probabilities are needed. It would
+be interesting to try combining this algorithm with
+decision trees in some way. Both Yarowsky (2000)
+and Florian et al (2000) were able to get improve-
+ments on the simple decision list structure by adding
+additional splits ? Yarowsky by adding them at the
+root, and Florian et al by adding them at the leaves.
+Notice however that the chief advantage of decision
+lists over linear models is their compact size and un-
+derstandability, and our techniques simultaneously
+improve those aspects; adding additional splits will
+almost certainly lead to larger models, not smaller.
+It would also be interesting to try more sophisticated
+smoothing techniques, such as those of Yarowsky.
+We have shown that a simple, incremental algo-
+rithm for learning probabilistic decision lists can pro-
+duce models that are significantly more accurate,
+have significantly lower entropy, and are significantly
+smaller than those produced by the standard sorted
+learning algorithm. The new algorithm comes at the
+cost of some increased time, space, and complexity,
+but variations on it, such as the sorted algorithm with
+thresholding, or the techniques of Section 2.2.1, can
+be used to trade off space, time, and list size. Over-
+all, given the substantial improvements from this al-
+gorithm, it should be widely used whenever the ad-
+vantages ? compactness and understandability ? of
+probabilistic decision lists are needed.
+References
+M. Banko and E. Brill. 2001a. Mitigating the paucity of
+data problem. In HLT.
+M. Banko and E. Brill. 2001b. Scaling to very very large
+corpora for natural language disambiguation. In ACL.
+E. Brill. 1995. Transformation-based error-driven learn-
+ing and natural language processing: A case study in
+part-of-speech tagging. Comp. Ling., 21(4):543?565.
+Stanley F. Chen and Joshua Goodman. 1999. An empir-
+ical study of smoothing techniques for language mod-
+eling. Computer Speech and Language, 13:359?394.
+S.F. Chen and R. Rosenfeld. 1999. A gaussian prior for
+smoothing maximum entropy models. Technical Re-
+port CMU-CS-99-108, Computer Science Department,
+Carnegie Mellon University.
+R. Florian, J. C. Henderson, and G. Ngai. 2000. Coaxing
+confidences out of an old friend: Probabilistic classifi-
+cations from transformation rule lists. In EMNLP.
+M. Kearns and R. Schapire. 1994. Efficient distribution-
+free learning of probabilistic concepts. Computer and
+System Sciences, 48(3):464?497.
+W. Krauth and M. Mezard. 1987. Learning algorithms
+with optimal stability in neural networks. Journal of
+Physics A, 20:745?752.
+R.J. Mooney and M.E. Califf. 1995. Induction of first-
+order decision lists: Results on learning the past tense
+of English verbs. In International Workshop on Induc-
+tive Logic Programming, pages 145?146.
+G. Ngai and R. Florian. 2001. Transformation-based
+learning in the fast lane. In NA-ACL, pages 40?47.
+L. Ramshaw and M. Marcus. 1994. Exploring the statis-
+tical derivation of transformational rule sequences for
+part-of-speech tagging. In Proceedings of the Balanc-
+ing Act Workshop on Combining Symbolic and Statis-
+tical Approaches to Language, pages 86?95. ACL.
+R. Rivest. 1987. Learning decision lists. Machine Learn-
+ing, 2(3):229?246.
+Dan Roth. 1998. Learning to resolve natural language
+ambiguities: A unified approach. In AAAI-98.
+G. Webb. 1994. Learning decision lists by prepending in-
+ferred rules, vol. b. In Second Singapore International
+Conference on Intelligent Systems, pages 280?285.
+David Yarowsky. 1994. Decision lists for lexical ambi-
+guity resolution: Application to accent restoration in
+spanish and french. In ACL, pages 88?95.
+David Yarowsky. 2000. Hierarchical decision lists for
+word sense disambiguation. Computers and the Hu-
+manities, 34(2):179?186.
+Hugo Zaragoza and Ralf Herbrich. 2000. The perceptron
+meets reuters. In Workshop on Machine Learning for
+Text and Images at NIPS 2001.

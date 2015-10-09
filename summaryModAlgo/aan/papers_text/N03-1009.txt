@@ -1,0 +1,938 @@
+Simpler and More General Minimization
+for Weighted Finite-State Automata
+Jason Eisner
+Department of Computer Science
+Johns Hopkins University
+Baltimore, MD, USA 21218-2691
+jason@cs.jhu.edu
+Abstract
+Previous work on minimizing weighted finite-state automata
+(including transducers) is limited to particular types of weights.
+We present efficient new minimization algorithms that apply
+much more generally, while being simpler and about as fast.
+We also point out theoretical limits on minimization algo-
+rithms. We characterize the kind of ?well-behaved? weight
+semirings where our methods work. Outside these semirings,
+minimization is not well-defined (in the sense of producing a
+unique minimal automaton), and even finding the minimum
+number of states is in general NP-complete and inapproximable.
+1 Introduction
+It is well known how to efficiently minimize a determin-
+istic finite-state automaton (DFA), in the sense of con-
+structing another DFA that recognizes the same language
+as the original but with as few states as possible (Aho et
+al., 1974). This DFA also has as few arcs as possible.
+Minimization is useful for saving memory, as when
+building very large automata or deploying NLP systems
+on small hand-held devices. When automata are built up
+through complex regular expressions, the savings from
+minimization can be considerable, especially when ap-
+plied at intermediate stages of the construction, since (for
+example) smaller automata can be intersected faster.
+Recently the computational linguistics community has
+turned its attention to weighted automata that compute
+interesting functions of their input strings. A traditional
+automaton only returns an boolean from the set K =
+{true, false}, which indicates whether it has accepted
+the input. But a probabilistic automaton returns a prob-
+ability in K = [0, 1], or equivalently, a negated log-
+probability in K = [0,?]. A transducer returns an output
+string from K = ?? (for some alphabet ?).
+Celebrated algorithms by Mohri (1997; 2000) have
+recently made it possible to minimize deterministic au-
+tomata whose weights (outputs) are log-probabilities or
+strings. These cases are of central interest in language
+and speech processing.
+However, automata with other kinds of weights can
+also be defined. The general formulation of weighted
+automata (Berstel and Reutenauer, 1988) permits any
+weight set K, if appropriate operations ? and ? are pro-
+vided for combining weights from the different arcs of
+the automaton. The triple (K,?,?) is called a weight
+semiring and will be explained below. K-valued func-
+tions that can be computed by finite-state automata are
+called rational functions.
+How does minimization generalize to arbitrary weight
+semirings? The question is of practical as well as theoret-
+ical interest. Some NLP automata use the real semiring
+(R,+,?), or its log equivalent, to compute unnormalized
+probabilities or other scores outside the range [0, 1] (Laf-
+ferty et al, 2001; Cortes et al, 2002). Expectation semir-
+ings (Eisner, 2002) are used to handle bookkeeping when
+training the parameters of a probabilistic transducer. A
+byproduct of this paper is a minimization algorithm that
+works fully with those semirings, a new result permitting
+more efficient automaton processing in those situations.
+Surprisingly, we will see that minimization is not
+even well-defined for all weight semirings! We will
+then (nearly) characterize the semirings where it is well-
+defined, and give a recipe for constructing minimization
+algorithms similar to Mohri?s in such semirings.
+Finally, we follow this recipe to obtain a specific, sim-
+ple and practical algorithm that works for all division
+semirings. All the cases above either fall within this
+framework or can be forced into it by adding multiplica-
+tive inverses to the semiring. The new algorithm provides
+arguably simpler minimization for the cases that Mohri
+has already treated, and also handles additional cases.
+2 Weights and Minimization
+We introduce weighted automata by example. The trans-
+ducer below describes a partial function from strings to
+strings. It maps aab 7? xyz and bab 7? wwyz. Why?
+Since the transducer is deterministic, each input (such as
+aab) is accepted along at most one path; the correspond-
+ing output (such as xyz) is found by concatenating the
+output strings found along the path. ? denotes the empty
+string.
+0
+1a:x
+3b:     ?
+2
+a:y
+b:zz
+a:wwy
+4
+b:wwzzz 5
+b:z
+b:     ?
+? and ? standardly denote the automaton?s transition and
+output functions: ?(3, a) = 2 is the state reached by the
+                                                               Edmonton, May-June 2003
+                                                               Main Papers , pp. 64-71
+                                                         Proceedings of HLT-NAACL 2003
+a arc from state 3, and ?(3, a) = wwy is that arc?s output.
+In an automaton whose outputs (weights) were num-
+bers rather than strings like wwy, concatenating them
+would not be sensible; instead we would want to add or
+multiply the weights along the path. In general ? denotes
+the chosen operation for combining weights along a path.
+The ? operation need not be commutative?indeed
+concatenation is not?but it must be associative. K must
+contain (necessarily unique) weights, denoted 1 and 0,
+such that 1? k = k ? 1 = k and 0? k = k ? 0 = 0 for
+all k ? K. An unaccepted input (e.g., aba) is assigned
+the output 0. When ? is string concatenation, 1 = ?, and
+0 is a special object ? defined to satisfy the axioms.
+If an input such as aa were accepted along multiple
+paths, we would have to use another operation ? to com-
+bine those paths? weights into a single output for aa.
+But that cannot happen with the deterministic automata
+treated by this paper. So we omit discussion of the prop-
+erties that ? should have, and do not trouble to spell out
+its definition for the semirings (K,?,?) discussed in this
+paper.1 We are only concerned with the monoid (K,?).
+The following automaton is equivalent to the previous
+one since it computes the same function:
+0
+1a:x
+3b:ww
+2
+a:yz
+b:zzz
+a:yz
+4
+b:zzz 5
+b:     ?
+b:     ?
+However, it distributes weights differently along the arcs,
+and states 1 and 3 can now obviously be merged (as can 2
+and 4, yielding the minimal equivalent automaton). For-
+mally we know that states 1 and 3 are equivalent because
+F1 = F3, where Fq denotes the suffix function of state
+q?the function defined by the automaton if the start state
+is taken to be q rather than 0. (Thus, F3(ab) = yz.)
+Equivalent states can safely be merged, by deleting one
+and rerouting its incoming arcs to the other.
+We will follow Mohri?s minimization strategy:
+1. Turn the first automaton above into the second. This
+operation is called pushing (or quasi-determinization).
+Here, for instance, it ?pushed ww back? through state 3.
+2. Merge equivalent states of the second automaton, by
+applying ordinary unweighted DFA minimization (Aho et
+al., 1974, section 4.13) as if each weighted arc label such
+as a:yz were simply a letter in a large alphabet.
+3. Trim the result, removing useless states and arcs that
+are not on any accepting path (defined as a path whose
+weight is non-0 because it has no missing arcs and its last
+state is final).
+1Though appropriate definitions do exist for our examples.
+For example, take the ? of two strings to be the shorter of the
+two, breaking ties by a lexicographic ordering.
+Mohri (2000) proves that this technique finds the minimal
+automaton, which he shows to be unique up to placement
+of weights along paths.2
+We will only have to modify step 1, generalizing push-
+ing to other semirings. Pushing makes heavy use of left
+quotients: we adopt the notation k\m for an element of
+K such that k ? (k\m) = m. This differs from the nota-
+tion k?1?m (in which k?1 denotes an actual element of
+K) because k\m need not exist nor be unique. For exam-
+ple, ww\wwzzz = zzz (a fact used above) but wwy\wwzzz
+does not exist since wwzzz does not begin with wwy.
+If F is a function, ? is a string, and k is a weight, we
+use some natural notation for functions related to F :
+k ? F : (k ? F )(?)
+def
+= k ? (F (?))
+k\F : a function (if one exists) with k ? (k\F ) = F
+??1F : (??1F )(?)
+def
+= F (??) (standard notation)
+In effect, k\F and ??1F drop output and input prefixes.
+3 Pushing and Its Limitations
+The intuition behind pushing is to canonicalize states?
+suffix functions. This increases the chance that two states
+will have the same suffix function. In the example of the
+previous section, we were able to replace F3 with ww\F3
+(pushing the ww backwards onto state 3?s incoming arc),
+making it equal to F1 so {1, 3} could merge.
+Since canonicalization was also performed at states 2
+and 4, F1 and F3 ended up with identical representa-
+tions: arc weights were distributed identically along cor-
+responding paths from 1 and 3. Hence unweighted mini-
+mization could discover that F1 = F3 and merge {1, 3}.
+Mohri?s pushing strategy?we will see others?is al-
+ways to extract some sort of ?maximum left factor? from
+each suffix function Fq and push it backwards. That is,
+he expresses Fq = k ? G for as ?large? a k ? K as
+possible?a maximal common prefix?then pushes fac-
+tor k back out of the suffix function so that it is counted
+earlier on paths through q (i.e., before reaching q). q?s
+suffix function now has canonical form G (i.e., k\Fq).
+How does Mohri?s strategy reduce to practice? For
+transducers, where (K,?) = (??, concat), the maxi-
+mum left factor of Fq is the longest common prefix of
+the strings in range(Fq).3 Thus we had range(F3) =
+{wwyz, wwzzz} above with longest common prefix ww.
+For the tropical semiring (R?0 ? {?},min,+), where
+k\m = m ? k is defined only if k ? m, the maximum
+left factor k is the minimum of range(Fq).
+But ?maximum left factor? is not an obvious notion
+for all semirings. If we extended the tropical semir-
+2That is, any other solution is isomorphic to the one found
+here if output weights are ignored.
+3In general we treat Fq as a partial function, so that
+range(Fq) excludes 0 (the weight of unaccepted strings). Left
+factors are unaffected, as anything can divide 0.
+ing with negative numbers, or substituted the semiring
+(R?0,+,?), keeping the usual definition of ?maximum,?
+then any function would have arbitrarily large left factors.
+A more fundamentally problematic example is the
+semiring Z[
+?
+?5]. It is defined as ({m+n
+?
+?5 : m,n ?
+Z},+,?) where Z denotes the integers. It is a stan-
+dard example of a commutative algebra in which fac-
+torization is not unique. For example, 6 = 2 ? 3 =
+(1 +
+?
+?5) ? (1 ?
+?
+?5) and these 4 factors cannot be
+factored further. This makes it impossible to canonicalize
+F2 below:
+0
+1
+a:1
+2b:1
+3
+c:1
+4
+a:3
+b:(1+sqrt(-5))
+a:6
+b:(2+2*sqrt(-5))
+a:(1-sqrt(-5))
+b:2
+What is the best left factor to extract from F2? We could
+left-divide F2 by either 2 or 1+
+?
+?5. The former action
+allows us to merge {1, 2} and the latter to merge {2, 3};
+but we cannot have it both ways. So this automaton has
+no unique minimization! The minimum of 4 states is
+achieved by two distinct answers (contrast footnote 2).
+It follows that known minimization techniques will not
+work in general semirings, as they assume state merge-
+ability to be transitive.4 In general the result of mini-
+mization is not even well-defined (i.e., unique).
+Of course, given a deterministic automaton M , one
+may still seek an equivalent M? with as few states as pos-
+sible. But we will now see that even finding the minimum
+number of states is NP-complete, and inapproximable.
+The NP-hardness proof [which may be skipped on a
+first reading] is by reduction from Minimum Clique Par-
+tition. Given a graph with vertex set V = {1, 2, . . . n}
+and edge set E, we wish to partition V into as few cliques
+as possible. (S ? V is a clique of the graph iff ij ? E
+for all pairs i, j ? S.) Determining the minimum num-
+ber of cliques is NP-complete and inapproximable: that
+is, unless P=NP, we cannot even find it within a factor of
+2 or 3 or any other constant factor in polynomial time.5
+Given such a graph, we reduce the clique problem to
+our problem. Consider the ?bitwise boolean? semiring
+({0, 1}n, OR, AND). Each weight k is a string of n bits,
+4A further wrinkle lies in deciding what and how to push; in
+general semirings, it can be necessary to shift weights forward
+as well as backward along paths. Modify the example above by
+pushing a factor of 2 backwards through state 2. Making F2 =
+F3 in this modified example now requires pushing 2 forward
+and then 1 +
+?
+?5 backward through state 2.
+5This problem is just the dual of Graph Coloring. For de-
+tailed approximability results see (Crescenzi and Kann, 1998).
+denoted k1, . . . kn. For each i ? V , define f i, ki,mi ?
+K as follows: f ij = 0 iff ij ? E; kij = 1 iff i = j; mij =
+0 iff either ij ? E or i = j. Now consider the following
+automaton M over the alphabet ? = {a, b, c1, . . . cn}.
+The states are {0, 1, . . . n, n+1}; 0 is the initial state and
+n + 1 is the only final state. For each i ? V , there is an
+arc 0 ci:1
+n
+???i and arcs i a:k
+i
+???(n + 1) and i b:m
+i
+???(n + 1).
+A minimum-state automaton equivalent to M must
+have a topology obtained by merging some states of V .
+Other topologies that could accept the same language
+(c1|c2| ? ? ? |cn)(a|b) are clearly not minimal (they can be
+improved by merging final states or by trimming).
+We claim that for S ? {1, 2, . . . n}, it is possible to
+merge all states in S into a single state (in the automaton)
+if and only if S is a clique (in the graph):
+? If S is a clique, then define k,m ? K by ki = 1 iff
+i ? S, and mi = 1 iff i 6? S. Observe that for every
+i ? S, we have ki = f i ? k, mi = f i ? m. So by
+pushing back a factor of f i at each i ? S, one can make
+all i ? S share a suffix function and then merge them.
+? If S is not a clique, then choose i, j ? S so that
+ij 6? E. Considering only bit i, there exists no bit
+pair (ki,mi) ? {0, 1}2 of which (kii,mii) = (1, 0)
+and (kji ,m
+j
+i ) = (0, 1) are both left-multiples. So there
+can exist no weight pair (k,m) of which (ki,mi) and
+(kj ,mj) are both left-multiples. It is therefore not pos-
+sible to equalize the suffix functions Fi and Fj by left-
+dividing each of them.6 i and j cannot be merged.
+Thus, the partitions of V into cliques are identical to
+the partitions of V into sets of mergeable states, which are
+in 1-1 correspondence with the topologies of automata
+equivalent to M and derived from it by merging. There is
+an N -clique partition of V iff there is an (N+2)-state au-
+tomaton. It follows that finding the minimum number of
+states is as hard, and as hard to approximate within a con-
+stant factor, as finding the minimum number of cliques.
+4 When Is Minimization Unique?
+The previous section demonstrated the existence of
+pathological weight semirings. We now partially charac-
+terize the ?well-behaved? semirings (K,?,?) in which
+all automata do have unique minimizations. Except when
+otherwise stated, lowercase variables are weights ? K
+and uppercase ones are K-valued rational functions.
+[This section may be skipped, except the last paragraph.]
+A crucial necessary condition is that (K,?) allow
+what we will call greedy factorization, meaning that
+given f?F = g?G 6= 0, it is always possible to express
+6This argument only shows that pushing backward cannot
+give them the same suffix function. But pushing forward cannot
+help either, despite footnote 4, since 1n on the arc to i has no
+right factors other than itself (the identity) to push forward.
+F = f ? ?H and G = g? ?H . This condition holds for
+many practically useful semirings, commutative or other-
+wise. It says, roughly, that the order in which left factors
+are removed from a suffix function does not matter. We
+can reach the same canonical H regardless of whether we
+left-divide first by f or g.
+Given a counterexample to this condition, one can con-
+struct an automaton with no unique minimization. Sim-
+ply follow the plan of the Z[
+?
+?5] example, putting
+F1 = F , F2 = f ? F = g ? G, F3 = G.7 For ex-
+ample, in semiring (K,?) = ({xn : n 6= 1}, concat), put
+F2 = x2 ?{(a,x3), (b,x4)} = x3 ?{(a,x2), (b,x3)}.
+Some useful semirings do fail the condition. One
+is the ?bitwise boolean? semiring that checks a string?s
+membership in two languages at once: (K,?,?) =
+({00, 01, 10, 11}, OR, AND). (Let F2 = 01 ?
+{(a, 11), (b, 00)} = 01 ? {(a, 01), (b, 10)}.) R2 under
+pointwise ? (which computes a string?s probability under
+two models) fails similarly. So does (sets,?,?) (which
+collects features found along the accepting path).
+We call H a residue of F iff F = f ? ? H for some
+f ?. Write F ' G iff F , G have a common residue. In
+these terms, (K,?) allows greedy factorization iff F '
+G when F , G are residues of the same nonzero function.
+More perspicuously, one can show that this holds iff ' is
+an equivalence relation on nonzero, K-valued functions.
+So in semirings where minimization is uniquely de-
+fined, ' is necessarily an equivalence relation. Given an
+automaton M for function F , we may regard ' as an
+equivalence relation on the states of a trimmed version
+of M :8 q ' r iff Fq ' Fr. Let [r] = {r1, . . . , rm}
+be the (finite) equivalence class of r: we can inductively
+find at least one function F[r] that is a common residue
+of Fr1 , . . . , Frm . The idea behind minimization is to
+construct a machine M? whose states correspond to these
+equivalence classes, and where each [r] has suffix func-
+tion F[r]. The Appendix shows that M? is then minimal.
+If M has an arc q a:k??r, M? needs an arc [q]a:k
+?
+??[r], where
+k? is such that a?1F[q] = k? ? F[r].
+The main difficulty in completing the construction of
+M? is to ensure each weight k? exists. That is, F[r] must be
+carefully chosen to be a residue not only of Fr1 , . . . , Frm
+(which ultimately does not matter, as long as F[0] is a
+residue of F0, where 0 is the start state) but also of
+a?1F[q]. If M is cyclic, this imposes cyclic dependen-
+cies on the choices of the various F[q] and F[r] functions.
+We have found no simple necessary and sufficient con-
+dition on (K,?) that guarantees a globally consistent set
+of choices to exist. However, we have given a useful nec-
+7Then factoring F2 allows state 2 to merge with either 1 or
+3; but all three states cannot merge, since any suffix function
+that could be shared by 1 and 3 could serve as H .
+8Trimming ensures that suffix functions are nonzero.
+essary condition (greedy factorization), and we now give
+a useful sufficient condition. Say that H is a minimum
+residue of G 6= 0 if it is a residue of every residue of G.
+(If G has several minimum residues, they are all residues
+of one another.) If (K,?) is such that every G has a min-
+imum residue?a strictly stronger condition than greedy
+factorization?then it can be shown that G has the same
+minimum residues as any H ' G. In such a (K,?),
+M? can be constructed by choosing the suffix functions
+F[r] independently. Just let F[r] = F{r1,...,rm} be a mini-
+mum residue of Fr1 . Now consider again M ?s arc q
+a:k
+??r:
+since a?1F[q] ' a?1Fq ' Fr ' Fr1 , we see F[r] is a
+(minimum) residue of a?1F[q], so that a weight k? can be
+chosen for [q]a:k
+?
+??[r].
+A final step ensures that M? defines the function F . To
+describe it, we must augment the formalism to allow an
+initial weight ?(0) ? K, and a final weight ?(r) ? K
+for each final state r. The weight of an accepting path
+from the start state 0 to a final state r is now defined to
+be ?(0)? (weights of arcs along the path)? ?(r). In M? ,
+we set ?([0]) to some k such that F0 = k ? F[0], and set
+?([r]) = F[r](?). The mathematical construction is done.
+5 A Simple Minimization Recipe
+We now give an effective algorithm for minimization in
+the semiring (K,?). The algorithmic recipe has one in-
+gredient: along with (K,?), the user must give us a left-
+factor functional ? that can choose a left factor ?(F ) of
+any function F . Formally, if ? is the input alphabet, then
+we require ? : (?? ? K) ? K to have the following
+properties for any rational F : ?? ? K and any k ? K:
+? Shifting: ?(k ? F ) = k ? ?(F ).
+? Quotient: ?(F )\?(a?1F ) exists in K for any a ? ?.
+? Final-quotient: ?(F )\F (?) exists in K.9
+The algorithm generalizes Mohri?s strategy as outlined
+in section 2. We just use ? to pick the left factors during
+pushing. The ??s used by Mohri for two semirings were
+mentioned in section 3. We will define another ? in sec-
+tion 6. Naturally, it can be shown that no ? can exist in a
+semiring that lacks greedy factorization, such as Z[
+?
+?5].
+The 3 properties above are needed for the strategy to
+work. The strategy also requires (K,?) to be left can-
+cellative, i.e., k ? m = k ? m? implies m = m? (if
+k 6= 0). In other words, left quotients by k are unique
+when they exist (except for 0\0). This relieves us from
+having to make arbitrary choices of weight during push-
+ing. Incompatible choices might prevent arc labels from
+matching as desired during the merging step of section 2.
+9To show the final-quotient property given the other two, it
+suffices to show that ?(G) ? K has a right inverse in K, where
+G is the function mapping ? to 1 and everything else to 0.
+Given an input DFA. At each state q, simultaneously,
+we will push back ?(Fq). This pushing construction
+is trivial once the ?(Fq) values are computed. An
+arc q a:k??r should have its weight changed from k to
+?(Fq)\?(a?1Fq) = ?(Fq)\?(k ? Fr), which is well-
+defined (by the quotient property and left cancellativity)10
+and can be computed as ?(Fq)\(k??(Fr)) (by the shift-
+ing property). Thus a subpath q a:k??r b:`??s, with weight
+k ? `, will become q a:k
+?
+??r
+b:`?
+??s, with weight k? ? `? =
+(?(Fq)\(k ? ?(Fr))) ? (?(Fr)\(` ? ?(Fs))). In this
+way the factor ?(Fr) is removed from the start of all paths
+from r, and is pushed backwards through r onto the end
+of all paths to r. It is possible for this factor (or part of
+it) to travel back through multiple arcs and around cycles,
+since k? is found by removing a ?(Fq) factor from all of
+k ? ?(Fr) and not merely from k.
+As it replaces the arc weights, pushing also replaces
+the initial weight ?(0) with ?(0) ? ?(F0), and replaces
+each final weight ?(r) with ?(Fr)\?(r) (which is well-
+defined, by the final-quotient property). Altogether, push-
+ing leaves path weights unchanged (by easy induction).11
+After pushing, we finish with merging and trimming as
+in section 2. While merging via unweighted DFA mini-
+mization treats arc weights as part of the input symbols,
+what should it do with any initial and final weights? The
+start state?s initial weight should be preserved. The merg-
+ing algorithm can and should be initialized with a multi-
+way partition of states by final weight, instead of just a
+2-way partition into final vs. non-final.12
+The Appendix shows that this strategy indeed finds the
+unique minimal automaton.
+It is worth clarifying how this section?s effective al-
+gorithm implements the mathematical construction from
+the end of section 4. At each state q, pushing replaces the
+suffix function Fq with ?(Fq)\Fq. The quotient proper-
+ties of ? are designed to guarantee that this quotient is
+defined,13 and the shifting property is designed to ensure
+10Except in the case 0\0, which is not uniquely defined. This
+arises only if Fq = 0, i.e., q is a dead state that will be trimmed
+later, so any value will do for 0\0: arcs from q are irrelevant.
+11One may prefer a formalism without initial or final weights.
+If the original automaton is free of final weights (other than 1),
+so is the pushed automaton?provided that ?(F ) = 1 whenever
+F (?) = 1, as is true for all ??s in this paper. Initial weights can
+be eliminated at the cost of duplicating state 0 (details omitted).
+12Alternatively, Mohri (2000, ?4.5) explains how to tem-
+porarily eliminate final weights before the merging step.
+13That is, ?(Fq)\Fq(?) exists for each ? ? ??. One may
+show by induction on |?| that the left quotients ?(F )\F (?) ex-
+ist for all F . When |?| = 0 this is the final-quotient property.
+For |?| > 0 we can write ? as a??, and then ?(F )\F (?) =
+?(F )\F (a??) = ?(F )\(a?1F )(??) = (?(F )\?(a?1F )) ?
+(?(a?1F )\(a?1F )(??)), where the first factor exists by the
+quotient property and the second factor exists by inductive hy-
+pothesis.
+that it is a minimum residue of Fq.14 In short, if the con-
+ditions of this section are satisfied, so are the conditions
+of section 4, and the construction is the same.
+The converse is true as well, at least for right cancella-
+tive semirings. If such a semiring satisfies the conditions
+of section 4 (every function has a minimum residue), then
+the requirements of this section can be met to obtain an
+effective algorithm: there exists a ? satisfying our three
+properties,15 and the semiring is left cancellative.16
+6 Minimization in Division Semirings
+For the most important idea of this paper, we turn to a
+common special case. Suppose the semiring (K,?,?)
+defines k\m for all m, k 6= 0 ? K. Equivalently,17 sup-
+pose every k 6= 0 ? K has a unique two-sided inverse
+k?1 ? K. Useful cases of such division semirings in-
+clude the real semiring (R,+,?), the tropical semiring
+extended with negative numbers (R?{?},min,+), and
+expectation semirings (Eisner, 2002). Minimization has
+not previously been available in these.
+We propose a new left-factor functional that is fast to
+compute and works in arbitrary division semirings. We
+avoid the temptation to define ?(F ) as
+?
+range(F ): this
+definition has the right properties, but in some semirings
+including (R?0,+,?) the infinite summation is quite ex-
+pensive to compute and may even diverge. Instead (un-
+like Mohri) we will permit our ?(F ) to depend on more
+than just range(F ).
+Order the space of input strings ?? by length, breaking
+ties lexicographically. For example, ? < bb < aab <
+aba < abb. Now define
+14Suppose X is any residue of Fq , i.e., we can write Fq =
+x ? X . Then we can rewrite the identity Fq = ?(Fq) ?
+(?(Fq)\Fq), using the shifting property, as x ? X = x ?
+?(X)?(?(Fq)\Fq). As we have separately required the semir-
+ing to be left cancellative, this implies that X = ?(X) ?
+(?(Fq)\Fq). So (?(Fq)\Fq) is a residue of any residue X of
+Fq , as claimed.
+15Define ?(0) = 0. From each equivalence class of nonzero
+functions under ', pick a single minimum residue (axiom of
+choice). Given F , let [F ] denote the minimum residue from its
+class. Observe that F = f?[F ] for some f ; right cancellativity
+implies f is unique. So define ?(F ) = f . Shifting property:
+?(k ? F ) = ?(k ? f ? [F ]) = k ? f = k ? ?(f ? [F ]) =
+k? ?(F ). Quotient property: ?(a?1F )? [a?1F ] = a?1F =
+a?1(?(F )? [F ]) = ?(F )? a?1[F ] = ?(F )? ?(a?1[F ])?
+[a?1[F ]] = ?(F ) ? ?(a?1[F ]) ? [a?1F ] (the last step since
+a?1[F ] ' a?1F ). Applying right cancellativity, ?(a?1F ) =
+?(F )??(a?1[F ]), showing that ?(F )\?(a?1F ) exists. Final-
+quotient property: Quotient exists since F (?) = ?(F )?[F ](?).
+16Let ?x, y? denote the function mapping a to x, b to y, and
+everything else to 0. Given km = km?, we have k ? ?m, 1? =
+k??m?, 1?. Since the minimum residue property implies greedy
+factorization, we can write ?m, 1? = f ? ?a, b?, ?m?, 1? =
+g ? ?a, b?. Then f ? b = g ? b, so by right cancellativity
+f = g, whence m = f ? a = g ? a = m?.
+17The equivalence is a standard exercise, though not obvious.
+?(F )
+def
+=
+{
+F (min support(F )) ? K if F 6= 0
+0 if F = 0
+where support(F ) denotes the set of input strings to
+which F assigns a non-0 weight. This ? clearly has the
+shifting property needed by section 5. The quotient and
+final-quotient properties come for free because we are in
+a division semiring and because ?(F ) = 0 iff F = 0.
+Under this definition, what is ?(Fq) for a suffix func-
+tion Fq? Consider all paths of nonzero weight18 from
+state q to a final state. If none exist, ?(Fq) = 0. Oth-
+erwise, min support(Fq) is the input string on the short-
+est such path, breaking ties lexicographically.19 ?(Fq) is
+simply the weight of that shortest path.
+To push, we must compute ?(Fq) for each state q. This
+is easy because ?(Fq) is the weight of a single, minimum-
+length and hence acyclic path from q. (Previous meth-
+ods combined the weights of all paths from q, even if
+infinitely many.) It also helps that the left factors at dif-
+ferent states are related: if the minimum path from q be-
+gins with a weight-k arc to r, then it continues along the
+minimum path from r, so ?(Fq) = k ? ?(Fr).
+Below is a trivial linear-time algorithm for computing
+?(Fq) at every q. Each state and arc is considered once
+in a breadth-first search back from the final states. len(q)
+and first(q) store the string length and first letter of a run-
+ning minimum of support(Fq) ? ??.
+1. foreach state q
+2. if q is final then
+3. len(q) := 0 (* min support(Fq) is ? for final q *)
+4. ?(Fq) := ?(q) (* Fq(?) is just the final weight, ?(q) *)
+5. enqueue q on a FIFO queue
+6. else
+7. len(q) := ? (* not yet discovered *)
+8. ?(Fq) := 0 (* assume Fq = 0 until we discover q *)
+9. until the FIFO queue is empty
+10. dequeue a state r
+11. foreach arc q a:k??r entering r such that k 6= 0
+12. if len(q) = ? then enqueue q (* breadth-first search *)
+13. if len(q) = ? or (len(q) = len(r) + 1
+and a < first(q)) then
+14. first(q) := a (* reduce min support(Fq) *)
+15. len(q) := len(r) + 1
+16. ?(Fq) := k ? ?(Fr)
+The runtime is O(|states|+t ? |arcs|) if ? has runtime t.
+If ? is slow, this can be reduced to O(t ? |states|+ |arcs|)
+by removing line 16 and waiting until the end, when the
+minimum path from each non-final state q is fully known,
+to compute the weight ?(Fq) of that path. Simply finish
+up by calling FIND-? on each state q:
+FIND-?(state q):
+1. if ?(Fq) = 0 and len(q) < ? then
+2. ?(Fq) := ?(q, first(q))? FIND-?(?(q, first(q)))
+3. return ?(Fq)
+18In a division semiring, these are paths free of 0-weight arcs.
+19The min exists since < is a well-ordering. In a purely lex-
+icographic ordering, a?b ? ?? would have no min.
+After thus computing ?(Fq), we simply proceed with
+pushing, merging, and trimming as in section 5.20 Push-
+ing runs in time O(t ? |arcs|) and trimming in O(|states|+
+|arcs|). Merging is worse, with time O(|arcs| log |states|).
+7 A Bonus: Non-Division Semirings
+The trouble with Z[
+?
+?5] was that it ?lacked? needed
+quotients. The example on p. 3 can easily be minimized
+(down to 3 states) if we regard it instead as defined over
+(C,+,?)?letting us use any weights in C. Simply use
+section 6?s algorithm.
+This new change-of-semiring trick can be used for
+other non-division semirings as well. One can extend the
+original weight semiring (K,?,?) to a division semiring
+by adding ?-inverses.21
+In this way, the tropical semiring (R?0 ? {?},
+min,+) can be augmented with the negative reals to ob-
+tain (R ? {?},min,+). And the transducer semiring
+(?? ? {?},min, concat)22 can be augmented by extend-
+ing the alphabet ? = {x, y, . . .} with inverse letters
+{x?1, y?1, . . .}.
+The minimized DFA we obtain may have ?weird? arc
+weights drawn from the extended semiring. But the arc
+weights combine along paths to produce the original au-
+tomaton?s outputs, which fall in the original semiring.
+Let us apply this trick to the example of section 2,
+yielding the following pushed automaton in which F1 =
+F3 as desired. (x?1, y?1, . . . are written as X, Y, . . ., and
+?(Fq) is displayed at each q.)
+0xyz
+1yza:     ?
+3wwyz
+b:ZYXwwyz 2z
+a:     ?b:ZYzzz
+a:     ?
+4?b:ZYzzz
+5?b:     ?b:     ?:xyz
+For example, the z?1y?1zzz output on the 3?4 arc was
+computed as ?(F3)?1 ? wwzzz ? ?(F4) = (wwyz)?1 ?
+wwzzz? ? = z?1y?1w?1w?1wwzzz.
+This trick yields new algorithms for the tropical semir-
+ing and sequential transducers, which is interesting and
+perhaps worthwhile. How do they compare with previ-
+ous work?
+Over the tropical semiring, our linear-time pushing al-
+gorithm is simpler than (Mohri, 1997), and faster by a
+20It is also permissible to trim the input automaton at the start,
+or right after computing ? (note that ?(Fq) = 0 iff we should
+trim q). This simplifies pushing and merging. No trimming is
+then needed at the end, except to remove the one dead state that
+the merging step may have added to complete the automaton.
+21This is often possible but not always; the semiring must be
+cancellative, and there are other conditions. Even disregarding
+? because we are minimizing a deterministic automaton, it is
+not simple to characterize when the monoid (K,?) can be em-
+bedded into a group (Clifford and Preston, 1967, chapter 12).
+22Where min can be defined as in section 6 and footnote 1.
+log factor, because it does not require a priority queue.
+(Though this does not help the overall complexity of min-
+imization, which is dominated by the merging step.) We
+also have no need to implement faster algorithms for spe-
+cial cases, as Mohri proposes, because our basic algo-
+rithm is already linear. Finally, our algorithm generalizes
+better, as it can handle negative weight cycles in the input.
+These are useful in (e.g.) conditional random fields.
+On the other hand, Mohri?s algorithm guarantees a po-
+tentially useful property that we do not: that the weight
+of the prefix path reading ? ? ?? is the minimum weight
+of all paths with prefix ?. Commonly this approximates
+? log(p(most probable string with prefix ?)), perhaps a
+useful value to look up for pruning.
+As for transducers, how does our minimization algo-
+rithm (above) compare with previous ones? Following
+earlier work by Choffrut and others, Mohri (2000) de-
+fines ?(Fq) as the longest common prefix of range(Fq).
+He constrains these values with a set of simultaneous
+equations, and solves them by repeated changes of vari-
+able using a complex relaxation algorithm. His imple-
+mentation uses various techniques (including a trie and
+a graph decomposition) to make pushing run in time
+O(|states| + |arcs| ? maxq |?(Fq)|).23 Breslauer (1996)
+gives a different computation of the same result.
+To implement our simpler algorithm, we represent
+strings in ?? as pointers into a global trie that extends
+upon lookup. The strings are actually stored reversed in
+the trie so that it is fast to add and remove short pre-
+fixes. Over the extended alphabet, we use the pointer
+pair (k,m) to represent the string k?1m where k,m ?
+?? have no common prefix. Such pointer pairs can
+be equality-tested in O(1) time during merging. For
+k,m ? ??, k ?m is computed in time O(|k|), and k\m
+in time O(|LCP(k,m)|) or more loosely O(|k|) (where
+LCP = longest common prefix).
+The total time to compute our ?(Fq) values is therefore
+O(|states|+ t ? |arcs|), where t is the maximum length of
+any arc?s weight. For each arc we then compute a new
+weight as a left-quotient by a ? value. So our total run-
+time for pushing is O(|states| + |arcs| ? maxq |?(Fq)|).
+This may appear identical to Mohri?s runtime, but in fact
+our |?(Fq)| ? Mohri?s, though the two definitions share
+a worst case of t ? |states|.24
+Inverse letters must be eliminated from the minimized
+transducer if one wishes to pass it to any specialized al-
+gorithms (composition, inversion) that assume weights
+23We define |?| = 1 to simplify the O(? ? ?) expressions.
+24The |?(Fq)| term contributed by a given arc from q is a
+bound on the length of the LCP of the outputs of certain paths
+from q. Mohri uses all paths from q and we use just two, so our
+LCP is sometimes longer. However, both LCPs probably tend to
+be short in practice, especially if one bypasses LCP(k, k) with
+special handling for k\k = ?.
+in ??. Fortunately this is not hard. If state q of the
+result was formed by merging states q1, . . . qj , define
+?(q) = LCS{?(Fqi) : i = 1, . . . j} ? ?
+? (where LCS =
+longest common suffix). Now push the minimized trans-
+ducer using ?(q)?1 in place of ?(Fq) for all q. This cor-
+rects for ?overpushing?: any letters ?(q) that were unnec-
+essarily pushed back before minimization are pushed for-
+ward again, cancelling the inverse letters. In our running
+example, state 0 will push (xyz)?1 back and the merged
+state {1,3} will push (yz)?1 back. This is equivalent to
+pushing ?(0) = xyz forward through state 0 and the yz
+part of it forward through {1,3}, canceling the z?1y?1 at
+the start of one of the next arcs.
+We must show that the resulting labels really are free
+of inverse letters. Their values are as if the original push-
+ing had pushed back not ?(Fqi) ? ?? but only its shorter
+prefix ??(qi)
+def
+= ?(Fqi)/?(qi) ? ?
+? (note the right quo-
+tient). In other words, an arc from qi to ri? with weight
+k ? ?? was reweighted as ??(qi)\(k ? ??(ri?)). Any in-
+verse letters in such new weights clearly fall at the left.
+So suppose the new weight on the arc from q to r begins
+with an inverse letter z?1. Then ??(qi) must have ended
+with z for each i = 1, . . . j. But then ?(qi) was not the
+longest common suffix: z?(qi) is a longer one, a contra-
+diction (Q.E.D.).
+Negative weights can be similarly eliminated after
+minimization over the tropical semiring, if desired, by
+substituting min for LCS.
+The optional elimination of inverse letters or nega-
+tive weights does not affect the asymptotic runtime. A
+caveat here is that the resulting automaton no longer has
+a canonical form. Consider a straight-line automaton:
+pushing yields a canonical form as always, but inverse-
+letter elimination completely undoes pushing (??(qi) =
+?). This is not an issue in Mohri?s approach.
+8 Conclusion and Final Remarks
+We have characterized the semirings over which
+weighted deterministic automata can be minimized (sec-
+tion 4), and shown how to perform such minimization in
+both general and specific cases (sections 5, 6, 7). Our
+technique for division semirings and their subsemirings
+pushes back, at each state q, the output of a single, easily
+found, shortest accepting path from q. This is simpler and
+more general than previous approaches that aggregate all
+accepting paths from q.
+Our new algorithm (section 6) is most important for
+previously unminimizable, practically needed division
+semirings: real (e.g., for probabilities), expectation (for
+learning (Eisner, 2002)), and additive with negative
+weights (for conditional random fields (Lafferty et al,
+2001)). It can also be used in non-division semirings,
+as for transducers. It is unpatented, easy to implement,
+comparable or faster in asymptotic runtime, and perhaps
+faster in practice (especially for the tropical semiring,
+where it seems preferable in most respects).
+Our approach applies also to R-weighted sequential
+transducers as in (Cortes et al, 2002). Such automata
+can be regarded as weighted by the product semiring
+(R ? ??, (+,min), (?, concat)). Equivalently, one can
+push the numeric and string components independently.
+Our new pushing algorithm enables not only minimiza-
+tion but also equivalence-testing in more weight semir-
+ings. Equivalence is efficiently tested by pushing the (de-
+terministic) automata to canonicalize their arc labels and
+then testing unweighted equivalence (Mohri, 1997).
+References
+A. V. Aho, J. E. Hopcroft, and J. D. Ullman. 1974. The Design
+and Analysis of Computer Algorithms. Addison-Wesley.
+Jean Berstel and Christophe Reutenauer. 1988. Rational Series
+and their Languages. Springer-Verlag.
+Dany Breslauer. 1996. The suffix tree of a tree and minimizing
+sequential transducers. Lecture Notes in Computer Science,
+1075.
+A. H. Clifford and G. B. Preston. 1967. The Algebraic Theory
+of Semigroups.
+Corinna Cortes, Patrick Haffner, and Mehryar Mohri. 2002.
+Rational kernels. In Proceedings of NIPS, December.
+Pierluigi Crescenzi and Viggo Kann. 1998. How to find the best
+approximation results?a follow-up to Garey and Johnson.
+ACM SIGACT News, 29(4):90?97, December.
+Jason Eisner. 2002. Parameter estimation for probabilistic
+finite-state transducers. In Proc. of ACL, Philadelphia, July.
+John Lafferty, Andrew McCallum, and Fernando Pereira. 2001.
+Conditional random fields: Probabilistic models for seg-
+menting and labeling sequence data. In Proceedings of the
+International Conference on Machine Learning.
+Mehryar Mohri. 1997. Finite-state transducers in language and
+speech processing. Computational Linguistics, 23(2).
+Mehryar Mohri. 2000. Minimization algorithms for sequential
+transducers. Theoretical Computer Science, 324:177?201.
+Appendix: Remaining Proofs
+Let M be an automaton to minimize and F : ?? ? K be the
+function it defines. We assume (K,?) allows greedy factoriza-
+tion, so ' is an equivalence relation on nonzero functions. We
+first prove that M? with the properties of section 4 is the minimal
+automaton computing F . We will then show, following Mohri,
+that the algorithm of section 5 finds such an M? . (Section 6 is a
+special case of section 5.)
+We chose in advance a desired suffix function F[r] for each
+state [r] of M? , and used these to determine the weights of M? .
+To show that the weights were determined correctly, let F?[r] be
+the actual suffix function of [r]. Claim that for all ? and r,
+F?[r](?) = F[r](?). This is easily proved by induction on |?|.
+Our choice of initial weight then ensures that M? computes F .
+We must now prove minimality. For ?, ? ? ??, say ? F? ?
+iff ??1F ' ??1F . Note that F? is an equivalence relation on
+D
+def
+= {? ? ?? : ??1F 6= 0}.25
+25It is not an equivalence relation on all of ??, since ? 6? D is
+Let M ? be any automaton that computes F . For ?, ? ? D,
+we say ? M
+?
+? ? iff ?M?(0, ?) = ?M?<(0, ?), i.e., the prefixes
+? and ? lead from the start state 0 to the same state q in M ?.
+If ? M
+?
+? ?, then ? F? ?, since ??1F = ?(0, ?) ? Fq '
+?(0, ?)? Fq = ??1F .
+If ? F? ?, then ??1F ' ??1F , so F?M (0,?) ' ?
+?1F '
+??1F ' F?M (0,?), so ?M (0, ?) ' ?M (0, ?), so ?
+M?
+? ? by
+construction of M? .
+In short, ? M
+?
+? ? ? ?
+F
+? ? ? ?
+M?
+? ?. So each of the three
+partitions of D into equivalence classes is a refinement of the
+next. Hence nM? ? nF ? nM? , where these are the respective
+numbers of equivalence classes.
+Since M
+?
+? has one equivalence class per useful state of M ? (as
+defined in section 2), nM? is the number of states in a trimmed
+version of M ?. Similarly nM? is the number of states of M? (after
+trimming). Since M ? was arbitrary, M? is minimal.
+Uniqueness: If M ? has the same number of states as M? , then
+the two partitions must be equal. So two prefixes reach the same
+state in M ? iff they do so in M? . This gives a ?-preserving iso-
+morphism between M ? and M? . It follows that the minimal ma-
+chine is unique, except for the distribution of output labels along
+paths (which may depend on arbitrary choices of residues F[r]).
+Now we turn to section 5?s effective construction, using ?,
+of a pushed machine M? and a merged version M? . The proof
+of minimality is essentially the same as in (Mohri, 2000). We
+know that M? computes the same function as M (since pushing,
+merging, and trimming preserve this). So it suffices to show
+?
+F
+? ? ? ?
+M?
+? ?. The above proof of minimality will then go
+through as before.
+M and M? have the same states and transition function ?;
+denote their emission functions by ? and ??. Fq refers to suf-
+fix functions in M . Given ? F? ? (so ?, ? ? D), use the
+definition of F? to write ??1F = k? ? F ? and ??1F =
+k? ? F ?. Let q = ?(0, ?), r = ?(0, ?), k = ?(0, ?).
+For any a ? ?, write ??(q, a) = ?(Fq)\?(a?1Fq) = (k ?
+?(Fq))\(k ? ?(a?1Fq)) = ?(k ? Fq)\?(k ? a?1Fq) =
+?(??1F )\?(a?1(??1F )) = ?(k??F ?)\?(a?1(k??F ?)) =
+?(F ?)\?(a?1F ?). By symmetry, ??(r, a) = ?(F ?)\?(a?1F ?)
+as well. Thanks to left cancellativity, left quotients are unique,
+so ??(q, a) = ??(r, a).26
+So ? F? ? ? corresponding arcs from q and r in M? output
+identical weights. Since ?a F? ?a as well, the same holds at
+?(q, a) and ?(r, a). So by induction, regarding M? as an un-
+weighted automaton, exactly the same strings in (??K)? are
+accepted from q and from r. So merging will merge q and r,
+and ? M?? ? as claimed.
+related by F? to every ?. This corresponds to the fact that a dead
+state can be made to merge with any state by pushing 0 back
+from it, so that the arcs to it have weight 0 and the arcs from
+it have arbitrary weights. Our construction of M? only creates
+states for the equivalence classes of D; ?(0, ?) for ? 6? D is
+undefined, not a dead state.
+26We must check that we did not divide by 0 and obtain a
+false equation. It suffices to show that k 6= 0 and ?(Fq) 6=
+0. Fortunately, ? ? D implies both. (It implies Fq 6= 0, so
+(??1Fq)(?) = Fq(?) 6= 0 for some ?. Hence ?(Fq) 6= 0
+since otherwise ?(??1Fq) = 0 and ?(??1Fq)\(??1Fq)(?) is
+undefined, contradicting the final-quotient property.)

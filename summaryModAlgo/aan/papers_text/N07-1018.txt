@@ -1,0 +1,802 @@
+Proceedings of NAACL HLT 2007, pages 139?146,
+Rochester, NY, April 2007. c?2007 Association for Computational Linguistics
+Bayesian Inference for PCFGs via Markov chain Monte Carlo
+Mark Johnson
+Cognitive and Linguistic Sciences
+Brown University
+Mark Johnson@brown.edu
+Thomas L. Griffiths
+Department of Psychology
+University of California, Berkeley
+Tom Griffiths@berkeley.edu
+Sharon Goldwater
+Department of Linguistics
+Stanford University
+sgwater@stanford.edu
+Abstract
+This paper presents two Markov chain
+Monte Carlo (MCMC) algorithms for
+Bayesian inference of probabilistic con-
+text free grammars (PCFGs) from ter-
+minal strings, providing an alternative
+to maximum-likelihood estimation using
+the Inside-Outside algorithm. We illus-
+trate these methods by estimating a sparse
+grammar describing the morphology of
+the Bantu language Sesotho, demonstrat-
+ing that with suitable priors Bayesian
+techniques can infer linguistic structure
+in situations where maximum likelihood
+methods such as the Inside-Outside algo-
+rithm only produce a trivial grammar.
+1 Introduction
+The standard methods for inferring the parameters of
+probabilistic models in computational linguistics are
+based on the principle of maximum-likelihood esti-
+mation; for example, the parameters of Probabilistic
+Context-Free Grammars (PCFGs) are typically es-
+timated from strings of terminals using the Inside-
+Outside (IO) algorithm, an instance of the Ex-
+pectation Maximization (EM) procedure (Lari and
+Young, 1990). However, much recent work in ma-
+chine learning and statistics has turned away from
+maximum-likelihood in favor of Bayesian methods,
+and there is increasing interest in Bayesian methods
+in computational linguistics as well (Finkel et al,
+2006). This paper presents two Markov chain Monte
+Carlo (MCMC) algorithms for inferring PCFGs and
+their parses from strings alone. These can be viewed
+as Bayesian alternatives to the IO algorithm.
+The goal of Bayesian inference is to compute a
+distribution over plausible parameter values. This
+?posterior? distribution is obtained by combining the
+likelihood with a ?prior? distribution P(?) over pa-
+rameter values ?. In the case of PCFG inference ? is
+the vector of rule probabilities, and the prior might
+assert a preference for a sparse grammar (see be-
+low). The posterior probability of each value of ?
+is given by Bayes? rule:
+P(?|D) ? P(D|?)P(?). (1)
+In principle Equation 1 defines the posterior prob-
+ability of any value of ?, but computing this may
+not be tractable analytically or numerically. For this
+reason a variety of methods have been developed to
+support approximate Bayesian inference. One of the
+most popular methods is Markov chain Monte Carlo
+(MCMC), in which a Markov chain is used to sam-
+ple from the posterior distribution.
+This paper presents two new MCMC algorithms
+for inferring the posterior distribution over parses
+and rule probabilities given a corpus of strings. The
+first algorithm is a component-wise Gibbs sampler
+which is very similar in spirit to the EM algo-
+rithm, drawing parse trees conditioned on the cur-
+rent parameter values and then sampling the param-
+eters conditioned on the current set of parse trees.
+The second algorithm is a component-wise Hastings
+sampler that ?collapses? the probabilistic model, in-
+tegrating over the rule probabilities of the PCFG,
+with the goal of speeding convergence. Both algo-
+139
+rithms use an efficient dynamic programming tech-
+nique to sample parse trees.
+Given their usefulness in other disciplines, we
+believe that Bayesian methods like these are likely
+to be of general utility in computational linguis-
+tics as well. As a simple illustrative example, we
+use these methods to infer morphological parses for
+verbs from Sesotho, a southern Bantu language with
+agglutinating morphology. Our results illustrate that
+Bayesian inference using a prior that favors sparsity
+can produce linguistically reasonable analyses in sit-
+uations in which EM does not.
+The rest of this paper is structured as follows.
+The next section introduces the background for our
+paper, summarizing the key ideas behind PCFGs,
+Bayesian inference, and MCMC. Section 3 intro-
+duces our first MCMC algorithm, a Gibbs sampler
+for PCFGs. Section 4 describes an algorithm for
+sampling trees from the distribution over trees de-
+fined by a PCFG. Section 5 shows how to integrate
+out the rule weight parameters ? in a PCFG, allow-
+ing us to sample directly from the posterior distribu-
+tion over parses for a corpus of strings. Finally, Sec-
+tion 6 illustrates these methods in learning Sesotho
+morphology.
+2 Background
+2.1 Probabilistic context-free grammars
+Let G = (T,N, S,R) be a Context-Free Grammar
+in Chomsky normal form with no useless produc-
+tions, where T is a finite set of terminal symbols, N
+is a finite set of nonterminal symbols (disjoint from
+T ), S ? N is a distinguished nonterminal called the
+start symbol, and R is a finite set of productions of
+the form A ? BC or A ? w, where A,B,C ? N
+and w ? T . In what follows we use ? as a variable
+ranging over (N ?N) ? T .
+A Probabilistic Context-Free Grammar (G, ?) is
+a pair consisting of a context-free grammar G and
+a real-valued vector ? of length |R| indexed by pro-
+ductions, where ?A?? is the production probability
+associated with the production A ? ? ? R. We
+require that ?A?? ? 0 and that for all nonterminals
+A ? N , ?A???R ?A?? = 1.
+A PCFG (G, ?) defines a probability distribution
+over trees t as follows:
+PG(t|?) =
+?
+r?R
+?fr(t)r
+where t is generated by G and fr(t) is the number
+of times the production r = A ? ? ? R is used
+in the derivation of t. If G does not generate t let
+PG(t|?) = 0. The yield y(t) of a parse tree t is
+the sequence of terminals labeling its leaves. The
+probability of a string w ? T+ of terminals is the
+sum of the probability of all trees with yield w, i.e.:
+PG(w|?) =
+?
+t:y(t)=w
+PG(t|?).
+2.2 Bayesian inference for PCFGs
+Given a corpus of strings w = (w1, . . . , wn), where
+each wi is a string of terminals generated by a known
+CFG G, we would like to be able to infer the pro-
+duction probabilities ? that best describe that corpus.
+Taking w to be our data, we can apply Bayes? rule
+(Equation 1) to obtain:
+P(?|w) ? PG(w|?)P(?), where
+PG(w|?) =
+n
+?
+i=1
+PG(wi|?).
+Using t to denote a sequence of parse trees for w,
+we can compute the joint posterior distribution over
+t and ?, and then marginalize over t, with P(?|w) =
+?
+t P(t, ?|w). The joint posterior distribution on t
+and ? is given by:
+P(t, ?|w) ? P(w|t)P(t|?)P(?)
+=
+( n
+?
+i=1
+P(wi|ti)P(ti|?)
+)
+P(?)
+with P(wi|ti) = 1 if y(ti) = wi, and 0 otherwise.
+2.3 Dirichlet priors
+The first step towards computing the posterior dis-
+tribution is to define a prior on ?. We take P(?) to
+be a product of Dirichlet distributions, with one dis-
+tribution for each non-terminal A ? N . The prior
+is parameterized by a positive real valued vector ?
+indexed by productions R, so each production prob-
+ability ?A?? has a corresponding Dirichlet param-
+eter ?A??. Let RA be the set of productions in R
+140
+with left-hand side A, and let ?A and ?A refer to
+the component subvectors of ? and ? respectively
+indexed by productions in RA. The Dirichlet prior
+PD(?|?) is:
+PD(?|?) =
+?
+A?N
+PD(?A|?A), where
+PD(?A|?A) =
+1
+C(?A)
+?
+r?RA
+??r?1r and
+C(?A) =
+?
+r?RA ?(?r)
+?(?r?RA ?r)
+(2)
+where ? is the generalized factorial function and
+C(?) is a normalization constant that does not de-
+pend on ?A.
+Dirichlet priors are useful because they are con-
+jugate to the distribution over trees defined by a
+PCFG. This means that the posterior distribution
+on ? given a set of parse trees, P(?|t, ?), is also a
+Dirichlet distribution. Applying Bayes? rule,
+PG(?|t, ?) ? PG(t|?) PD(?|?)
+?
+(
+?
+r?R
+?fr(t)r
+)(
+?
+r?R
+??r?1r
+)
+=
+?
+r?R
+?fr(t)+?r?1r
+which is a Dirichlet distribution with parameters
+f(t) + ?, where f(t) is the vector of production
+counts in t indexed by r ? R. We can thus write:
+PG(?|t, ?) = PD(?|f(t) + ?)
+which makes it clear that the production counts com-
+bine directly with the parameters of the prior.
+2.4 Markov chain Monte Carlo
+Having defined a prior on ?, the posterior distribu-
+tion over t and ? is fully determined by a corpus
+w. Unfortunately, computing the posterior probabil-
+ity of even a single choice of t and ? is intractable,
+as evaluating the normalizing constant for this dis-
+tribution requires summing over all possible parses
+for the entire corpus and all sets of production prob-
+abilities. Nonetheless, it is possible to define al-
+gorithms that sample from this distribution using
+Markov chain Monte Carlo (MCMC).
+MCMC algorithms construct a Markov chain
+whose states s ? S are the objects we wish to sam-
+ple. The state space S is typically astronomically
+large ? in our case, the state space includes all pos-
+sible parses of the entire training corpus w ? and
+the transition probabilities P(s?|s) are specified via a
+scheme guaranteed to converge to the desired distri-
+bution ?(s) (in our case, the posterior distribution).
+We ?run? the Markov chain (i.e., starting in initial
+state s0, sample a state s1 from P(s?|s0), then sam-
+ple state s2 from P(s?|s1), and so on), with the prob-
+ability that the Markov chain is in a particular state,
+P(si), converging to ?(si) as i ??.
+After the chain has run long enough for it to ap-
+proach its stationary distribution, the expectation
+E?[f ] of any function f(s) of the state s will be
+approximated by the average of that function over
+the set of sample states produced by the algorithm.
+For example, in our case, given samples (ti, ?i) for
+i = 1, . . . , ? produced by an MCMC algorithm, we
+can estimate ? as
+E?[?] ?
+1
+?
+?
+?
+i=1
+?i
+The remainder of this paper presents two MCMC
+algorithms for PCFGs. Both algorithms proceed by
+setting the initial state of the Markov chain to a guess
+for (t, ?) and then sampling successive states using
+a particular transition matrix. The key difference be-
+twen the two algorithms is the form of the transition
+matrix they assume.
+3 A Gibbs sampler for P(t, ?|w, ?)
+The Gibbs sampler (Geman and Geman, 1984) is
+one of the simplest MCMC methods, in which tran-
+sitions between states of the Markov chain result
+from sampling each component of the state condi-
+tioned on the current value of all other variables. In
+our case, this means alternating between sampling
+from two distributions:
+P(t|?,w, ?) =
+n
+?
+i=1
+P(ti|wi, ?), and
+P(?|t,w, ?) = PD(?|f(t) + ?)
+=
+?
+A?N
+PD(?A|fA(t) + ?A).
+Thus every two steps we generate a new sample of
+t and ?. This alternation between parsing and up-
+dating ? is reminiscent of the EM algorithm, with
+141
+tit1 tn
+w1 wi wn
+?Aj. . .?A1 . . . ?A|N|
+?A1 . . .. . . ?Aj ?A|N|
+. . .
+. . .. . .
+. . .
+Figure 1: A Bayes net representation of dependen-
+cies among the variables in a PCFG.
+the Expectation step replaced by sampling t and the
+Maximization step replaced by sampling ?.
+The dependencies among variables in a PCFG are
+depicted graphically in Figure 1, which makes clear
+that the Gibbs sampler is highly parallelizable (just
+like the EM algorithm). Specifically, the parses ti
+are independent given ? and so can be sampled in
+parallel from the following distribution as described
+in the next section.
+PG(ti|wi, ?) =
+PG(ti|?)
+PG(wi|?)
+We make use of the fact that the posterior is a
+product of independent Dirichlet distributions in or-
+der to sample ? from PD(?|t, ?). The production
+probabilities ?A for each nonterminal A ? N are
+sampled from a Dirchlet distibution with parameters
+??A = fA(t) + ?A. There are several methods for
+sampling ? = (?1, . . . , ?m) from a Dirichlet distri-
+bution with parameters ? = (?1, . . . , ?m), with the
+simplest being sampling xj from a Gamma(?j) dis-
+tribution for j = 1, . . . ,m and then setting ?j =
+xj/
+?m
+k=1 xk (Gentle, 2003).
+4 Efficiently sampling from P(t|w, ?)
+This section completes the description of the Gibbs
+sampler for (t, ?) by describing a dynamic program-
+ming algorithm for sampling trees from the set of
+parses for a string generated by a PCFG. This al-
+gorithm appears fairly widely known: it was de-
+scribed by Goodman (1998) and Finkel et al(2006)
+and used by Ding et al(2005), and is very simi-
+lar to other dynamic programming algorithms for
+CFGs, so we only summarize it here. The algo-
+rithm consists of two steps. The first step con-
+structs a standard ?inside? table or chart, as used in
+the Inside-Outside algorithm for PCFGs (Lari and
+Young, 1990). The second step involves a recursion
+from larger to smaller strings, sampling from the
+productions that expand each string and construct-
+ing the corresponding tree in a top-down fashion.
+In this section we take w to be a string of terminal
+symbols w = (w1, . . . , wn) where each wi ? T ,
+and define wi,k = (wi+1, . . . , wk) (i.e., the sub-
+string from wi+1 up to wk). Further, let GA =
+(T,N,A,R), i.e., a CFG just like G except that the
+start symbol has been replaced with A, so, PGA(t|?)
+is the probability of a tree t whose root node is la-
+beled A and PGA(w|?) is the sum of the probabili-
+ties of all trees whose root nodes are labeled A with
+yield w.
+The Inside algorithm takes as input a PCFG
+(G, ?) and a string w = w0,n and constructs a ta-
+ble with entries pA,i,k for each A ? N and 0 ?
+i < k ? n, where pA,i,k = PGA(wi,k|?), i.e., the
+probability of A rewriting to wi,k. The table entries
+are recursively defined below, and computed by enu-
+merating all feasible i, k and A in any order such that
+all smaller values of k?i are enumerated before any
+larger values.
+pA,k?1,k = ?A?wk
+pA,i,k =
+?
+A?B C?R
+?
+i<j<k
+?A?B C pB,i,j pC,j,k
+for all A,B,C ? N and 0 ? i < j < k ? n. At the
+end of the Inside algorithm, PG(w|?) = pS,0,n.
+The second step of the sampling algorithm uses
+the function SAMPLE, which returns a sample from
+PG(t|w, ?) given the PCFG (G, ?) and the inside
+table pA,i,k. SAMPLE takes as arguments a non-
+terminal A ? N and a pair of string positions
+0 ? i < k ? n and returns a tree drawn from
+PGA(t|wi,k, ?). It functions in a top-down fashion,
+selecting the production A ? BC to expand the A,
+and then recursively calling itself to expand B and
+C respectively.
+function SAMPLE(A, i, k) :
+if k ? i = 1 then return TREE(A,wk)
+(j,B,C) = MULTI(A, i, k)
+return TREE(A, SAMPLE(B, i, j), SAMPLE(C, j, k))
+In this pseudo-code, TREE is a function that con-
+structs unary or binary tree nodes respectively, and
+142
+MULTI is a function that produces samples from
+a multinomial distribution over the possible ?split?
+positions j and nonterminal children B and C ,
+where:
+P(j,B,C) = ?A?BC PGB (wi,j|?) PGC (wj,k|?)PGA(wi,k|?)
+5 A Hastings sampler for P(t|w, ?)
+The Gibbs sampler described in Section 3 has
+the disadvantage that each sample of ? re-
+quires reparsing the training corpus w. In
+this section, we describe a component-wise
+Hastings algorithm for sampling directly from
+P(t|w, ?), marginalizing over the produc-
+tion probabilities ?. Transitions between
+states are produced by sampling parses ti from
+P(ti|wi, t?i, ?) for each string wi in turn, where
+t?i = (t1, . . . , ti?1, ti+1, . . . , tn) is the current set
+of parses for w?i = (w1, . . . , wi?1, wi+1, . . . , wn).
+Marginalizing over ? effectively means that the
+production probabilities are updated after each
+sentence is parsed, so it is reasonable to expect
+that this algorithm will converge faster than the
+Gibbs sampler described earlier. While the sampler
+does not explicitly provide samples of ?, the results
+outlined in Sections 2.3 and 3 can be used to sample
+the posterior distribution over ? for each sample of
+t if required.
+Let PD(?|?) be a Dirichlet product prior, and let
+? be the probability simplex for ?. Then by inte-
+grating over the posterior Dirichlet distributions we
+have:
+P(t|?) =
+?
+?
+PG(t|?)PD(?|?)d?
+=
+?
+A?N
+C(?A + fA(t))
+C(?A)
+(3)
+where C was defined in Equation 2. Because we
+are marginalizing over ?, the trees ti become depen-
+dent upon one another. Intuitively, this is because
+wi may provide information about ? that influences
+how some other string wj should be parsed.
+We can use Equation 3 to compute the conditional
+probability P(ti|t?i, ?) as follows:
+P(ti|t?i, ?) =
+P(t|?)
+P(t?i|?)
+=
+?
+A?N
+C(?A + fA(t))
+C(?A + fA(t?i))
+Now, if we could sample from
+P(ti|wi, t?i, ?) =
+P(wi|ti)P(ti|t?i, ?)
+P(wi|t?i, ?)
+we could construct a Gibbs sampler whose states
+were the parse trees t. Unfortunately, we don?t even
+know if there is an efficient algorithm for calculat-
+ing P(wi|t?i, ?), let alne an efficient sampling al-
+gorithm for this distribution.
+Fortunately, this difficulty is not fatal. A Hast-
+ings sampler for a probability distribution ?(s) is
+an MCMC algorithm that makes use of a proposal
+distribution Q(s?|s) from which it draws samples,
+and uses an acceptance/rejection scheme to define a
+transition kernel with the desired distribution ?(s).
+Specifically, given the current state s, a sample s? 6=
+s drawn from Q(s?|s) is accepted as the next state
+with probability
+A(s, s?) = min
+{
+1, ?(s
+?)Q(s|s?)
+?(s)Q(s?|s)
+}
+and with probability 1 ?A(s, s?) the proposal is re-
+jected and the next state is the current state s.
+We use a component-wise proposal distribution,
+generating new proposed values for ti, where i is
+chosen at random. Our proposal distribution is the
+posterior distribution over parse trees generated by
+the PCFG with grammar G and production proba-
+bilities ??, where ?? is chosen based on the current
+t?i as described below. Each step of our Hastings
+sampler is as follows. First, we compute ?? from
+t?i as described below. Then we sample t?i from
+P(ti|wi, ??) using the algorithm described in Sec-
+tion 4. Finally, we accept the proposal t?i given the
+old parse ti for wi with probability:
+A(ti, t?i) = min
+{
+1, P(t
+?
+i|wi, t?i, ?)P(ti|wi, ??)
+P(ti|wi, t?i, ?)P(t?i|wi, ??)
+}
+= min
+{
+1, P(t
+?
+i|t?i, ?)P(ti|wi, ??)
+P(ti|t?i, ?)P(t?i|wi, ??)
+}
+The key advantage of the Hastings sampler over the
+Gibbs sampler here is that because the acceptance
+probability is a ratio of probabilities, the difficult to
+143
+compute P(wi|t?i, ?) is a common factor of both
+the numerator and denominator, and hence is not re-
+quired. The P (wi|ti) term also disappears, being 1
+for both the numerator and the denominator since
+our proposal distribution can only generate trees for
+which wi is the yield.
+All that remains is to specify the production prob-
+abilities ?? of the proposal distribution P(t?i|wi, ??).
+While the acceptance rule used in the Hastings
+algorithm ensures that it produces samples from
+P(ti|wi, t?i, ?) with any proposal grammar ?? in
+which all productions have nonzero probability, the
+algorithm is more efficient (i.e., fewer proposals are
+rejected) if the proposal distribution is close to the
+distribution to be sampled.
+Given the observations above about the corre-
+spondence between terms in P(ti|t?i, ?) and the
+relative frequency of the corresponding productions
+in t?i, we set ?? to the expected value E[?|t?i, ?] of
+? given t?i and ? as follows:
+??r =
+fr(t?i) + ?r
+?
+r??RA fr?(t?i) + ?r?
+6 Inferring sparse grammars
+As stated in the introduction, the primary contribu-
+tion of this paper is introducing MCMC methods
+for Bayesian inference to computational linguistics.
+Bayesian inference using MCMC is a technique of
+generic utility, much like Expectation-Maximization
+and other general inference techniques, and we be-
+lieve that it belongs in every computational linguist?s
+toolbox alongside these other techniques.
+Inferring a PCFG to describe the syntac-
+tic structure of a natural language is an obvi-
+ous application of grammar inference techniques,
+and it is well-known that PCFG inference us-
+ing maximum-likelihood techniques such as the
+Inside-Outside (IO) algorithm, a dynamic program-
+ming Expectation-Maximization (EM) algorithm for
+PCFGs, performs extremely poorly on such tasks.
+We have applied the Bayesian MCMC methods de-
+scribed here to such problems and obtain results
+very similar to those produced using IO. We be-
+lieve that the primary reason why both IO and the
+Bayesian methods perform so poorly on this task
+is that simple PCFGs are not accurate models of
+English syntactic structure. We know that PCFGs
+? = (0.1, 1.0)
+? = (0.5, 1.0)
+? = (1.0, 1.0)
+Binomial parameter ?1
+P(?1|?)
+10.80.60.40.20
+5
+4
+3
+2
+1
+0
+Figure 2: A Dirichlet prior ? on a binomial parame-
+ter ?1. As ?1 ? 0, P(?1|?) is increasingly concen-
+trated around 0.
+that represent only major phrasal categories ignore
+a wide variety of lexical and syntactic dependen-
+cies in natural language. State-of-the-art systems
+for unsupervised syntactic structure induction sys-
+tem uses models that are very different to these kinds
+of PCFGs (Klein and Manning, 2004; Smith and
+Eisner, 2006).1
+Our goal in this section is modest: we aim merely
+to provide an illustrative example of Bayesian infer-
+ence using MCMC. As Figure 2 shows, when the
+Dirichlet prior parameter ?r approaches 0 the prior
+probability PD(?r|?) becomes increasingly concen-
+trated around 0. This ability to bias the sampler
+toward sparse grammars (i.e., grammars in which
+many productions have probabilities close to 0) is
+useful when we attempt to identify relevant produc-
+tions from a much larger set of possible productions
+via parameter estimation.
+The Bantu language Sesotho is a richly agglutina-
+tive language, in which verbs consist of a sequence
+of morphemes, including optional Subject Markers
+(SM), Tense (T), Object Markers (OM), Mood (M)
+and derivational affixes as well as the obligatory
+Verb stem (V), as shown in the following example:
+re
+SM
+-a
+T
+-di
+OM
+-bon
+V
+-a
+M
+?We see them?
+1It is easy to demonstrate that the poor quality of the PCFG
+models is the cause of these problems rather than search or other
+algorithmic issues. If one initializes either the IO or Bayesian
+estimation procedures with treebank parses and then runs the
+procedure using the yields alone, the accuracy of the parses uni-
+formly decreases while the (posterior) likelihood uniformly in-
+creases with each iteration, demonstrating that improving the
+(posterior) likelihood of such models does not improve parse
+accuracy.
+144
+We used an implementation of the Hastings sampler
+described in Section 5 to infer morphological parses
+t for a corpus w of 2,283 unsegmented Sesotho
+verb types extracted from the Sesotho corpus avail-
+able from CHILDES (MacWhinney and Snow, 1985;
+Demuth, 1992). We chose this corpus because the
+words have been morphologically segmented manu-
+ally, making it possible for us to evaluate the mor-
+phological parses produced by our system. We con-
+structed a CFG G containing the following produc-
+tions
+Word ? V
+Word ? V M
+Word ? SM V M
+Word ? SM T V M
+Word ? SM T OM V M
+together with productions expanding the pretermi-
+nals SM,T,OM,V and M to each of the 16,350 dis-
+tinct substrings occuring anywhere in the corpus,
+producting a grammar with 81,755 productions in
+all. In effect, G encodes the basic morphologi-
+cal structure of the Sesotho verb (ignoring factors
+such as derivation morphology and irregular forms),
+but provides no information about the phonological
+identity of the morphemes.
+Note that G actually generates a finite language.
+However, G parameterizes the probability distribu-
+tion over the strings it generates in a manner that
+would be difficult to succintly characterize except
+in terms of the productions given above. Moreover,
+with approximately 20 times more productions than
+training strings, each string is highly ambiguous and
+estimation is highly underconstrained, so it provides
+an excellent test-bed for sparse priors.
+We estimated the morphological parses t in two
+ways. First, we ran the IO algorithm initialized
+with a uniform initial estimate ?0 for ? to produce
+an estimate of the MLE ??, and then computed the
+Viterbi parses t? of the training corpus w with respect
+to the PCFG (G, ??). Second, we ran the Hastings
+sampler initialized with trees sampled from (G, ?0)
+with several different values for the parameters of
+the prior. We experimented with a number of tech-
+niques for speeding convergence of both the IO and
+Hastings algorithms, and two of these were particu-
+larly effective on this problem. Annealing, i.e., us-
+ing P(t|w)1/? in place of P(t|w) where ? is a ?tem-
+perature? parameter starting around 5 and slowly ad-
+justed toward 1, sped the convergence of both algo-
+rithms. We ran both algorithms for several thousand
+iterations over the corpus, and both seemed to con-
+verge fairly quickly once ? was set to 1. ?Jittering?
+the initial estimate of ? used in the IO algorithm also
+sped its convergence.
+The IO algorithm converges to a solution where
+?Word? V = 1, and every string w ? w is analysed
+as a single morpheme V. (In fact, in this grammar
+P(wi|?) is the empirical probability of wi, and it is
+easy to prove that this ? is the MLE).
+The samples t produced by the Hastings algo-
+rithm depend on the parameters of the Dirichlet
+prior. We set ?r to a single value ? for all pro-
+ductions r. We found that for ? > 10?2 the sam-
+ples produced by the Hastings algorithm were the
+same trivial analyses as those produced by the IO
+algorithm, but as ? was reduced below this t be-
+gan to exhibit nontrivial structure. We evaluated
+the quality of the segmentations in the morpholog-
+ical analyses t in terms of unlabeled precision, re-
+call, f-score and exact match (the fraction of words
+correctly segmented into morphemes; we ignored
+morpheme labels because the manual morphological
+analyses contain many morpheme labels that we did
+not include in G). Figure 3 contains a plot of how
+these quantities vary with ?; obtaining an f-score of
+0.75 and an exact word match accuracy of 0.54 at
+? = 10?5 (the corresponding values for the MLE ??
+are both 0). Note that we obtained good results as ?
+was varied over several orders of magnitude, so the
+actual value of ? is not critical. Thus in this appli-
+cation the ability to prefer sparse grammars enables
+us to find linguistically meaningful analyses. This
+ability to find linguistically meaningful structure is
+relatively rare in our experience with unsupervised
+PCFG induction.
+We also experimented with a version of IO modi-
+fied to perform Bayesian MAP estimation, where the
+Maximization step of the IO procedure is replaced
+with Bayesian inference using a Dirichlet prior, i.e.,
+where the rule probabilities ?(k) at iteration k are es-
+timated using:
+?(k)r ? max(0,E[fr|w, ?(k?1)] + ?? 1).
+Clearly such an approach is very closely related to
+the Bayesian procedures presented in this article,
+145
+Exact
+Recall
+Precision
+F-score
+Dirichlet prior parameter ?r
+1 0.01 1e-04 1e-06 1e-08 1e-10
+1
+0.75
+0.5
+0.25
+0
+Figure 3: Accuracy of morphological segmentations
+of Sesotho verbs proposed by the Hastings algo-
+rithms as a function of Dirichlet prior parameter
+?. F-score, precision and recall are unlabeled mor-
+pheme scores, while Exact is the fraction of words
+correctly segmented.
+and in some circumstances this may be a useful
+estimator. However, in our experiments with the
+Sesotho data above we found that for the small val-
+ues of ? necessary to obtain a sparse solution,the
+expected rule count E[fr] for many rules r was less
+than 1??. Thus on the next iteration ?r = 0, result-
+ing in there being no parse whatsoever for many of
+the strings in the training data. Variational Bayesian
+techniques offer a systematic way of dealing with
+these problems, but we leave this for further work.
+7 Conclusion
+This paper has described basic algorithms for per-
+forming Bayesian inference over PCFGs given ter-
+minal strings. We presented two Markov chain
+Monte Carlo algorithms (a Gibbs and a Hastings
+sampling algorithm) for sampling from the posterior
+distribution over parse trees given a corpus of their
+yields and a Dirichlet product prior over the produc-
+tion probabilities. As a component of these algo-
+rithms we described an efficient dynamic program-
+ming algorithm for sampling trees from a PCFG
+which is useful in its own right. We used these
+sampling algorithms to infer morphological analy-
+ses of Sesotho verbs given their strings (a task on
+which the standard Maximum Likelihood estimator
+returns a trivial and linguistically uninteresting so-
+lution), achieving 0.75 unlabeled morpheme f-score
+and 0.54 exact word match accuracy. Thus this
+is one of the few cases we are aware of in which
+a PCFG estimation procedure returns linguistically
+meaningful structure. We attribute this to the ability
+of the Bayesian prior to prefer sparse grammars.
+We expect that these algorithms will be of inter-
+est to the computational linguistics community both
+because a Bayesian approach to PCFG estimation is
+more flexible than the Maximum Likelihood meth-
+ods that currently dominate the field (c.f., the use
+of a prior as a bias towards sparse solutions), and
+because these techniques provide essential building
+blocks for more complex models.
+References
+Katherine Demuth. 1992. Acquisition of Sesotho. In Dan
+Slobin, editor, The Cross-Linguistic Study of Language Ac-
+quisition, volume 3, pages 557?638. Lawrence Erlbaum As-
+sociates, Hillsdale, N.J.
+Ye Ding, Chi Yu Chan, and Charles E. Lawrence. 2005. RNA
+secondary structure prediction by centroids in a Boltzmann
+weighted ensemble. RNA, 11:1157?1166.
+Jenny Rose Finkel, Christopher D. Manning, and Andrew Y.
+Ng. 2006. Solving the problem of cascading errors:
+Approximate Bayesian inference for linguistic annotation
+pipelines. In Proceedings of the 2006 Conference on Empir-
+ical Methods in Natural Language Processing, pages 618?
+626, Sydney, Australia. Association for Computational Lin-
+guistics.
+Stuart Geman and Donald Geman. 1984. Stochastic relaxation,
+Gibbs distributions, and the Bayesian restoration of images.
+IEEE Transactions on Pattern Analysis and Machine Intelli-
+gence, 6:721?741.
+James E. Gentle. 2003. Random number generation and Monte
+Carlo methods. Springer, New York, 2nd edition.
+Joshua Goodman. 1998. Parsing inside-out.
+Ph.D. thesis, Harvard University. available from
+http://research.microsoft.com/?joshuago/.
+Dan Klein and Chris Manning. 2004. Corpus-based induc-
+tion of syntactic structure: Models of dependency and con-
+stituency. In Proceedings of the 42nd Annual Meeting of the
+Association for Computational Linguistics, pages 478?485.
+K. Lari and S.J. Young. 1990. The estimation of Stochastic
+Context-Free Grammars using the Inside-Outside algorithm.
+Computer Speech and Language, 4(35-56).
+Brian MacWhinney and Catherine Snow. 1985. The child lan-
+guage data exchange system. Journal of Child Language,
+12:271?296.
+Noah A. Smith and Jason Eisner. 2006. Annealing structural
+bias in multilingual weighted grammar induction. In Pro-
+ceedings of the 21st International Conference on Computa-
+tional Linguistics and 44th Annual Meeting of the Associa-
+tion for Computational Linguistics, pages 569?576, Sydney,
+Australia. Association for Computational Linguistics.
+146

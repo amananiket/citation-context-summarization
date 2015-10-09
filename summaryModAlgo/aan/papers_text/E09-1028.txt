@@ -1,0 +1,796 @@
+Proceedings of the 12th Conference of the European Chapter of the ACL, pages 238?245,
+Athens, Greece, 30 March ? 3 April 2009. c?2009 Association for Computational Linguistics
+Effects of Word Confusion Networks on Voice Search
+Junlan Feng, Srinivas Bangalore
+AT&T Labs-Research
+Florham Park, NJ, USA
+junlan,srini@research.att.com
+Abstract
+Mobile voice-enabled search is emerging
+as one of the most popular applications
+abetted by the exponential growth in the
+number of mobile devices. The automatic
+speech recognition (ASR) output of the
+voice query is parsed into several fields.
+Search is then performed on a text corpus
+or a database. In order to improve the ro-
+bustness of the query parser to noise in the
+ASR output, in this paper, we investigate
+two different methods to query parsing.
+Both methods exploit multiple hypotheses
+from ASR, in the form of word confusion
+networks, in order to achieve tighter cou-
+pling between ASR and query parsing and
+improved accuracy of the query parser. We
+also investigate the results of this improve-
+ment on search accuracy. Word confusion-
+network based query parsing outperforms
+ASR 1-best based query-parsing by 2.7%
+absolute and the search performance im-
+proves by 1.8% absolute on one of our data
+sets.
+1 Introduction
+Local search specializes in serving geographi-
+cally constrained search queries on a structured
+database of local business listings. Most text-
+based local search engines provide two text fields:
+the ?SearchTerm? (e.g. Best Chinese Restau-
+rant) and the ?LocationTerm? (e.g. a city, state,
+street address, neighborhood etc.). Most voice-
+enabled local search dialog systems mimic this
+two-field approach and employ a two-turn dia-
+log strategy. The dialog system solicits from the
+user a LocationTerm in the first turn followed by a
+SearchTerm in the second turn (Wang et al, 2008).
+Although the two-field interface has been
+widely accepted, it has several limitations for mo-
+bile voice search. First, most mobile devices are
+location-aware which obviates the need to spec-
+ify the LocationTerm. Second, it?s not always
+straightforward for users to be aware of the dis-
+tinction between these two fields. It is com-
+mon for users to specify location information in
+the SearchTerm field. For example, ?restaurants
+near Manhattan? for SearchTerm and ?NY NY?
+for LocationTerm. For voice-based search, it is
+more natural for users to specify queries in a sin-
+gle utterance1. Finally, many queries often con-
+tain other constraints (assuming LocationTerm is a
+constraint) such as that deliver in restaurants that
+deliver or open 24 hours in night clubs open 24
+hours. It would be very cumbersome to enumerate
+each constraint as a different text field or a dialog
+turn. An interface that allows for specifying con-
+straints in a natural language utterance would be
+most convenient.
+In this paper, we introduce a voice-based search
+system that allows users to specify search requests
+in a single natural language utterance. The out-
+put of ASR is then parsed by a query parser
+into three fields: LocationTerm, SearchTerm,
+and Filler. We use a local search engine,
+http://www.yellowpages.com/, which accepts the
+SearchTerm and LocationTerm as two query fields
+and returns the search results from a business list-
+ings database. We present two methods for pars-
+ing the voice query into different fields with par-
+ticular emphasis on exploiting the ASR output be-
+yond the 1-best hypothesis. We demonstrate that
+by parsing word confusion networks, the accuracy
+of the query parser can be improved. We further
+investigate the effect of this improvement on the
+search task and demonstrate the benefit of tighter
+coupling of ASR and the query parser on search
+accuracy.
+The paper outline is as follows. In Section 2, we
+discuss some of the related threads of research rel-
+evant for our task. In Section 3, we motivate the
+need for a query parsing module in voice-based
+search systems. We present two different query
+parsing models in Section 4 and Section 5 and dis-
+cuss experimental results in Section 6. We sum-
+marize our results in Section 7.
+1Based on the returned results, the query may be refined
+in subsequent turns of a dialog.
+238
+2 Related Work
+The role of query parsing can be considered as
+similar to spoken language understanding (SLU)
+in dialog applications. However, voice-based
+search systems currently do not have SLU as a
+separate module, instead the words in the ASR
+1-best output are directly used for search. Most
+voice-based search applications apply a conven-
+tional vector space model (VSM) used in infor-
+mation retrieval systems for search. In (Yu et al,
+2007), the authors enhanced the VSM by deem-
+phasizing term frequency in Listing Names and
+using character level instead of word level uni/bi-
+gram terms to improve robustness to ASR errors.
+While this approach improves recall it does not
+improve precision. In other work (Natarajan et
+al., 2002), the authors proposed a two-state hidden
+Markov model approach for query understanding
+and speech recognition in the same step (Natarajan
+et al, 2002).
+There are two other threads of research liter-
+ature relevant to our work. Named entity (NE)
+extraction attempts to identify entities of interest
+in speech or text. Typical entities include loca-
+tions, persons, organizations, dates, times mon-
+etary amounts and percentages (Kubala et al,
+1998). Most approaches for NE tasks rely on ma-
+chine learning approaches using annotated data.
+These algorithms include a hidden Markov model,
+support vector machines, maximum entropy, and
+conditional random fields. With the goal of im-
+proving robustness to ASR errors, (Favre et al,
+2005) described a finite-state machine based ap-
+proach to take as input ASR n-best strings and ex-
+tract the NEs. Although our task of query segmen-
+tation has similarity with NE tasks, it is arguable
+whether the SearchTerm is a well-defined entity,
+since a user can provide varied expressions as they
+would for a general web search. Also, it is not
+clear how the current best performing NE methods
+based on maximum entropy or conditional ran-
+dom fields models can be extended to apply on
+weighted lattices produced by ASR.
+The other related literature is natural language
+interface to databases (NLIDBs), which had been
+well-studied during 1960s-1980s (Androutsopou-
+los, 1995). In this research, the aim is to map
+a natural language query into a structured query
+that could be used to access a database. However,
+most of the literature pertains to textual queries,
+not spoken queries. Although in its full general-
+1?bestWCN Query
+ParsedQueryParserSpeech SearchASR
+Figure 1: Architecture of a voice-based search sys-
+tem
+ity the task of NLIDB is significantly more ambi-
+tious than our current task, some of the challeng-
+ing problems (e.g. modifier attachment in queries)
+can also be seen in our task as well.
+3 Voice-based Search System
+Architecture
+Figure 1 illustrates the architecture of our voice-
+based search system. As expected the ASR and
+Search components perform speech recognition
+and search tasks. In addition to ASR and Search,
+we also integrate a query parsing module between
+ASR and Search for a number of reasons.
+First, as can be expected the ASR 1-best out-
+put is typically error-prone especially when a user
+query originates from a noisy environment. How-
+ever, ASR word confusion networks which com-
+pactly encode multiple word hypotheses with their
+probabilities have the potential to alleviate the er-
+rors in a 1-best output. Our motivation to intro-
+duce the understanding module is to rescore the
+ASR output for the purpose of maximizing search
+performance. In this paper, we show promising
+results using richer ASR output beyond 1-best hy-
+pothesis.
+Second, as mentioned earlier, the query parser
+not only provides the search engine ?what? and
+?where? information, but also segments the query
+to phrases of other concepts. For the example we
+used earlier, we segment night club open 24 hours
+into night club and open 24 hours. Query seg-
+mentation has been considered as a key step to
+achieving higher retrieval accuracy (Tan and Peng,
+2008).
+Lastly, we prefer to reuse an existing local
+search engine http://www.yellowpages.com/, in
+which many text normalization, task specific tun-
+ing, business rules, and scalability issues have
+been well addressed. Given that, we need a mod-
+ule to translate ASR output to the query syntax that
+the local search engine supports.
+In the next section, we present our proposed ap-
+proaches of how we parse ASR output including
+ASR 1-best string and lattices in a scalable frame-
+work.
+239
+4 Text Indexing and Search-based Parser
+(PARIS)
+As we discussed above, there are many potential
+approaches such as those for NE extraction we can
+explore for parsing a query. In the context of voice
+local search, users expect overall system response
+time to be similar to that of web search. Con-
+sequently, the relatively long ASR latency leaves
+no room for a slow parser. On the other hand,
+the parser needs to be tightly synchronized with
+changes in the listing database, which is updated
+at least once a day. Hence, the parser?s training
+process also needs to be quick to accomodate these
+changes. In this section, we propose a probabilis-
+tic query parsing approach called PARIS (parsing
+using indexing and search). We start by presenting
+a model for parsing ASR 1-best and extend the ap-
+proach to consider ASR lattices.
+4.1 Query Parsing on ASR 1-best output
+4.1.1 The Problem
+We formulate the query parsing task as follows.
+A 1-best ASR output is a sequence of words:
+Q = q1, q2, . . . , qn. The parsing task is to
+segment Q into a sequence of concepts. Each
+concept can possibly span multiple words. Let
+S = s1, s2, . . . , sk, . . . , sm be one of the possible
+segmentations comprising of m segments, where
+sk = qij = qi, . . . qj , 1 ? i ? j ? n + 1. The
+corresponding concept sequence is represented as
+C = c1, c2, . . . , ck, . . . , cm.
+For a given Q, we are interested in searching
+for the best segmentation and concept sequence
+(S?, C?) as defined by Equation 1, which is rewrit-
+ten using Bayes rule as Equation 2. The prior
+probability P (C) is approximated using an h-
+gram model on the concept sequence as shown
+in Equation 3. We model the segment sequence
+generation probability P (S|C) as shown in Equa-
+tion 4, using independence assumptions. Finally,
+the query terms corresponding to a segment and
+concept are generated using Equations 5 and 6.
+(S?, C?) = argmax
+S,C
+P (S,C) (1)
+= argmax
+S,C
+P (C) ? P (S|C) (2)
+P (C) = P (c1) ?
+m?
+i
+P (ci|c
+i?h+1
+i?1 ) (3)
+P (S|C) =
+m?
+k=1
+P (sk | ck) (4)
+P (sk|ck) = P (q
+i
+j |ck) (5)
+P (qij |ck) = Pck(qi) ?
+j?
+l=i+1
+Pck(ql | q
+l?k+1
+l?1 ) (6)
+To train this model, we only have access to text
+query logs from two distinct fields (SearchTerm,
+LocationTerm) and the business listing database.
+We built a SearchTerm corpus by including valid
+queries that users typed to the SearchTerm field
+and all the unique business listing names in the
+listing database. Valid queries are those queries
+for which the search engine returns at least one
+business listing result or a business category. Sim-
+ilarly, we built a corpus for LocationTerm by con-
+catenating valid LocationTerm queries and unique
+addresses including street address, city, state, and
+zip-code in the listing database. We also built a
+small corpus for Filler, which contains common
+carrier phrases and stop words. The generation
+probabilities as defined in 6 can be learned from
+these three corpora.
+In the following section, we describe a scalable
+way of implementation using standard text indexer
+and searcher.
+4.1.2 Probabilistic Parsing using Text Search
+We use Apache-Lucene (Hatcher and Gospod-
+netic, 2004), a standard text indexing and search
+engines for query parsing. Lucene is an open-
+source full-featured text search engine library.
+Both Lucene indexing and search are efficient
+enough for our tasks. It takes a few milliseconds
+to return results for a common query. Indexing
+millions of search logs and listings can be done
+in minutes. Reusing text search engines allows
+a seamless integration between query parsing and
+search.
+We changed the tf.idf based document-term
+relevancy metric in Lucene to reflect P (qij |ck) us-
+ing Relevancy as defined below.
+P (qij |ck) = Relevancy(q
+i
+j , dk) =
+tf(qij , dk) + ?
+N
+(7)
+where dk is a corpus of examples we collected for
+the concept ck; tf(qij , dk) is referred as the term
+frequency, the frequency of qij in dk;N is the num-
+ber of entries in dk; ? is an empirically determined
+smoothing factor.
+240
+0 1
+gary/0.323
+cherry/4.104
+dairy/1.442
+jerry/3.956
+2
+crites/0.652
+christ/2.857
+creek/3.872
+queen/1.439
+kreep/4.540
+kersten/2.045
+3springfield/0.303in/1.346 4
+springfield/1.367
+_epsilon/0.294 5/1
+missouri/7.021
+Figure 2: An example confusion network for ?Gary crities Springfield Missouri?
+Inputs:
+? A set of K concepts:C = c1, c2, . . . , cK ,
+in this paper, K = 3, c1 =
+SearchTerm, c2 = LocationTerm,
+c3 = Filler
+? Each concept ck associates with a text
+corpus: dk. Corpora are indexed using
+Lucene Indexing.
+? A given query: Q = q1, q2, . . . , qn
+? A given maximum number of words in a
+query segment: Ng
+Parsing:
+? Enumerate possible segments in Q up to
+Ng words long: qij = qi, qi+1, . . . , qj ,
+j >= i, |j ? i| < Ng
+? Obtain P (qij |ck)) for each pair of ck and
+qij using Lucene Search
+? Boost P (qij |ck)) based on the position of
+qij in the query P (q
+i
+j |ck) = P (q
+i
+j |ck) ?
+boostck(i, j, n)
+? Search for the best segment sequence
+and concept sequence using Viterbi
+search
+Fig.3. Parsing procedure using Text Indexer and
+Searcher
+pck(q
+i
+j) =
+tf(qii ? dis(i, j), dk) + ?
+N ? shift
+(8)
+When tf(qij , dk) is zero for all concepts, we
+loosen the phrase search to be proximity search,
+which searches words in qij within a specific dis-
+tance. For instance, ?burlington west virginia? ?
+5 will find entries that include these three words
+within 5 words of each other. tf(qij , dk) is dis-
+counted for proximity search. For a given qij , we
+allow a distance of dis(i, j) = (j ? i + shift)
+words. shift is a parameter that is set empirically.
+The discounting formula is given in 8.
+Figure 3 shows the procedure we use for pars-
+ing. It enumerates possible segments qij of a given
+Q. It then obtains P (qij |ck) using Lucene Search.
+We boost pck(q
+i
+j)) based on the position of q
+i
+j in
+Q. In our case, we simply set: boostck(i, j, n) = 3
+if j = n and ck = LocationTerm. Other-
+wise, boostck(i, j, n) = 1. The algorithm searches
+for the best segmentation using the Viterbi algo-
+rithm. Out-of-vocabulary words are assigned to c3
+(Filler).
+4.2 Query Parsing on ASR Lattices
+Word confusion networks (WCNs) is a compact
+lattice format (Mangu et al, 2000). It aligns a
+speech lattice with its top-1 hypothesis, yielding
+a ?sausage?-like approximation of lattices. It has
+been used in applications such as word spotting
+and spoken document retrieval. In the following,
+we present our use of WCNs for query parsing
+task.
+Figure 2 shows a pruned WCN example. For
+each word position, there are multiple alternatives
+and their associated negative log posterior proba-
+bilities. The 1-best path is ?Gary Crites Spring-
+field Missouri?. The reference is ?Dairy Queen
+in Springfield Missouri?. ASR misrecognized
+?Dairy Queen? as ?Gary Crities?. However, the
+correct words ?Dairy Queen? do appear in the lat-
+tice, though with lower probability. The challenge
+is to select the correct words from the lattice by
+considering both ASR posterior probabilities and
+parser probabilities.
+The hypotheses in WCNs have to be reranked
+241
+by the Query Parser to prefer those that have
+meaningful concepts. Clearly, each business name
+in the listing database corresponds to a single con-
+cept. However, the long queries from query logs
+tend to contain multiple concepts. For example, a
+frequent query is ?night club for 18 and up?. We
+know ?night club? is the main subject. And ?18
+and up? is a constraint. Without matching ?night
+club?, any match with ?18 and up? is meaning-
+less. The data fortunately can tell us which words
+are more likely to be a subject. We rarely see ?18
+and up? as a complete query. Given these observa-
+tions, we propose calculating the probability of a
+query term to be a subject. ?Subject? here specif-
+ically means a complete query or a listing name.
+For the example shown in Figure 2, we observe the
+negative log probability for ?Dairy Queen? to be a
+subject is 9.3. ?Gary Crites? gets 15.3. We refer
+to this probability as subject likelihood. Given a
+candidate query term s = w1, w2, ..wm, we repre-
+sent the subject likelihood as Psb(s). In our exper-
+iments, we estimate Psb using relative frequency
+normorlized by the length of s. We use the follow-
+ing formula to combine it with posterior probabil-
+ities in WCNs Pcf (s):
+P (s) = Pcf (s) ? Psb(s)
+?
+Pcf (s) =
+?
+j=1,...,nw
+Pcf (wi)
+where ? is used to flatten ASR posterior proba-
+bilities and nw is the number of words in s. In
+our experiments, ? is set to 0.5. We then re-rank
+ASR outputs based on P (s). We will report ex-
+perimental results with this approach. ?Subject?
+is only related to SearchTerm. Considering this,
+we parse the ASR 1-best out first and keep the
+Location terms extracted as they are. Only word
+alternatives corresponding to the search terms are
+used for reranking. This also improves speed,
+since we make the confusion network lattice much
+smaller. In our initial investigations, such an ap-
+proach yields promising results as illustrated in the
+experiment section.
+Another capability that the parser does for both
+ASR 1-best and lattices is spelling correction. It
+corrects words such as restaurants to restaurants.
+ASR produces spelling errors because the lan-
+guage model is trained on query logs. We need
+to make more efforts to clean up the query log
+database, though progresses had been made.
+5 Finite-state Transducer-based Parser
+In this section, we present an alternate method for
+parsing which can transparently scale to take as in-
+put word lattices from ASR. We encode the prob-
+lem of parsing as a weighted finite-state transducer
+(FST). This encoding allows us to apply the parser
+on ASR 1-best as well as ASR WCNs using the
+composition operation of FSTs.
+We formulate the parsing problem as associat-
+ing with each token of the input a label indicating
+whether that token belongs to one of a business
+listing (bl), city/state (cs) or neither (null). Thus,
+given a word sequence (W = w1, . . . , wn) output
+from ASR, we search of the most likely label se-
+quence (T = t1, . . . , tn), as shown in Equation 9.
+We use the joint probability P (W,T ) and approx-
+imate it using an k-gram model as shown in Equa-
+tions 10,11.
+T ? = argmax
+T
+P (T |W ) (9)
+= argmax
+T
+P (W,T ) (10)
+= argmax
+T
+n?
+i
+P (wi, ti | w
+i?k+1
+i?1 , t
+i?k+1
+i?1 )
+(11)
+A k-gram model can be encoded as a weighted
+finite-state acceptor (FSA) (Allauzen et al, 2004).
+The states of the FSA correspond to the k-gram
+histories, the transition labels to the pair (wi, ti)
+and the weights on the arcs are ?log(P (wi, ti |
+wi?k+1i?1 , t
+i?k+1
+i?1 )). The FSA also encodes back-off
+arcs for purposes of smoothing with lower order k-
+grams. An annotated corpus of words and labels is
+used to estimate the weights of the FSA. A sample
+corpus is shown in Table 1.
+1. pizza bl hut bl new cs york cs new cs
+york cs
+2. home bl depot bl around null
+san cs francisco cs
+3. please null show null me null indian bl
+restaurants bl in null chicago cs
+4. pediatricians bl open null on null
+sundays null
+5. hyatt bl regency bl in null honolulu cs
+hawaii cs
+Table 1: A Sample set of annotated sentences
+242
+The FSA on the joint alphabet is converted into
+an FST. The paired symbols (wi, ti) are reinter-
+preted as consisting of an input symbol wi and
+output symbol ti. The resulting FST (M ) is used
+to parse the 1-best ASR (represented as FSTs
+(I)), using composition of FSTs and a search for
+the lowest weight path as shown in Equation 12.
+The output symbol sequence (pi2) from the lowest
+weight path is T ?.
+T ? = pi2(Bestpath(I ?M)) (12)
+Equation 12 shows a method for parsing the 1-
+best ASR output using the FST. However, a simi-
+lar method can be applied for parsing WCNs. The
+WCN arcs are associated with a posterior weight
+that needs to be scaled suitably to be comparable
+to the weights encoded in M . We represent the re-
+sult of scaling the weights in WCN by a factor of
+? asWCN?. The value of the scaling factor is de-
+termined empirically. Thus the process of parsing
+a WCN is represented by Equation 13.
+T ? = pi2(Bestpath(WCN
+? ?M)) (13)
+6 Experiments
+We have access to text query logs consisting of 18
+million queries to the two text fields: SearchTerm
+and LocationTerm. In addition to these logs, we
+have access to 11 million unique business listing
+names and their addresses. We use the combined
+data to train the parameters of the two parsing
+models as discussed in the previous sections. We
+tested our approaches on three data sets, which in
+total include 2686 speech queries. These queries
+were collected from users using mobile devices
+from different time periods. Labelers transcribed
+and annotated the test data using SearchTerm and
+LocationTerm tags.
+Data Sets Number of WACC
+Speech Queries
+Test1 1484 70.1%
+Test2 544 82.9%
+Test3 658 77.3%
+Table 2: ASR Performance on three Data Sets
+We use an ASR with a trigram-based language
+model trained on the query logs. Table 2 shows the
+ASR word accuracies on the three data sets. The
+accuracy is the lowest on Test1, in which many
+users were non-native English speakers and a large
+percentage of queries are not intended for local
+search.
+We measure the parsing performance in terms
+of extraction accuracy on the two non-filler slots:
+SearchTerm and LocationTerm. Extraction accu-
+racy computes the percentage of the test set where
+the string identified by the parser for a slot is ex-
+actly the same as the annotated string for that slot.
+Table 3 reports parsing performance using the
+PARIS approach for the two slots. The ?Tran-
+scription? columns present the parser?s perfor-
+mances on human transcriptions (i.e. word ac-
+curacy=100%) of the speech. As expected, the
+parser?s performance heavily relies on ASR word
+accuracy. We achieved lower parsing perfor-
+mance on Test1 compared to other test sets due
+to lower ASR accuracy on this test set. The
+promising aspect is that we consistently improved
+SearchTerm extraction accuracy when usingWCN
+as input. The performance under ?Oracle path?
+column shows the upper bound for the parser us-
+ing the oracle path2 from the WCN. We pruned
+the WCN by keeping only those arcs that are
+within cthresh of the lowest cost arc between
+two states. Cthresh = 4 is used in our experi-
+ments. For Test2, the upper bound improvement
+is 7.6% (82.5%-74.9%) absolute. Our proposed
+approach using pruned WCN achieved 2.7% im-
+provement, which is 35% of the maximum poten-
+tial gain. We observed smaller improvements on
+Test1 and Test3. Our approach did not take advan-
+tage of WCN for LocationTerm extraction, hence
+we obtained the same performance with WCNs as
+using ASR 1-best.
+In Table 4, we report the parsing performance
+for the FST-based approach. We note that the
+FST-based parser on a WCN also improves the
+SearchTerm and LocationTerm extraction accu-
+racy over ASR 1-best, an improvement of about
+1.5%. The accuracies on the oracle path and the
+transcription are slightly lower with the FST-based
+parser than with the PARIS approach. The per-
+formance gap, however, is bigger on ASR 1-best.
+The main reason is PARIS has embedded a module
+for spelling correction that is not included in the
+FST approach. For instance, it corrects nieman to
+neiman. These improvements from spelling cor-
+rection don?t contribute much to search perfor-
+2Oracle text string is the path in the WCN that is closest
+to the reference string in terms of Levenshtein edit distance
+243
+Data Sets SearchTerm Extraction Accuracy LocationTerm Extraction Accuracy
+Input ASR WCN Oracle Transcription ASR WCN Oracle Transcription
+1-best Path 4 1best Path 4
+Test1 60.0% 60.7% 67.9% 94.1% 80.6% 80.6% 85.2% 97.5%
+Test2 74.9% 77.6% 82.5% 98.6% 89.0% 89.0% 92.8% 98.7%
+Test3 64.7% 65.7% 71.5% 96.7% 88.8% 88.8% 90.5% 97.4%
+Table 3: Parsing performance using the PARIS approach
+Data Sets SearchTerm Extraction Accuracy LocationTerm Extraction Accuracy
+Input ASR WCN Oracle Transcription ASR WCN Oracle Transcription
+1-best Path 4 1best Path 4
+Test1 56.9% 57.4% 65.6% 92.2% 79.8% 79.8% 83.8% 95.1%
+Test2 69.5% 71.0% 81.9% 98.0% 89.4% 89.4% 92.7% 98.5%
+Test3 59.2% 60.6% 69.3% 96.1% 87.1% 87.1% 89.3% 97.3%
+Table 4: Parsing performance using the FST approach
+mance as we will see below, since the search en-
+gine is quite robust to spelling errors. ASR gen-
+erates spelling errors because the language model
+is trained using query logs, where misspellings are
+frequent.
+We evaluated the impact of parsing perfor-
+mance on search accuracy. In order to measure
+search accuracy, we need to first collect a ref-
+erence set of search results for our test utter-
+ances. For this purpose, we submitted the hu-
+man annotated two-field data to the search engine
+(http://www.yellowpages.com/ ) and extracted the
+top 5 results from the returned pages. The re-
+turned search results are either business categories
+such as ?Chinese Restaurant? or business listings
+including business names and addresses. We con-
+sidered these results as the reference search results
+for our test utterances.
+In order to evaluate our voice search system, we
+submitted the two fields resulting from the query
+parser on the ASR output (1-best/WCN) to the
+search engine. We extracted the top 5 results from
+the returned pages and we computed the Precision,
+Recall and F1 scores between this set of results
+and the reference search set. Precision is the ra-
+tio of relevant results among the top 5 results the
+voice search system returns. Recall refers to the
+ratio of relevant results to the reference search re-
+sult set. F1 combines precision and recall as: (2
+* Recall * Precision) / (Recall + Precision) (van
+Rijsbergen, 1979).
+In Table 5 and Table 6, we report the search per-
+formance using PARIS and FST approaches. The
+overall improvement in search performance is not
+Data Sets Precision Recall F1
+ASR Test1 71.8% 66.4% 68.8%
+1-best
+Test2 80.7% 76.5% 78.5%
+Test3 72.9% 68.8% 70.8%
+WCN
+Test1 70.8% 67.2% 69.0%
+Test2 81.6% 79.0% 80.3%
+Test3 73.0% 69.1% 71.0%
+Table 5: Search performances using the PARIS ap-
+proach
+Data Sets Precision Recall F1
+ASR Test1 71.6% 64.3% 67.8%
+1-best
+Test2 79.6% 76.0% 77.7%
+Test3 72.9% 67.2% 70.0%
+WCN
+Test1 70.5% 64.7% 67.5%
+Test2 80.3% 77.3% 78.8%
+Test3 72.9% 68.1% 70.3%
+Table 6: Search performances using the FST ap-
+proach
+as large as the improvement in the slot accura-
+cies between using ASR 1-best and WCNs. On
+Test1, we obtained higher recall but lower preci-
+sion with WCN resulting in a slight decrease in
+F1 score. For both approaches, we observed that
+using WCNs consistently improves recall but not
+precision. Although this might be counterintu-
+itive, given that WCNs improve the slot accuracy
+overall. One possible explanation is that we have
+observed errors made by the parser using WCNs
+are more ?severe? in terms of their relationship to
+the original queries. For example, in one particular
+244
+case, the annotated SearchTerm is ?book stores?,
+for which the ASR 1-best-based parser returned
+?books? (due to ASR error) as the SearchTerm,
+while the WCN-based parser identified ?banks?
+as the SearchTerm. As a result, the returned re-
+sults from the search engine using the 1-best-based
+parser were more relevant compared to the results
+returned by the WCN-based parser.
+There are few directions that this observation
+suggests. First, the weights on WCNs may need
+to be scaled suitably to optimize the search per-
+formance as opposed to the slot accuracy perfor-
+mance. Second, there is a need for tighter cou-
+pling between the parsing and search components
+as the eventual goal for models of voice search is
+to improve search accuracy and not just the slot
+accuracy. We plan to investigate such questions in
+future work.
+7 Summary
+This paper describes two methods for query pars-
+ing. The task is to parse ASR output including 1-
+best and lattices into database or search fields. In
+our experiments, these fields are SearchTerm and
+LocationTerm for local search. Our first method,
+referred to as PARIS, takes advantage of a generic
+search engine (for text indexing and search) for
+parsing. All probabilities needed are retrieved on-
+the-fly. We used keyword search, phrase search
+and proximity search. The second approach, re-
+ferred to as FST-based parser, which encodes the
+problem of parsing as a weighted finite-state trans-
+duction (FST). Both PARIS and FST successfully
+exploit multiple hypotheses and posterior proba-
+bilities from ASR encoded as word confusion net-
+works and demonstrate improved accuracy. These
+results show the benefits of tightly coupling ASR
+and the query parser. Furthermore, we evaluated
+the effects of this improvement on search perfor-
+mance. We observed that the search accuracy im-
+proves using word confusion networks. However,
+the improvement on search is less than the im-
+provement we obtained on parsing performance.
+Some improvements the parser achieves do not
+contribute to search. This suggests the need of
+coupling the search module and the query parser
+as well.
+The two methods, namely PARIS and FST,
+achieved comparable performances on search.
+One advantage with PARIS is the fast training
+process, which takes minutes to index millions
+of query logs and listing entries. For the same
+amount of data, FST needs a number of hours to
+train. The other advantage is PARIS can easily
+use proximity search to loosen the constrain of N-
+gram models, which is hard to be implemented
+using FST. FST, on the other hand, does better
+smoothing on learning probabilities. It can also
+more directly exploit ASR lattices, which essen-
+tially are represented as FST too. For future work,
+we are interested in ways of harnessing the bene-
+fits of the both these approaches.
+References
+C. Allauzen, M. Mohri, M. Riley, and B. Roark. 2004.
+A generalized construction of speech recognition
+transducers. In ICASSP, pages 761?764.
+I. Androutsopoulos. 1995. Natural language interfaces
+to databases - an introduction. Journal of Natural
+Language Engineering, 1:29?81.
+B. Favre, F. Bechet, and P. Nocera. 2005. Robust
+named entity extraction from large spoken archives.
+In Proceeding of HLT 2005.
+E. Hatcher and O. Gospodnetic. 2004. Lucene in Ac-
+tion (In Action series). Manning Publications Co.,
+Greenwich, CT, USA.
+F. Kubala, R. Schwartz, R. Stone, and R. Weischedel.
+1998. Named entity extraction from speech. In in
+Proceedings of DARPA Broadcast News Transcrip-
+tion and Understanding Workshop, pages 287?292.
+L. Mangu, E. Brill, and A. Stolcke. 2000. Finding con-
+sensus in speech recognition: Word error minimiza-
+tion and other applications of confusion networks.
+Computation and Language, 14(4):273?400, Octo-
+ber.
+P. Natarajan, R. Prasad, R.M. Schwartz, and
+J. Makhoul. 2002. A scalable architecture for di-
+rectory assistance automation. In ICASSP 2002.
+B. Tan and F. Peng. 2008. Unsupervised query seg-
+mentation using generative language models and
+wikipedia. In Proceedings of WWW-2008.
+C.V. van Rijsbergen. 1979. Information Retrieval.
+Boston. Butterworth, London.
+Y. Wang, D. Yu, Y. Ju, and A. Alex. 2008. An intro-
+duction to voice search. Signal Processing Magzine,
+25(3):29?38.
+D. Yu, Y.C. Ju, Y.Y. Wang, G. Zweig, and A. Acero.
+2007. Automated directory assistance system - from
+theory to practice. In Interspeech.
+245

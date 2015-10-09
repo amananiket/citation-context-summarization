@@ -1,0 +1,889 @@
+Deriving Database Queries from Logical Forms 
+by Abductive Definition Expansion 
+Manny Rayner  and  H iyan  A lshawi  * 
+SR I  In ternat iona l  
+Cambr idge  Computer  Sc ience Research  Cent re  
+23 Mil lers Yard ,  Cambr idge  CB2 1RQ,  U.K.  
+manny?cam, sri. com hiyan~cam, sri. tom 
+Abst ract  
+The paper describes a principled approach to 
+the problem of deriving database queries from 
+logical forms produced by a general NL in- 
+terface. Our method attempts to construct a 
+database query and a set of plausible assump- 
+tions, such that the logical form is equivalent 
+to the query given the assumptions. The do- 
+main information eeded is provided as declar- 
+ative meaning postulates, including "defini- 
+tional equivalences". The technical basis for 
+the approach is that a "definition" of the form 
+Head A Conditions ~ Body can be read pro- 
+cedurally as "Expand Head to Body if it oc- 
+curs in an environment where Conditions can 
+be inferred". The "environment" is provided 
+by the other conjuncts occurring together with 
+Head in the original ogical form, together with 
+other meaning postulates and the contents of 
+the database. The method has been imple- 
+mented in CLARE, a language and reasoning 
+system whose linguistic component is the SRI 
+Core Language Engine. 
+1 In t roduct ion  
+The basic question addressed in this paper is that of 
+how to connect a general NL interface and a back-end 
+application in a principled way. We will assume here 
+that the interface takes input in a natural anguage and 
+produces a representation in some kind of enriched first- 
+order logic, and that the application is some kind of rela- 
+tional database; this is a common and important situa- 
+tion, and it is well-known that the problems involved are 
+non-trivial. The techniques used apply equally well to 
+other NLP applications which involve mapping linguistic 
+concepts to knowledge base predicates. Concrete xam- 
+ples in the paper will be taken from the SRI CLARE 
+system, working in the domain of project resource man- 
+agement. CLARE is a combined natural language and 
+*CLARE is being developed as part of a collaborative 
+project involving BP Research, British Aerospace, British 
+Telecom, Cambridge University, SRI International nd the 
+UK Defence Research Agency. The project is funded in part 
+by the UK Department of Trade and Industry. 
+reasoning system which includes the Core Language En- 
+gine (or CLE, Alshawi 1992) as its language component. 
+The CLE produces emantic interpretations of sentences 
+in a notation called Quasi Logical Form. For database 
+interface applications, the semantic interpretations are 
+converted into fairly conventional logical forms before 
+query derivation takes place. 
+A NL interface like CLARE which is general (rather 
+than being tailored to the application) will produce log- 
+ical forms that essentially mirror the linguistic content 
+of the input. It will thus normally contain what might 
+be called "linguistic" predicates (i.e. word senses): for 
+example, the logical form for a query like 
+($1) List all payments made to BT during 1990. 
+would be expected to contain predicates corresponding 
+directly to payment, make and during. An appropriate 
+database query, on the other hand, might be a command 
+to search for "transaction" tuples where the "payee" field 
+was filled by "BT", and the "date" field by a date con- 
+strained to be between 1st January and 31st December, 
+1990. The differing nature of the two representations can 
+lead to several possible kinds of difficulties, depending on 
+how the "linguistic" and "database" representations are 
+connected. There are three in particular that we will 
+devote most of our attention to in what follows: 
+1. A query can be conceptually outside the database's 
+domain. For example, if "payments" in (S1) is re- 
+placed by "phone-calls", the interface should be able 
+to indicate to the user that it is unable to relate the 
+query to the information contained in the database. 
+2. A query can be contingently outside the database's 
+domain. Thus if "1990" is replaced by "1985", it 
+may be possible to derive a query; however, if the 
+database only contains records going back to 1989, 
+the result will be an empty list. Presenting this to 
+the user without explanation is seriously misleading. 
+3. A query may need additional implicit assumptions 
+to be translatable into database form. Asking (S1) 
+in the context of our example Project Resource 
+Management domain, it is implicitly understood 
+that all payments referred to have been made by 
+SRI. If the user receives no feedback describing the 
+assumptions that have been made to perform the 
+translation, it is again possible for misunderstand- 
+ings to arise. 
+1
+One attractive way to attempt o effect the connec- 
+tion between LF and database query is to encode the 
+database as a set of unit clauses, and to build an inter- 
+preter for the logical forms, which encodes the relations 
+between linguistic and database predicates as "rules" or 
+"meaning postulates" written in Horn-clause form (cf. 
+e.g. McCord 1987). Anyone who has experimented with 
+this scheme will, however, know that it tends to suf- 
+fer from all three of the types of problem listed above. 
+This is hardly surprising, when one considers that Horn- 
+clauses are "if" rules; they give conditions for the LF's 
+being true, but (as pointed out in Konolige 1981), they 
+lack the "only if" half that says when they are false. 
+It is of course possible to invoke the Closed World As- 
+sumption (CWA); in this interpretation, finite failure is 
+regarded as equivalent o negation. Unfortunately, ex- 
+perience also shows that it is extremely difficult to write 
+meaning postulates for non-trivial domains that are valid 
+under this strict interpretation. 
+For these reasons, Scha (1983) argues that approaches 
+which express the connection between LF and database 
+query in terms of first-order logic formulas are unpromis- 
+ing. Instead, previous approaches to query derivation 
+which attempt to justify equivalence between queries 
+and semantic represenations have been limited (at least 
+in implemented systems) to employing restricted forms 
+of inference. Examples are the type inference used in 
+PHLIQA (Bronnenberg et al1980) and Stallard's 're- 
+cursive terminological simplification' (Stallard 1986). 
+In this paper we will show how a more general de- 
+ductive approach can be taken. This depends on coding 
+the relationship between LF and database forms not as 
+Horn-clauses but as "definitional equivalences", explicit 
+if-and-only-if rules of a particular form. Our approach 
+retains computational tractabil ity by limiting the way 
+in which the equivalences can take part in deductions, 
+roughly speaking by only using them to perform directed 
+expansions of definitions. However we still permit non- 
+trivial goal-directed domain reasoning in justifying query 
+derivation, allowing, for example, the translation of an 
+LF conjuct to be influenced by any other LF conjuncts, 
+in contrast o the basically local translation in PHLIQA. 
+This approach deals with the first two points above with- 
+out recourse to the CWA and simultaneously allows a 
+clean integration of the "abductive" reasoning needed to 
+take care of point 3. The main technical problems to be 
+solved are caused by the fact that the left-hand sides of 
+the equivalences are generally not atomic. 
+The rest of the paper is organized as follows. The main 
+concepts are introduced in sections 2 and 3, followed by 
+a simple example in section 4. Section 5 discusses the 
+role of existential quantification in equivalences. In sec- 
+tion 6 we introduce abductive reasoning, and relate this 
+to the problems discussed above. Section 8 then briefly 
+describes issues related to implementing efficient search 
+strategies to support the various kinds of inference used, 
+and in section 9 we present an extended example showing 
+how an LF can be successively reduced by equivalences 
+into DB query form. 
+2 Query  Trans la t ion  as  Def in i t ion  
+Expans ion  
+The task which the CLARE database interface carries 
+out is essentially that of translating a logical formula in 
+which all predicates are taken from one set of symbols 
+(word sense predicates) into a formula in which all pred- 
+icates are taken from another set (database relations) 
+and determining the assumptions under which the two 
+formulae are equivalent. Since database relations are 
+generally more specific than word senses, it will often 
+be the case that the set of assumptions i non-empty. 
+The same mechanism is used for translating both queries 
+and assertions into database form; moreover, the declar- 
+ative knowledge used is also compiled, using a differ- 
+ent method, so as to permit generation of English from 
+database assertions, though further description of this is 
+beyond the scope of the paper. 
+The main body of the declarative knowledge used is 
+coded in a set of equivalential meaning postulates in 
+which word sense predicates appear on one side and 
+database relations appear on the other. (In fact, inter- 
+mediate predicates, on the way to translating from lin- 
+guistic predicates to database predicates may appear on 
+either side.) The translation process then corresponds to 
+abductive reasoning that views the meaning postulates 
+as conditional definitions of the linguistic predicates in 
+terms of database (or intermediate) predicates, the con- 
+ditions being either discharged or taken as assumptions 
+for a particular derivation. We will therefore refer to th~ 
+translation process as 'definition expansion'. 
+If the left-hand sides of equivalences needed to be arbi. 
+trary formulas, the whole scheme would probably be im- 
+practical. However, experimentation with CLARE ha~ 
+lead us to believe that this is not the case; sufficient ex- 
+pressive power is obtained by restricting them to be nc 
+more complex than existentially quantified conjunction, 
+of atomic formulas. Thus we will assume that equivalen. 
+tim meaning postulates have the general form 1 
+(3yl, Y2,..--P1 A P2 A P3...) *--* P '  (1' 
+In the implementation these rules are written in a nota 
+tion illustrated by the following example, 
+ex is ts  ( \ [Event \ ]  , 
+and(work_onl (Event, Person, Project), 
+pro jec t  l (P ro j  ec t ) ) )  <-> 
+DB_PRO JECT_MEMBER(Proj ec t ,  Person) 
+in which work_onl and pro jec t l  are linguistic predi. 
+cates and DB_PROJECT_MEMBER is a database relation (w( 
+will adhere to the convention of capitalizing names ol 
+database relations). 
+The attractive aspect of this type of equivalence stem: 
+from the fact that it can be given a sensible interpre. 
+tation in terms of the procedural notion of "definition- 
+expansion". Neglecting for the moment the existentia 
+quantification, the intuitive idea is that is that (1) car 
+be read as "P1 can be expanded to P '  if it occurs ir 
+a Quantification over the yl on the left-hand side will offer 
+in practice be vacuous. In this and other formulas, we assum( 
+implicit universal quantification over free variables. 
+2
+an environment where /)2 ^  P3... can be inferred". The 
+"environment" is provided by the other conjuncts occur- 
+ring together with P1 in the original logical form, to- 
+gether with other meaning postulates and the contents 
+of the database. This provides a framework in which 
+arbitrary domain inference can play a direct role in jus- 
+tifying the validity of the translation of an LF into a 
+particular database query. 
+3 T rans la t ion  Schemas  
+The ideas sketched out above can be formalised as the 
+inference rules (2), (3) and (4): 
+(3yl, Y2, ....P1 A P2 ^  P3...) ~ P '  A 
+Conds ~ O(P2 h Pa...) 
+Conds --+ (O(P1) +-+ P') (2) 
+where 0 is a substitution that replaces each Yi with a 
+different unique constant. 
+Conds A Q ---, (P *--, P') 
+Conds --+ (P A Q +-+ P' A Q) (3) 
+Co.ds (O( P) O( P') ) ) 
+Conds --+ (3x.P +-+ 3x.P'))  (4) 
+where 0 substitutes a unique constant for x. 
+In each of these, the formulas before the :=> are the 
+premises, and the formula after the conclusion. The in- 
+ference rules can be justified within the framework of 
+the sequent calculus (Robinson 1979), though space lim- 
+itations prevent us from doing so here. (2) is the base 
+case: it gives sufficient conditions for using (1) to ex- 
+pand P1 (the head of the definition) to P '  (its body). 
+The other formulas, (3) and (4), are the main recursive 
+cases. (3) expresses expansion of a conjunction in terms 
+of expansion of one of its conjuncts, adding the other 
+conjunct to the environment of assumptions as it does 
+so; (4) expresses expansion of an existentially quantified 
+form in terms of expansion of its body, replacing the 
+bound variables with unique constants. We will refer to 
+inference rules like (3) and (4) as expansion-schemas or 
+just schemas. One or more such schema must be given 
+for each of the logical operators of the representation lan- 
+guage, defining the expansion of a construct built with 
+that operator in terms of the expansion of one of its con- 
+stituents. 
+The central use of the equivalences i  thus as truth- 
+preserving conditional rewriting rules, which licence 
+translation of the head into the body in environments 
+where the conditions hold. There is a second use of the 
+equivalences as normal Horn-clauses, which as we soon 
+shall see is also essential to the translation process. An 
+equivalence of the form 
+/'1 ^ P2  ^ . . .  ~ 01^02 A . . .  
+implies the validity, for any i, of all Horn-clauses either 
+of the form 
+Pi ~- Q1 ^ Q2 A. . .  
+or  
+Qi ' , - -P IAP2A. . .  
+We will refer to these, respectively, as normal and back- 
+ward Horn-clause readings of the equivalence. For exam- 
+ple, the rule 
+and(manl(X) ,employeel(X)) <-> 
+exists ( \[HasCar\], employee (X ,m, HasCar) ) 
+produces two normal Horn-clause readings, 
+manl(X) <- employee(X,m,HasCar). 
+employeel(X) <- employee(X,m,HasCar). 
+and one backward Horn-clause reading, 
+employee(X,m,skl(X))  <- manl(X),employeel(X).  
+where ski is a Skolem function. Note that in the equiv- 
+alential reading, as well as in the backward one, it is 
+essential to distinguish between existential and univer- 
+sal quantification of variables on the left-hand side. The 
+equivalential reading of a rule of type 
+p(X,Y) <-> q(Y) 
+licences, for example, expansion of p(a,b) to q(b); the 
+justification for this is that q(b) implies p(X,b) for any 
+value of X. However, if the rule is changed to 
+exisgs(\[X\],p(X,Y)) <-> q(Y) 
+the expansion is no longer valid, since q(b) only implies 
+that p(X,b) is valid for some value of X, and not nec- 
+essarily for a. This pair of examples should clarify why 
+the constants involved in schema (2) must be unique. 
+We are now in a position to explain the basic expan- 
+sion process; in the interests of expositional clarity, we 
+will postpone mention of the abductive proof mecha- 
+nism until section 6. Our strategy is to use (2) and 
+the expansion-schemas as the kernel of a system that al- 
+lows expansion of logical forms, using the equivalences 
+as expandable complex definitions. 
+The actual process of expansion of a complex formula 
+F is a series of single expansion steps, each of which 
+consists of the expansion of an atomic constituent of F. 
+An  expansion step contains the following sub-steps: 
+Recurse: descend through F using the expansion- 
+schemas, until an atomic sub-formula A is reached. 
+During this process, an environment E has been ac- 
+cumulated in which conditions will be proved, and 
+some bound variables will have been replaced by 
+unique constants. 
+Trans late:  find a rule Byi.(H A C) ~ B such that (i) 
+H (the 'head') unifies with A with m.g.u. 0, and 
+(ii) 0 pairs the ~Yi only with unique constants in A 
+deriving from existentially bound variables. If it is 
+then possible to prove 0(C) in E, replace A with 
+O(B). 
+Simpli fy:  if possible, apply simplifications to the result- 
+ing formula. 
+4 A S imple  Example  
+We now present a simple example to illustrate how the 
+process works. 
+In CLARE, the sentence ($2) 
+(S2) Do any women work on CLARE? 
+3
+receives the LF 
+exists( \[C,E\] , 
+and (woman I (C), work onl (E, C, clare) ) ) 
+This has to be mapped to a query which accesses two 
+database relations, DB_EMPLOYEE(Emp1,Sex,HasCar) 
+and DB_PROJECT_MEMBER(Emp1,Project); the desired 
+result is thus: 
+exists(\[C,H\], 
+and (DB_ EMP LOYEE ( C, w, H ), 
+DB_PRO JECT_MEMBER (clare, C) ) ) 
+(Sex can be w or m). The most clearly non-triviM 
+part is justifying the conversion between the lin- 
+guistic relation womanl(X) and the database relation 
+DB_EMPLOYEE(X,w,_). Even in the limited PRM do- 
+main, it is incorrect o state that "woman" is equivMent 
+to "employee classed as being of female sex"; there are 
+for example large numbers of women who are listed in 
+the DB_PAYEE relation as having been the recipients of 
+payments. It is more correct to say that a tuple of type 
+DB EMPLOYEE (X, w, _) is equivalent to the conjunction of 
+two pieces of information: firstly that X is a woman, and 
+secondly that she is an employee. This can be captured 
+in the rule 
+and (womanl (Person), 
+employeel (Person)) <-> 
+exists ( \[HasCar\] , 
+and (DB_EMPLOYEE (Person, w, HasCar) ) ) (EQI) 
+In the left-to-right direction, the rule can be read as 
+"womanl (X) translates to DB_EMPLOYEE(X, w,_), in con- 
+texts where it is possible to prove employeel(X)."  
+For the rule to be of use in the present example, we 
+must therefore provide a justification for employeel (X) 's 
+holding in the context of the query. The simplest way to 
+ensure that this is so is to provide a Horn-clause meaning 
+postulate, 
+employeel (X) <- 
+DB_PROJECT_MEMBER(Proj ect, X). (HCI) 
+which encodes the fact that project members are em- 
+ployees. 
+Similarly, we will need an equivalence rule to convert 
+between work_onl and DB_PROJECT_MEMBER. Here the 
+fact we want to state is that project-members are pre- 
+cisely people who work on projects, which we write as 
+follows: 
+exists ( \[Event\], 
+and(work_onl (Event, Person, Project ), 
+pro jec t  l (P ro jec t ) ) )  <-> 
+DB_PRO JECT_MEMBER(Pro j ect, Person) (EQ2) 
+We will also make indirect use of the rule that states 
+that projects are objects that can be found in the first 
+field of a DB_PROJECT tuple, 
+project l(Proj) <-> 
+exists ( \[ProjNum, Start ,End\] , 
+DB_PROJECT(Pro3, ProjNum, Start, End) ) (EQ3) 
+since this will allow us to infer (by looking in the 
+database) that the predicate pro jec t  1 holds of c la re .  
+Two expansions now produce the desired transforma- 
+tion; in each, the schemas (4) and (3) are used in turn 
+to reduce to the base case of expanding an atom. Re- 
+member that schema (4) replaces variables with unique 
+constants; when displaying the results of such a trans- 
+formation, we will consistently write X* to symbolize the 
+new constant associated with the variable X. 
+The first atom to be expanded is womanl(C*), 
+and the corresponding environment of assumptions 
+is {work_onl(E*,C*,clare)}. womanl(C*) unifies 
+with the head of the rule (EQ1), making its con- 
+ditions employeel(C*) .  Using the Horn-clause 
+meaning postulate (HCl), this can be reduced tc 
+DB_PROJECT_MEMBER(Proj ec t ,  C*). Note that C* in thi, 
+formula is a constant, while P ro jec t  is a variable. Thi,, 
+new goal can now be reduced again, by applying the rul~ 
+(EQ2) as a backwards Horn-clause, to 
+and(work_onl (Event, C*, Project) , 
+project I (Project ) ) ), 
+The first conjunct can be proved from the assumptions 
+instantiating Pro jec t  to c la re ;  the second conjunct ca* 
+now be derived from the normal Horn-clause reading o 
+rule (EQ3), together with the fact that c la re  is listed a 
+a project in the database. This completes the reasoninl 
+that justifies expanding womanl (C) in the context of thi 
+query, to 
+exists ( \[HasCar\], 
+and(DB_EMPLOYEE ( C, w, HasCar) ) ) 
+The second expansion is similar; the atom to be e~ 
+panded here is work_onl(E*,C*,clare), and the en 
+vironment of assumptions is {womanl(C*)}. Now th 
+rule (EQ2) can be used; its conditions after unif 
+cation with the head are pro jec t l ( c la re ) ,  the w 
+lidity of which follows from another application c 
+(EQ3). So work onl(E,C,clare) can be expanded t 
+DB_PROJECT_MEMBEK(clare,C), giving the desired r~ 
+sult. 
+5 Ex is tent ia l  Quant i f i ca t ion  
+We have so far given little justification for the complic~ 
+tions introduced by existential quantification on the left 
+hand sides of equivalences. These become important i 
+connection with the so-called "Doctor on Board" pro\[ 
+lem (Perrault and Grosz, 1988), which in our domai 
+can be illustrated by a query like ($3), 
+(S3) Does Mary have a car? 
+This receives the LF 
+exists(\[C,E\] , 
+and(carl  (C) , havel (E ,mary, C) ) ) ) 
+for which the intended database query will be 
+exists ( IS\], 
+DB_EMPLOYEE (mary, S, y) ) 
+if Mary is listed as an employee. However, we also d, 
+mand that a query like ($4) 
+(S4) Which car does Mary have? 
+should be untranslatable, since there is clearly no way 
+extract the required information from the DB_EMPLOYE 
+relationship. 
+The key equivalence is (EQ4) 
+4
+exists(\[E,C\] , 
+and( carl (C) , 
+and(havel (E,P, C), 
+employeel (P))) <-> 
+exist s ( IS\], DB_EMPLOYEE(P, S, y) ) (EQ4) 
+which defines the linguistic predicate car l .  When used 
+in the context of ($3), (EQ4) can be applied in exactly 
+the same way as (EQ2) and (E{~3) were in the previ- 
+ous example; the condition have l (E, P, C) will be proved 
+by looking at the other conjunct, and employeel (mary) 
+by referring to the database. The substitution used to 
+match the car l  predication from the LF with the head of 
+(EQ4) fulfills the conditions on the t ranslate step of the 
+expansion procedure: the argument of car l  is bound by 
+an existential quantifier both in the LF and in (EQ4). In 
+($4), on the other hand, car l  occurs in the LF in a con- 
+text where its argument is bound by a f ind  quantifier, 
+which is regarded as a type of universal. The matching 
+substitution will thus be illegal, and translation will fail 
+as required. 
+6 Abduct ive  Expans ion  
+We now turn to the topic of abductive expansion. As 
+pointed out in section 1, it is normally impossible to jus- 
+tify an equivalence between an LF and a database query 
+without making use of a number of implicit assumptions, 
+most commonly ones stemming from the hypothesis that 
+the LF should be interpretable within the given domain. 
+The approach we take here is closely related to that pio- 
+neered by Hobbs and his colleagues (Hobbs et a188). We 
+inclu~le declarations asserting that certain goals may be 
+assumed without proof during the process of justifying 
+conditions; each such declaration associates an assump- 
+tion cost with a goal of this kind, and proofs with low 
+assumption cost are preferred. So for example the mean- 
+ing postulate relating the linguistic predicate paymentl 
+and the intermediate predicate t ransact ion  is 
+and (payment I (Trans),  
+payment f rom_SRI(Trans))  <-> 
+exist s ( \[Cheque, Dat e, Payee\], 
+transaction(Trans, Cheque ,Date, Payee) )) (EQS) 
+"transactions are payments from SRI" 
+and there is also a Horn-clause meaning postulate 
+payment_from_SRI (X) <- 
+payment s_ re f  e r red_ t  o_are_f  rom_SRI. 
+and an assumptiondeclaration 
+as sume (payment s_re f  e r red_ t  o_are_f  rom_SRI, 
+cost (0)) 
+The advantage of this mechanism (which may at first 
+sight seem rather indirect) is that it makes it possi- 
+ble explicitly to keep track of when the assumption 
+payments._veferred_to_are_from_SRI has been used in 
+the course of deriving a database query from the original 
+LF. Applied systematically, it allows a set of assumptions 
+to be collected in the course of performing the transla- 
+tion; if required, CLARE can then inform the user as to 
+their nature. In the current version of the PRM applica- 
+tion, there are about a dozen types of assumption that 
+can be made. Most of these are similar to the one shown 
+above: that is to say, they are low-cost assumptions that 
+cheques, payments, projects and so on are SRI-related. 
+One type of assumption, however, is sufficiently dif- 
+ferent as to deserve xplicit mention. These are related 
+to the problem, mentioned in Section 1, of queries "con- 
+tingently" outside the database's domain. The PRM 
+database, for instance, is limited in time, only con- 
+taining records of transactions carried out over a spec- 
+ified eighteen-month period. Reflecting this, mean- 
+ing postulates distinguish between the two predicates 
+transaction and DB_TRANSACTION, which respectively 
+are intended to mean "A transaction of this type took 
+place" and "A transaction of this type is recorded in the 
+database". The meaning postulate linking them is 
+and(transaction(Id, CNum, Date, Payee), 
+transaction_data_available(Date)) <-> 
+DB_TRANSACTION (Id~ CNum, Dat e, Payee) (EQ6) 
+transaction_data_available is defined by the further 
+postulate 
+transaction_data_available (Date) <- 
+and(c_before (date(17,8,89) ,Date), 
+c_before(Dat e, date (31,3,91))) (HC2) 
+The interesting thing about (HC2) is that the infor- 
+mation needed to prove the condition transaction- 
+_data_available(Date) is sometimes, though not al- 
+ways, present in the LF. It will be present in a query 
+like ($I), which explicitly mentions a period; there are 
+further axioms that allow the system to infer in these cir- 
+cumstances that the conditions are fulfilled. However, a 
+query like ($5), 
+($5) Show the largest payment to Cow's Milk. 
+contains no explicit mention of time. To deal with sen- 
+tences like ($5), there is a meaning postulate 
+transaction_data_available(X) <- 
+payments_referred_to made_between( 17/8/89, 
+31/3/91) .  
+with an associated assumption declaration 
+as sume ( 
+payments_referred_to_made_between( 17/8/89, 
+31/3/91) ,  
+cost (15)). 
+The effect of charging the substantial cost of 15 units 
+for the assumption (the max imum permitted cost for an 
+expansion step being 20) is in practice strongly to pre- 
+fer proofs where it is not used; the net result from the 
+user's perspective is that s/he is informed of the contin- 
+gent temporal limitation of the database only when it 
+is actually relevant to answering a query. This has ob- 
+vious utility in terms of increasing the interface's user- 
+friendliness. 
+7 S impl i f i ca t ion  Us ing  Funct iona l  
+In fo rmat ion  
+A problem arising from the definition-expansion pro- 
+cess which we have so far not mentioned is that the 
+5
+database queries it produces tend to contain a consid- 
+erable amount of redundancy. For example, we shall 
+see below in section 9 that the database query derived 
+from sentence (S1) originally contains three separate 
+instances of the transaction relation, one from each 
+of the original linguistic predicates paymentl ,  make2 
+and dur ing l .  Roughly speaking, payraentl(Ev) ex- 
+pands to t ransact ion(Ev  . . . . . .  ), make2(Ev,Ag,P,To) 
+to t ransact ion(Ev ,  _, To,_) and during_Temporal (Ev, 
+Date) to t ransact ion(Ev  . . . . .  Date); the database 
+query will conjoin all three of these together. It is clearly 
+preferable, if possible, to merge them instead, yielding a 
+composite predication t ransact  ion (Ev,_, To,Dat e). 
+Our framework allows an elegant solution to this prob- 
+lem if a little extra declarative information is provided, 
+specifically information concerning functional relation- 
+ships in predicates. The key fact is that t ransact ion  is 
+a function from its first argument (the transaction iden- 
+tifier) to the remaining ones (the cheque number, the 
+payee and the date). The system allows this informa- 
+tion to be entered as a "function" meaning postulate in 
+the form 
+funct ion (transact ion ( Id, ChequeNo, Payee, Date ), 
+\[Id\] -> \[ChequeNo,Payee,Date\]) 
+This is treated as a concise notation for the meaning 
+postulate 
+t ransact ion( i ,  cl, Pl, dl ) 
+( transact ion( i ,  c2, P2, d2 ) ~-~ 
+Cl -- c2 A Pl = P2 A dl = d2) 
+which is just a conditional form of the equivalential 
+meaning postulates already described. It is thus pos- 
+sible to handle "merging" simplification of this kind, as 
+well as definition expansion, with a uniform mechanism. 
+In the current version of the system, the transformation 
+process operates in a cycle, alternating expansions fol- 
+lowed by simplifications using the same basic interpreter; 
+simplification consists of functional "merging" followed 
+by reduction of equalities where this is applicable. 
+The simplification process is even more important 
+when processing assertions. Consider, for example, what 
+would happen to the pair of sentences ($6) - ($7) without 
+simplification: 
+(S6) Clara is an employee who has a car. 
+($7) Clara is a woman. 
+($6) translates into the database form 
+exists(\[A,B\] , 
+DB_EMPLOYEE ( clara, A, y) ) 
+(The second field in DB_EMPLOYEE indicates sex, and the 
+third whether or not the employee has a company car). 
+This can then be put into Horn-clause form as 
+DB_EMPLOYEE (c la ra ,  skl ,y)  
+and asserted into the Prolog database. Since Clara is 
+now known to be an employee, ($7) will produce the 
+unit clause 
+DB_EMPLOYEE ( clara, w, sk2) 
+The two clauses produced would contain all the infor- 
+mation entered, but they could not be entered into a re- 
+lational database as they stand; a normal database has 
+no interpretation for the Skolem constants kl  and sk2. 
+However, it is possible to use function information to 
+merge them into a single record. The trick is to arrange 
+things so that the system can when necessary recover 
+the existentially quantified form from the Skolemized 
+one; all assertions which contain Skolem constants are 
+kept together in a "local cache". Simplification of asser- 
+tions then proceeds according to the following sequence 
+of steps: 
+1. Retrieve all assertions from the local cache. 
+2. Construct a formula A, which is their logical con- 
+junction. 
+3. Let A0 be A, and let {sk l . . . skn)  be the Skolem 
+constants in A. For i = 1 ... n, let xi be a new vari- 
+able, and let Ai be the formula 3xi .A i_ l  \[ski/xi\], i.e. 
+the result of replacing ski with xi and quantifying 
+existentially over it. 
+4. Perform normal function merging on Am, and call 
+the result A'. 
+5. Convert A' into Horn-clause form, and replace the 
+result in the local cache. 
+In the example above, this works as follows. After ($6) 
+and ($7) have been processed, the local cache contains 
+the clauses 
+DB_EMPLOYEE ( c la ra ,  sk 1, y) 
+DB_EMPLOYEE ( clara, w, sk2) 
+A = A0 is then the formula 
+and (DB EMPLOYEE (c la ra ,  sk 1, y) 
+DB_EMPLOYEE (c la ra ,  w, sk2) ) 
+and A2 is 
+exists(\[Xl,X2\] 
+and (DB EMPLOYEE ( c la ra ,  X 1, y) 
+DB_EMPLOYEE (c la ra ,  w, X2) ) 
+Since DB_EMPLOYEE is declared functional on its first ar- 
+gument, the second conjunct is reduced to two equalities: 
+giving the formula 
+exists ( \[Xl, X2\] 
+and (DB_EMPLOYEE ( clara, X I, y) 
+and(Xl = w, 
+y = x2)) 
+which finally simplifies to A ', 
+DB_EMPLOYEE (clara, w, y) 
+a record without Skolem constants, which can be added 
+to a normal relational database. 
+8 Search  Strategies for Definition 
+Expansion 
+This section describes the problems that must be solved 
+at the implementation level if the definition-expansion 
+scheme is to work with acceptable fficiency. The struc- 
+ture of the top loop in the definition-expansion process is 
+6 6
+roughly that of a Prolog meta-interpreter, whose clauses 
+correspond to the "expansion-schemas" described in sec- 
+tion 2. 
+The main predicate in the expansion interpreter con- 
+tains an argument used to pass the environment of 
+assumptions, which corresponds to the Conds in the 
+schemas above. The interpreter successively reduces 
+the formula to be expanded to a sub-formula, possibly 
+adding new hypotheses to the environment of assump- 
+tions. When an atomic formula is reached, the inter- 
+preter attempts to find an equivalence with a match- 
+ing head (where "matching" includes the restrictions on 
+quantification described at the end of section 2), and if 
+it does so then attempts to prove the conditions. If a 
+proof is found, the atom is replaced by the body of the 
+selected equivalence. 
+The computationally expensive operation is that of 
+proving the conditions; since inference uses the equiva- 
+lences in both directions, it can easily become very inef- 
+ficient. The development of search techniques for mak- 
+ing this type of inference tractable required a significant 
+effort, though their detailed description is beyond the 
+scope of this paper. Very briefly, two main strategies are 
+employed. Most importantly, the application of "back- 
+ward" Horn clause readings of equivalences i restricted 
+to cases similar to that illustrated in section 4, where 
+there are dependencies between the expansion of two or 
+more conjuncts. In addition to this, there are a num- 
+ber of heuristics for penalizing expenditure of effort on 
+branches judged likely to lead to infinite recursion or re- 
+dundant computation. 
+For the project resource management domain, which 
+currently has 165 equivalence rules, the time taken for 
+query derivation from LF is typically between 1 and 10 
+seconds under Quintus Prolog on a Sun Sparcstation 2. 
+9 A Full Example 
+In this section, we will present a more elaborate illustra- 
+tion of CLARE's current capabilities in this area, show- 
+ing how the process of definition expansion works for the 
+sentence (S1). This initially receives an LF which after 
+some simplification has the form 
+find( \[PayEv\] , 
+exist s ( \[Payer, MakeEv\] , 
+and (payment I (PayEr), 
+and (make2 (MakeEv, Payer, PayEr, bt ), 
+duringl (PayEr, 
+interval(date(1990, I, 1)) ,  
+date(1990,12,31))) ) )  
+As already indicated, the resulting database query 
+will have as its main predicate the relation DB_TRAN- 
+SACTION ( Id ,  ChequeNo, Dat e, Payee). We will also need 
+an evaluable binary predicate cbefore ,  which takes two 
+representations of calendar dates and succeeds if the first 
+is temporally before the second. The final query will be 
+expressed entirely in terms of these two predicates. 
+The first step is to apply meaning postulates which re- 
+late the linguistic predicates paymentl ,  make2 to the in- 
+termediate predicate t ransact ion .  Recall, as explained 
+in section 6 above, that transaction is distinct from 
+DB_TRANSACTION. The relevant postulates are 
+and (payment 1( Id ) ,  
+payment_from_SRI( Id))  <-> 
+exists(\[C,D,Payee\] , 
+transaction( Id, C, D, Payee) ) (EQT) 
+'CA payment from SRI is something that enters into a 
+transaction relation as its first argument". 
+and(make2 (Event, As sumed_SRl, Payment, Payee), 
+and (payment_from_SRl (Event), 
+transactionl (Payment)) ) <-> 
+ex is ts  ( \[C ,D\], 
+and(transact ion (Event, C, D, Paye e), 
+Event = Payment)) (EQ8) 
+"A payment is made by SRI to a payee if it and the payee 
+enter into a transaction relation as first and fourth 
+arguments." 
+Note that the atom payment_from_SRl(PayEv), oc- 
+curring in the first two rules, will have to be proved using 
+an abductive assumption, as explained in section 6. Af- 
+ter (EQ7) and (EQ8) have been applied and the equality 
+introduced by (EQ8) removed, the form of the query is 
+find( \[PayEv\], 
+exists ( \[A ,B, C,D, El, 
+and(transact ion (PayEv ,A, B, C), 
+and (transact ion (PayEv ,D, E, bt) ), 
+duringl (PayEr, 
+interval(date(1990,1,1)) , 
+date(1990,12 ,31) ) ) ) )  
+under the abductive assumption payments_re fer red-  
+_to_are_from_SRI. 
+The next rules to be applied are those that expand 
+duringl. The intended semantics of duringl (EI,E2) 
+are "El and E2 are events, and the time associated with 
+E1 is inside that associated with E2". The relevant equiv- 
+alences are now 
+duringl(EI,E2) <-> 
+exists(\[Ti,T2\] , 
+and(associated_time(El ,TI), 
+and(associat ed_t ime (E2, T2), 
+c_during (TI, T2) ) ) ) ) (EQ9) 
+"The dur ing l  relation holds between E1 and E2 if and 
+only if the calendar event associated with E1 is inside 
+that associated with E2." 
+and(associat ed_t ime (Id, Dat e), 
+transactionl (Id)) <-> 
+exists(\[C,Payee,Y,M,D\], 
+transaction (Id, C ,Date ,P) ) (EQ I0) 
+"Date is the event associated with a transaction event if 
+and only if they enter into the t ransact ion  relation as 
+third and first arguments respectively." 
+Applying (EQ9) and (EQ10) in succession, the query 
+is translated to 
+find( \[PayEr\], 
+exists( \[Date,A,B,C,D,E,F,G\], 
+and(transact ion (PayEv, A, B, C), 
+and(transact ion (PayEv ,D, E ,bt ) ) , 
+and(transact ion (PayEv ,F,Date, G), 
+7
+and(c_dur ing (Dat e, 
+in terva l (date(1990,1 ,1 )  ) ,  
+daze (1990,12,31) ) ) ) ) 
+The query is now simplified by exploiting the fact that 
+t ransact ion  is functional on its first argument: it is 
+possible to merge all three occurrences, as described in 
+section 7, to produce the form 
+find( \[PayEr\] , 
+exists( \[ChequeId,Dat e\], 
+and (trans act ion (PayEr, Cheque Id, Dat e, bt ), 
+c_during(Date, 
+interval (date( 1990, I, I) ), 
+da te (1990,12 ,31) ) ) ) )  
+Equivalences for temporal predicates then expand the 
+second conjunct, producing the form 
+f ind(  \[PayEr\] ,  
+exists ( \[ChequeId,Date\] , 
+and (transact ion (PayEr, ChequeId, Date, bt), 
+and(c_before (date (1990, I, I) ,Date), 
+c_before(Date,date(1990,12,31)))))) 
+Finally, (EQ6) above is applied, to expand the interme- 
+diate predicate t ransact ion  into the database relation 
+DB_TKANSACTION. 
+When the transaction predication is expanded, 
+PayEv and Date are replaced by corresponding constants 
+PayEr* and Date*, as explained in section 2; the envi- 
+ronment of assumptions i the set 
+{c_before(date(1990,1 ,1 )  ,DaZe*), 
+c_before(Date* ,date  (1990,12,31) } 
+The relevant clauses are now (tiC2) and a meaning pos- 
+tulate that encodes the fact that c_before is transitive, 
+namely 
+c_before(Datel,Date3) <- 
+c_before(Datel,Date2), 
+c_before(Date2, Date3) (HC3) 
+By chaining backwards through these to the assump- 
+tions, it is then possible to prove that t ransact ion -  
+_date_avai lab le(Date*)  holds, and expand to the final 
+form 
+f ind(  \[PayEr\] ,  
+exists ( \[ChequeId ,Date\] , 
+and (DB_TRANSACTI ON (PayEr, ChequeId, Date, bt ), 
+and(c_before (dat e(1990, I, I) ,Date), 
+c_before(Date,date(1990,12,31))))) 
+This can be evaluated directly against the database; 
+moreover, the system has managed to prove, under 
+the abductive assumption payments_referred_to_are_-  
+from_SKI, that it is equivalent to the original query. 
+10 Conc lus ions  and  Fur ther  D i rec t ions  
+We believe that the definition-expansion mechanism pro- 
+vides a powerful basic functionality that CLARE will be 
+able to exploit in many ways, some of which we expect 
+to begin investigating in the near future. Several inter- 
+esting extensions of the framework presented here are 
+possible, of which we mention two. 
+Firstly, it can be the case that an expansion can only 
+be carried out if a certain set of assumptions A is made, 
+but that it is also possible to deduce the negation of 
+one of the assumptions in A from the original LF. (For 
+example, the query may refer to a time-period that is 
+explicitly outside the one covered by the database). In 
+a situation of this kind it is likely that the user has a 
+misconception concerning the contents of the database, 
+and will appreciate being informed of the reason for the 
+system's inability to answer. 
+It is also fairly straight-forward to use the method 
+to answer "meta~level" questions about the database's 
+knowledge (cf. Rayner and Jansen, 1987). For exam- 
+ple, Does the database know how many transactions were 
+made in July? can be answered affirmatively (relative 
+to assumptions) if the embedded question How many 
+transactions were made in July? can be expanded to 
+an equivalent database query. We expect to be able to 
+report more fully on these ideas at a later date. 
+Re ferences  
+Alshawi, H., ed. 1992. The Core Language Engine. 
+Cambridge, Massachusetts: The MIT Press. 
+Bronneberg, W.J.H.J., H.C. Bunt, S.P.J. Landsbergen, 
+R.J.H. Scha, W.J. Schoenmakers and E.P.C. van 
+Utteren. 1980. "The Question Answering System 
+PHLIQAI".  In L. Bole (ed.), Natural Language 
+Question Answering Systems. Macmillan. 
+Hobbs, J.R., M. Stickel, P. Martin and D. Edwards. 
+1988. "Interpretation as Abduction". Proceedings 
+of the 26th Annual Meeting of the Association for 
+Computational Linguistics, 95-103 
+Konolige, K. 1981. The Database as Model: A Metathe- 
+oretic Approch, SRI technical note 255. 
+McCord, M.C. 1987. "Natural Language Processing in 
+Prolog". In A. Walker (ed.) Knowledge Systems 
+and Prolog. Addison-Wesley, Reading, MA. 
+Perrault, C.R. and B.J. Grosz. 1988. "Natural Lan- 
+guage Interfaces". In Exploring Artificial Intelli- 
+gence: Survey Talks from the National Conferences 
+on Artificial Intelligence, Morgan Kaufmann, San 
+Mateo. 
+Rayner, M. and S. Janson. 1987. "Epistemic Reason- 
+ing, Logic Programming, and the Interpretation of 
+Questions". Proceedings of the 2nd International 
+Workshop on Natural Language Understanding and 
+Logic Programming, North-Holland. 
+Robinson, J.A. 1979. Logic: Form and Function. Edin- 
+burgh University Press. 
+Scha, R.J.H. 1983. Logical Foundations for Question An- 
+swering, Ph.D. Thesis, University of Groningen, the 
+Netherlands. 
+Stallard, D.G. 1986. A Terminological Simplification 
+Transformation for Natural Language Question- 
+Answering Systems. Proceedings of the 24th An- 
+nual Meeting of the Association for Computational 
+Linguistics, 241-246. 
+8

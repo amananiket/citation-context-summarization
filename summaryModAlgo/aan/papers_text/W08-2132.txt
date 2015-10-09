@@ -1,0 +1,557 @@
+CoNLL 2008: Proceedings of the 12th Conference on Computational Natural Language Learning, pages 228?232
+Manchester, August 2008
+A Pipeline Approach for Syntactic and Semantic Dependency Parsing
+Yotaro Watanabe and Masakazu Iwatate and Masayuki Asahara and Yuji Matsumoto
+Nara Institute of Science and Technology, Japan
+8916-5, Takayama, Ikoma, Nara, Japan, 630-0192
+{yotaro-w, masakazu-i, masayu-a, matsu}@is.naist.jp
+Abstract
+This paper describes our system for syn-
+tactic and semantic dependency parsing
+to participate the shared task of CoNLL-
+2008. We use a pipeline approach, in
+which syntactic dependency parsing, word
+sense disambiguation, and semantic role
+labeling are performed separately: Syn-
+tactic dependency parsing is performed
+by a tournament model with a support
+vector machine; word sense disambigua-
+tion is performed by a nearest neighbour
+method in a compressed feature space by
+probabilistic latent semantic indexing; and
+semantic role labeling is performed by
+a an online passive-aggressive algorithm.
+The submitted result was 79.10 macro-
+average F1 for the joint task, 87.18% syn-
+tactic dependencies LAS, and 70.84 se-
+mantic dependencies F1. After the dead-
+line, we constructed the other configura-
+tion, which achieved 80.89 F1 for the joint
+task, and 74.53 semantic dependencies F1.
+The result shows that the configuration of
+pipeline is a crucial issue in the task.
+1 Introduction
+This paper presents the description of our system
+in CoNLL-2008 shared task. We split the shared
+task into five sub-problems ? syntactic dependency
+parsing, syntactic dependency label classification,
+predicate identification, word sense disambigua-
+tion, and semantic role labeling. The overview
+of our system is illustrated in Figure 1. Our de-
+c
+? 2008. Licensed under the Creative Commons
+Attribution-Noncommercial-Share Alike 3.0 Unported li-
+cense (http://creativecommons.org/licenses/by-nc-sa/3.0/).
+Some rights reserved.
+Figure 1: Overview of the System
+pendency parsing module is based on a tourna-
+ment model (Iida et al, 2003), in which a depen-
+dency attachment is estimated in step-ladder tour-
+nament matches. The relative preference of the at-
+tachment is modeled by one-on-one match in the
+tournament. Iwatate et al (Iwatate et al, 2008)
+initially proposed the method for Japanese depen-
+dency parsing, and we applied it to other languages
+by relaxing some constraints (Section 2.1). Depen-
+dency label classification is performed by a linear-
+chain sequential labeling on the dependency sib-
+lings like McDonald?s schemata (McDonald et al,
+2006). We use an online passive-aggressive al-
+gorithm (Crammer et al, 2006) for linear-chain
+sequential labeling (Section 2.2). We also use
+the other linear-chain sequential labeling method
+to annotate whether each word is a predicate or
+not (Section 2.3). If an identified predicate has
+more than one sense, a nearest neighbour classifier
+disambiguates the word sense candidates (Section
+2.4). We use an online passive-aggressive algo-
+rithm again for the semantic role labeling (Section
+2.5). The machine learning algorithms used in sep-
+arated modules are diverse due to role sharing.
+1
+1
+Unlabeled dependency parsing was done by Iwatate, de-
+pendency label classification and semantic role labeling was
+done by Watanabe, predicate identification and word sense
+228
+We attempt to construct a framework in which
+each module passes k-best solutions and the last
+semantic role labeling module performs rerank-
+ing of the k-best solutions using the overall infor-
+mation. Unfortunately, we couldn?t complete the
+framework before the deadline of the test run. Our
+method is not a ?joint learning? approach but a
+pipeline approach.
+2 Methods
+2.1 Unlabeled Dependency Parsing
+The detailed description of the tournament model-
+based Japanese dependency parsing is found in
+(Iwatate et al, 2008). The original Iwatate?s pars-
+ing algorithm was for Japanese, which is for a
+strictly head-final language. We adapt the algo-
+rithm to English in this shared task. The tour-
+nament model chooses the most likely candidate
+head of each of the focused words in a step-
+ladder tournament. For a given word, the al-
+gorithm repeats to compare two candidate heads
+and finds the most plausible head in the series
+of a tournament. On each comparison, the win-
+ner is chosen by an SVM binary classifier with
+a quadratic polynomial kernel
+2
+. The model uses
+different algorithms for training example gener-
+ation and parsing. Figures 2 and 3 show train-
+ing example generation and parsing algorithm, re-
+spectively. Time complexity of both algorithms is
+O(n
+2
+) for the number of words in an input sen-
+tence. Below, we present the features for SVM
+// N: # of tokens in input sentence
+// true_head[j]: token j?s head at
+// training data
+// gen(j,i1,i2,LEFT): generate an example
+// where token j is dependent of i1
+// gen(j,i1,i2,RIGHT): generate an example
+// where token j is dependent of i2
+// Token 0 is the virtual ROOT.
+for j = 1 to N-1 do
+h = true_head[j];
+for i = 0 to h-1 do
+if i!=j then gen(j,i,h,RIGHT);
+for i = h+1 to N do
+if i!=j then gen(j,h,i,LEFT);
+end-for;
+Figure 2: Pseudo Code of Training Example Gen-
+eration
+disambiguation was done by Asahara, and all tasks were su-
+pervised by Matsumoto.
+2
+We use TinySVM as an SVM classifier. chasen.org/
+?
+taku/software/TinySVM/
+// N: # of tokens in input sentence
+// head[]: (analyzed-) head of tokens
+// classify(j,i1,i2): ask SVM
+// which candidate (i1 or i2) is
+// more likely for head of j.
+// return LEFT if i1 wins.
+// return RIGHT if i2 wins.
+// cands.push_back(k): add token index k
+// to the end of cands.
+// cands.erase(i): remove i-th element
+// from cands.
+for j = 1 to N do
+cands = [];
+for i = 0 to N do
+if i!=j then cands.push_back(i);
+end-for;
+while cands.size() > 1 do
+if classify(j,cands[0],
+cands[1]) = LEFT then
+cands.erase(1);
+else
+cands.erase(0);
+end-if;
+end-while;
+head[j] = cands[0];
+end-for;
+Figure 3: Pseudo Code of Parsing Algorithm
+in our tournament model. The FORM, LEMMA,
+GPOS(for training), PPOS(for testing, instead of
+GPOS), SPLIT FORM, SPLIT LEMMA, PPOSS
+in the following tokens were used as the features:
+? Dependent, candidate1, candidate2
+? Immediately-adjacent tokens of dependent, candidate1,
+candidate2, respectively
+? All tokens between dependent-candidate1, dependent-
+candidate2, candidate1-candidate2, respectively
+We also used the distance feature: distance (1 or
+2-5 or 6+ tokens) between dependent-candidate1,
+dependent-candidate2, and candidate1-candidate2.
+Features corresponding to the candidates, includ-
+ing the distance feature, have a prefix that indicates
+its side: ?L-?(the candidate appears on left-hand-
+side of the dependent) or ?R-?(appears on right-
+hand-side of the dependent). Training an SVM
+model with all examples is time-consuming, and
+split the examples by the dependent GPOS for
+training (PPOS for testing, instead of GPOS
+3
+) to
+run SVM training in parallel. Since the number of
+examples with the dependent PPOS:IN, NN, NNP
+3
+We cannot use GPOS for testing due to the shared task
+regulation.
+229
+is still large, we used only first 1.5 million exam-
+ples for the dependent GPOS. Note that, the algo-
+rithm does not check the well-formedness of de-
+pendency trees
+4
+.
+2.2 Dependency Label Classification
+This phase labels a dependency relation label to
+each word in a parse tree produced in the preced-
+ing phase. (McDonald et al, 2006) suggests that
+edges of head x
+i
+and its dependents x
+j1
+, ..., x
+jM
+are highly correlated, and capturing these corre-
+lation improves classification accuracy. In their
+approach, edges of a head and its dependents
+e
+i,j1
+, ..., e
+i,jM
+are classified sequentially, and then
+Viterbi algorithm is performed to find the highest
+scoring label sequence. We take a similar approach
+with some simplification. In our system, each edge
+is classified deterministically, and the previous de-
+cision is used as a feature for the subsequent clas-
+sification.
+We use an online passive aggressive algorithm
+(Crammer et al, 2006)
+5
+for dependency label clas-
+sification since it converges fast, gives good per-
+formance and can be implemented easily. The fea-
+tures used in this phase are primarily similar to that
+of (McDonald et al, 2006).
+Word features: SPLIT LEMMA, PPOS, affix (lengths 2
+and 3) of the head and the dependent.
+Position: Position relation between the head and the depen-
+dent (Is the head anterior to dependent?). Is the word
+top of the sentence? Is the word last of the sentence?
+Context features: SPLIT LEMMA, PPOS, affix (lengths 2
+and 3) of the nearest left/right word. SPLIT LEMMA
+and PPOS bigram (ww, wp, pw, pp) of the head and the
+dependent (window size 5).
+Sibling features: SPLIT LEMMA, PPOS, affix (lengths 2
+and 3) of the dependent?s nearest left and right siblings
+in the dependency tree.
+Other features: The number of dependent?s children.
+Whether the dependent and the dependent?s grand
+parent SPLIT LEMMA/PPOS are the same. The
+previous classification result (previous label).
+2.3 Predicate Identification
+This phase solves which word can be a predi-
+cate. In the predicate spotting, the linear-chain
+4
+We tried to make a k-best cascaded model among the
+modules. The latter module can check the well-formedness
+of the tree. The current implementation skips this well-
+formedness checking.
+5
+We use PA algorithm among PA, PA-I and PA-II in
+(Crammer et al, 2006).
+CRF (Lafferty et al, 2001) annotates whether the
+word is a predicate or not. The FORM, LEMMA
+(itself, and whether the LEMMA is registered in
+the PropBank/NomBank frames), SPLIT FORM,
+SPLIT LEMMA, PPOSS within 5 token window
+size are used as the features. We also use bigram
+features within 3 token window size and trigram
+features within 5 token window size for FORM,
+LEMMA, SPLIT FORM, SPLIT LEMMA, and
+PPOSS. The main reason why we use a sequence
+labeling method for predicate identification was
+to relax the effect of the tagging error of PPOS
+and PPOSS. However, we will show later that this
+module aggravates the total performance.
+2.4 Word Sense Disambiguation
+For the word sense disambiguation, we use 1-
+nearest neighbour method in a compressed fea-
+ture space by probabilistic latent semantic index-
+ing (PLSI). We trained the word sense disambigua-
+tion model from the example sentences in the train-
+ing/development data and PropBank/NomBank
+frames. The metric in the nearest neighbour
+method is based on the occurrence of LEMMA
+in the example sentences. However, the exam-
+ples in the PropBank/NomBank do not contain the
+lemma information. To lemmatize the words in
+the PropBank/NomBank, we compose a lemma-
+tizer from the FORM-LEMMA table in the train-
+ing and development.
+6
+Since the metric space
+is very sparse, PLSI (Hofmann, 1999) is used to
+reduce the metric space dimensions. We used
+KL-divergence between two examples of P (d
+i
+|z
+k
+)
+of P (d
+i
+, w
+j
+) =
+?
+k
+P (d
+i
+|z
+k
+)P (w
+j
+|z
+k
+)P (z
+k
+) as
+hemi-metric for the nearest neighbour method
+7
+,
+in which d
+i
+? D is an example sentence in the
+training/devel/test data and PropBank/NomBank
+frames; w
+j
+? W is LEMMA; and z
+k
+? Z is a
+latent class. We use |Z| = 100, which gave the
+best performance in the development data. Note,
+we transductively used the test data for the PLSI
+modeling within the test run period.
+2.5 Semantic Role Labeling
+While semantic role labeling task is generally per-
+formed by two phases: argument identification and
+argument classification, we did not divide the task
+6
+We are not violating the closed track regulation to build
+the lemmatizer. If a word in the PropBank/NomBank is not in
+the training/development data, we give up lemmatization.
+7
+We useD
+KL
+=
+?
+k
+P (d
+input data
+|z
+k
+)log
+P (d
+input data
+|z
+k
+)
+P (d
+1-nearest data
+|z
+k
+)
+as hemi-metric. It is a non-commutative measure.
+230
+into the two phases. That is, argument candidates
+are directly assigned a particular semantic role la-
+bel. We did not employ any candidate filtering pro-
+cedure, so argument candidates consist of words in
+any predicate-word pair. The argument candidates
+that have no roles are assigned ?NONE? label. For
+the reason that described in Section 2.2 (fast con-
+vergence and good performance), we use an on-
+line passive aggressive algorithm for learning the
+semantic role classifiers.
+Useful features for argument classification of
+verb and noun predicates are different. For exam-
+ple, voice (active or passive) is essential for verb
+predicate?s argument classification. On the other
+hand, presence of a genitive word is useful for
+noun predicate?s argument classification. For this
+reason, we created twomodels: argument classifier
+for verb predicates and that for noun predicates.
+Semantic frames are useful information for se-
+mantic role classification. Generally, obligatory
+arguments not included in semantic frames do not
+appear in actual texts. For this reason, we use
+PropBank/NomBank semantic frames for seman-
+tic role pruning. Suppose semantic roles in the se-
+mantic frame are F
+i
+= {A0, A1, A2, A3}. Since
+obligatory arguments are {A0...AA}, the remain-
+ing arguments {A4, A5, AA} are removed from
+label candidates.
+For verb predicates, the features used in our sys-
+tem are based on (Hacioglu, 2004). We also em-
+ployed some other features proposed in (Gildea
+and Jurafsky, 2002; Pradhan et al, 2004b). For
+noun predicates, the features are primarily based
+on (Pradhan et al, 2004a). The features that we
+defined for semantic role labeling are as follows:
+Word features: SPLIT LEMMA and PPOS of the predicate,
+dependent and dependent?s head, and its conjunctions.
+Dependency label: The dependency label between the argu-
+ment candidate and the its head.
+Family: The position of the argument candidate with respect
+to the predicate position over the dependency tree (e.g.,
+child, sibling).
+Position: The position of the head of the dependency relation
+with respect to the predicate position in the sentence.
+Pattern: The left-to-right chain of the PPOS/dependency la-
+bels of the predicate?s children.
+Context features: PPOS of the nearest left/right word.
+Path features: SPLIT LEMMA, PPOS and dependency la-
+bel paths between the predicate and the argument can-
+didate, and its path bi-gram.
+Distance: The number of paths between the predicate and
+the argument candidate.
+Voice: Voice of the predicate (active or passive) and voice-
+position conjunction (for verb predicates).
+Is predicate plural: Whether the predicate is singular or
+plural (for noun predicates).
+Genitives between the predicate and the argument: Is
+there a genitive word between the predicate and the
+argument? (for noun predicates)
+3 Results
+Table 1 shows the result of our system. The pro-
+posed method was effective in dependency pars-
+ing (rank 3rd), but was not good in semantic role
+labeling (rank 9th). One reason of the result of
+semantic role labeling could be usages of Prop-
+Bank/NomBank frames. We did not achieve the
+maximum use of the resources, hence the design of
+features and the choice of learning algorithm may
+not be optimal.
+Figure 4: Overview of the Modified System
+The other reason is the design of the pipeline.
+We changed the design of the pipeline after the
+test run. The overview of the modified system
+is illustrated in Figure 4. After the syntactic de-
+pendency parsing, we limited the predicate can-
+didates as verbs and nouns by PPOSS, and fil-
+tered the argument candidates by Xue?s method
+(Xue and Palmer, 2004). Next, the candidate pair
+of predicate-argument was classified by an online
+passive-aggressive algorithm as shown in Section
+2.5. Finally, the word sense of the predicate is de-
+termined by the module in Section 2.4. The new
+result is scores with ? in Table 1. The result means
+that the first design was not the best for the task.
+Acknowledgements
+We would like to thank the CoNLL-2008 shared
+task organizers and the data providers (Surdeanu
+et al, 2008).
+231
+Problem All WSJ Brown Rank
+Complete Problem 79.10 (80.89
+?
+) 80.30 (82.06
+?
+) 69.29 (71.32
+?
+) 9th
+Semantic Dependency 70.84 (74.53
+?
+) 72.37 (76.01
+?
+) 58.21 (62.41
+?
+) 9th
+Semantic Role Labeling 67.92 (72.31
+?
+) 69.31 (73.62
+?
+) 56.42 (61.64
+?
+) -
+Predicate Identification & Word Sense Disambiguation 77.20 (79.17
+?
+) 79.02 (80.99
+?
+) 62.10 (64.03
+?
+) -
+Syntactic Dependency (Labeled) 87.18 88.06 80.17 3rd
+Syntactic Label Accuracy 91.63 92.31 86.26 -
+Unlabeled Syntactic Dependency Unlabeled 90.20 90.73 85.94 -
+The scores with ? mark are our post-evaluation results.
+Table 1: The Results ? Closed Challenge
+References
+Buchholz, Sabine and Erwin Marsi. 2006. CoNLL-
+X Shared Task on Multilingual Dependency Parsing.
+In CoNLL-2006: Proceedings of the Tenth Confer-
+ence on Computational Natural Language Learning,
+pages 149?164.
+Crammer, Koby, Ofer Dekel, Joseph Keshet, Shai
+Shalev-Schwarz, and Yoram Singer. 2006. Online
+Passive-Agressive Algorithms. Journal of Machine
+Learning Research, 7:551?585.
+Gildea, Daniel and Daniel Jurafsky. 2002. Automatic
+Labeling of Semantic Roles. Computational Lin-
+guistics, 28(3):245?288.
+Hacioglu, Kadri. 2004. Semantic role labeling using
+dependency trees. In COLING-2004: Proceedings
+of the 20th International Conference on Computa-
+tional Linguistics, pages 1273?1276.
+Hofmann, Thomas. 1999. Probabilistic Latent Seman-
+tic Indexing. In SIGIR-1999: Proceedings of the
+22nd Annual International ACM SIGIR Conference
+on Research and Development in Informatino Re-
+trieval, pages 50?57.
+Iida, Ryu, Kentaro Inui, Hiroya Takamura, and Yuji
+Matsumoto. 2003. Incorporating Contextual Cues
+in Trainable Models for Coreference Resolution. In
+EACL Workshop ?The Computational Treatment of
+Anaphora?, pages 23?30.
+Iwatate, Masakazu, Masayuki Asahara, and Yuji Mat-
+sumoto. 2008. Japanese Dependency Parsing Using
+a Tournament Model. In COLING-2008: Proceed-
+ings of the 22nd International Conference on Com-
+putational Linguistics (To Appear).
+Lafferty, John D., Andrew McCallum, and Fernando
+C. N. Pereira. 2001. Conditional Random Fields:
+Probabilistic Models for Segmenting and Labeling
+Sequence Data. In ICML-1001: Proceedings of
+the Eighteenth International Conference on Machine
+Learning, pages 282?289.
+McDonald, Ryan, Kevin Lerman, and Fernando
+Pereira. 2006. Multilingual Dependency Analysis
+with a Two-Stage Discriminative Parser. In CoNLL-
+2006: Proceedings of the Tenth Conference on Com-
+putational Natural Language Learning, pages 216?
+220.
+Nivre, Joakim, Johan Hall, Sandra K?ubler, Ryan Mc-
+Donald, Jens Nilsson, Sebastian Riedel, and Deniz
+Yuret. 2007. The CoNLL 2007 Shared Task on De-
+pendency Parsing. In CoNLL-2007: Proceedings of
+the CoNLL Shared Task Session of EMNLP-CoNLL-
+2007, pages 915?932.
+Pradhan, Sameer, Honglin Sun, Wayne Ward, James H.
+Martin, and Dan Jurafsky. 2004a. Parsing Argu-
+ments of Nominalizations in English and Chinese. In
+HLT-NAACL-2004: Proceedings of the Human Lan-
+guage Technology Conference of the North American
+Chapter of the Association for Computational Lin-
+guistics, pages 141?144.
+Pradhan, Sameer, Wayne Ward, Kadri Hacioglu,
+James H. Martin, and Dan Jurafsky. 2004b. Shal-
+low Semantic Parsing Using Support Vector Ma-
+chines. In HLT-NAACL-2004: Proceedings of the
+Human Language Technology Conference of the
+North American Chapter of the Association for Com-
+putational Linguistics, pages 233?240.
+Surdeanu, Mihai, Richard Johansson, Adam Meyers,
+Llu??s M`arquez, and Joakim Nivre. 2008. The
+CoNLL-2008 Shared Task on Joint Parsing of Syn-
+tactic and Semantic Dependencies. In CoNLL-2008:
+Proceedings of the 12th Conference on Computa-
+tional Natural Language Learning.
+Xue, Nianwen and Martha Palmer. 2004. Calibrating
+Features for Semantic Role Labeling. In EMNLP-
+2004: Proceedings of 2004 Conference on Empirical
+Methods in Natural Language Processing, pages 88?
+94.
+232

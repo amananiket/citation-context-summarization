@@ -1,0 +1,1413 @@
+Proceedings of the 2009 Conference on Empirical Methods in Natural Language Processing, pages 1007?1016,
+Singapore, 6-7 August 2009.
+c
+?2009 ACL and AFNLP
+Learning Linear Ordering Problems for Better Translation
+?
+Roy Tromble
+Google, Inc.
+4720 Forbes Ave.
+Pittsburgh, PA 15213
+royt@google.com
+Jason Eisner
+Department of Computer Science
+Johns Hopkins University
+Baltimore, MD 21218
+jason@cs.jhu.edu
+Abstract
+We apply machine learning to the Lin-
+ear Ordering Problem in order to learn
+sentence-specific reordering models for
+machine translation. We demonstrate that
+even when these models are used as a mere
+preprocessing step for German-English
+translation, they significantly outperform
+Moses? integrated lexicalized reordering
+model.
+Our models are trained on automatically
+aligned bitext. Their form is simple but
+novel. They assess, based on features of
+the input sentence, how strongly each pair
+of input word tokens w
+i
+, w
+j
+would like
+to reverse their relative order. Combining
+all these pairwise preferences to find the
+best global reordering is NP-hard. How-
+ever, we present a non-trivial O(n
+3
+) al-
+gorithm, based on chart parsing, that at
+least finds the best reordering within a cer-
+tain exponentially large neighborhood. We
+show how to iterate this reordering process
+within a local search algorithm, which we
+use in training.
+1 Introduction
+Machine translation is an important but difficult
+problem. One of the properties that makes it dif-
+ficult is the fact that different languages express
+the same concepts in different orders. A ma-
+chine translation system must therefore rearrange
+the source language concepts to produce a fluent
+translation in the target language.
+1
+This work is excerpted and adapted from the first au-
+thor?s Ph.D. thesis (Tromble, 2009). Some of the ideas here
+appeared in (Eisner and Tromble, 2006) without empirical
+validation. The material is based in part upon work sup-
+ported by the National Science Foundation under Grant No.
+0347822.
+Phrase-based translation systems rely heavily
+on the target language model to ensure a fluent
+output order. However, a target n-gram language
+model alone is known to be inadequate. Thus,
+translation systems should also look at how the
+source sentence prefers to reorder. Yet past sys-
+tems have traditionally used rather weak models of
+the reordering process. They may look only at the
+distance between neighboring phrases, or depend
+only on phrase unigrams. The decoders also rely
+on search error, in the form of limited reordering
+windows, for both efficiency and translation qual-
+ity.
+Demonstrating the inadequacy of such ap-
+proaches, Al-Onaizan and Papineni (2006)
+showed that even given the words in the reference
+translation, and their alignment to the source
+words, a decoder of this sort charged with merely
+rearranging them into the correct target-language
+order could achieve a BLEU score (Papineni et
+al., 2002) of at best 69%?and that only when
+restricted to keep most words very close to their
+source positions.
+This paper introduces a more sophisticated
+model of reordering based on the Linear Order-
+ing Problem (LOP), itself an NP-hard permutation
+problem. We apply machine learning, in the form
+of a modified perceptron algorithm, to learn pa-
+rameters of a linear model that constructs a matrix
+of weights from each source language sentence.
+We train the parameters on orderings derived from
+automatic word alignments of parallel sentences.
+The LOP model of reordering is a complete
+ordering model, capable of assigning a different
+score to every possible permutation of the source-
+language sentence. Unlike the target language
+model, it uses information about the relative posi-
+tions of the words in the source language, as well
+as the source words themselves and their parts of
+speech and contexts. It is therefore a language-pair
+specific model.
+1007
+We apply the learned LOP model as a prepro-
+cessing step before both training and evaluation of
+a phrase-based translation system, namely Moses.
+Our methods for finding a good reordering un-
+der the NP-hard LOP are themselves of interest,
+adapting algorithms from natural language parsing
+and developing novel dynamic programs.
+Our results demonstrate a significant improve-
+ment over translation using unreordered German.
+Using Moses with only distance-based reordering
+and a distortion limit of 6, our preprocessing im-
+proves BLEU from 25.27 to 26.40. Furthermore,
+that improvement is significantly greater than the
+improvement Moses achieves with its lexicalized
+reordering model, 25.55.
+Collins et al (2005) improved German-English
+translation using a statistical parser and several
+hand-written rules for preprocessing the German
+sentences. This paper presents a similar improve-
+ment using fully automatic methods.
+2 A Linear Ordering Model
+This section introduces a model of word reorder-
+ing for machine translation based on the Linear
+Ordering Problem.
+2.1 Formalization
+The input sentence is w = w
+1
+w
+2
+. . . w
+n
+. To dis-
+tinguish duplicate tokens of the same word, we as-
+sume that each token is superscripted by its input
+position, e.g., w = die
+1
+Katze
+2
+hat
+3
+die
+4
+Frau
+5
+gekauft
+6
+(gloss: ?the cat has the woman bought?).
+For a fixedw, a permutation pi = pi
+1
+pi
+2
+. . . pi
+n
+is
+any reordering of the tokens in w. The set ?
+n
+of
+all such permutations has size n!. We would like to
+define a scoring model that assigns a high score to
+the permutationpi = die
+4
+Frau
+5
+hat
+3
+gekauft
+6
+die
+1
+Katze
+2
+(gloss: ?the woman has bought the cat?),
+since that corresponds well to the desired English
+order.
+To construct a function that scores permutations
+of w, we first construct a pairwise preference ma-
+trix B
+w
+? R
+n?n
+, whose entries are
+B
+w
+[`, r]
+def
+= ? ? ?(w, `, r), (1)
+Here ? is a vector of weights. ? is a vector of
+feature functions, each considering the entire word
+sequencew, as well as any functions thereof, such
+as part of speech tags.
+We will hereafter abbreviate B
+w
+as B. Its inte-
+ger indices ` and r are identified with the input to-
+kensw
+`
+andw
+r
+, and it can be helpful to write them
+that way; e.g., we will sometimes write B[2, 5] as
+B[Katze
+2
+,Frau
+5
+].
+The idea behind our reordering model is
+that B[Katze
+2
+,Frau
+5
+] > B[Katze
+5
+,Frau
+2
+] ex-
+presses a preference to keep Katze
+2
+before Frau
+5
+,
+whereas the opposite inequality would express a
+preference?other things equal?for permutations
+in which their order is reversed. Thus, we define
+1
+score(pi)
+def
+=
+?
+i,j: 1?i<j?n
+B[pi
+i
+, pi
+j
+] (2)
+p(pi)
+def
+=
+1
+Z
+exp(? ? score(pi)) (3)
+?
+pi
+def
+= argmax
+pi??
+n
+score(pi) (4)
+Note that i and j denote positions in pi, whereas
+pi
+i
+, pi
+j
+, `, and r denote particular input tokens such
+as Katze
+2
+and Frau
+5
+.
+2.2 Discussion
+To the extent that the costs B generally discour-
+age reordering, they will particularly discourage
+long-distance movement, as it swaps more pairs
+of words.
+We point out that our model is somewhat pecu-
+liar, since it does not directly consider whether the
+permutation pi keeps die
+4
+and Frau
+5
+adjacent or
+even close together, but only whether their order
+is reversed.
+Of course, the model could be extended to con-
+sider adjacency, or more generally, the three-way
+cost of interposing k between i and j. See (Eis-
+ner and Tromble, 2006; Tromble, 2009) for such
+extensions and associated algorithms.
+However, in the present paper we focus on the
+model in the simple form (2) that only considers
+pairwise reordering costs for all pairs in the sen-
+tence. Our goal is to show that these unfamiliar
+pairwise reordering costs are useful, when mod-
+eled with a rich feature set via equation (1). Even
+in isolation (as a preprocessing step), without con-
+sidering any other kinds of reordering costs or lan-
+guage model, they can achieve useful reorderings
+1
+For any ` < r, we may assume without loss of gener-
+ality that B[r, `] = 0, since if not, subtracting B[r, `] from
+bothB[`, r] andB[r, `] (exactly one of which appears in each
+score(pi)) will merely reduce the scores of all permutations
+by this amount, leaving equations (3) and (4) unchanged.
+Thus, in practice, we take B to be an upper triangular ma-
+trix. We use equation (1) only to defineB[`, r] for ` < r, and
+train ? accordingly. However, we will ignore this point in our
+exposition.
+1008
+of German that complement existing techniques
+and thus improve state-of-the-art systems. Our
+positive results in even this situation suggest that
+in future, pairwise reordering costs should proba-
+bly be integrated into MT systems.
+The probabilistic interpretation (3) of the
+score (2) may be useful when thus integrating our
+model with language models or other reordering
+models during translation, or simply when train-
+ing our model to maximize likelihood or minimize
+expected error. However, in the present paper we
+will stick to purely discriminative training and de-
+coding methods that simply try to maximize (2).
+2.3 The Linear Ordering Problem
+In the combinatorial optimization literature, the
+maximization problem (4) (with inputB) is known
+as the Linear Ordering Problem. It has numer-
+ous practical applications in fields including eco-
+nomics, sociology, graph theory, graph drawing,
+archaeology, and task scheduling (Gr?otschel et
+al., 1984). Computational studies on real data
+have often used ?input-output? matrices represent-
+ing resource flows among economic sectors (Schi-
+avinotto and St?utzle, 2004).
+Unfortunately, the problem is NP-hard. Further-
+more, it is known to be APX-complete, meaning
+that there is no polynomial time approximation
+scheme unless P=NP (Mishra and Sikdar, 2004).
+However, there are various heuristic procedures
+for approximating it (Tromble, 2009). We now
+give an attractive, novel procedure, which uses a
+CKY-parsing-like algorithm to search various sub-
+sets of ?
+n
+in polynomial time.
+3 Local Search
+?Local search? refers to any hill-climbing proce-
+dure that iteratively improves a solution by mak-
+ing an optimal ?local? change at each iteration.
+2
+In this case, we start with the identity permutation,
+find a ?nearby? permutation with a better score (2),
+and repeat until we have reached a local maximum
+of the scoring objective.
+This section describes a local search procedure
+that uses a very generous definition of ?local.? At
+each iteration, it finds the optimal permutation in
+a certain exponentially large neighborhood N(pi)
+of the current permutation pi.
+2
+One can introduce randomness to obtain MCMC sam-
+pling or simulated annealing algorithms. Our algorithms ex-
+tend naturally to allow this (cf. Tromble (2009)).
+S ? S
+0,n
+S
+i,k
+? S
+i,j
+S
+j,k
+S
+i?1,i
+? pi
+i
+Figure 1: A grammar for a large neighborhood of
+permutations, given one permutation pi of length
+n. The S
+i,k
+rules are instantiated for each 0 ?
+i < j < k ? n, and the S
+i?1,i
+rules for each
+0 < i ? n.
+We say that two permutations are neighbors iff
+they can be aligned by an Inversion Transduction
+Grammar (ITG) (Wu, 1997), which is a familiar
+reordering device in machine translation. Equiva-
+lently, pi
+?
+? N(pi) iff pi can be transformed into
+pi
+?
+by swapping various adjacent substrings of pi,
+as long as these swaps are properly nested. Zens
+and Ney (2003) used a normal form to show that
+the size of the ITG neighborhood N(pi) is a large
+Schr?oder number, which grows exponentially in
+n. Asymptotically, the ratio between the size of
+the neighborhood for n + 1 and the size for n ap-
+proaches 3 + 2
+?
+2 ? 5.8.
+We show that equation (2) can be optimized
+within N(pi) in O(n
+3
+) time, using dynamic pro-
+gramming. The algorithm is based on CKY pars-
+ing. However, a novelty is that the grammar
+weights must themselves be computed by O(n
+3
+)
+dynamic programming.
+Our grammar is shown in Figure 1. Parsing
+the ?input sentence? pi with this grammar simply
+constructs all binary trees that yield the string pi.
+There is essentially only one nonterminal, S, but
+we split it into O(n
+2
+) position-specific nontermi-
+nals such as S
+i,j
+, which can only yield the span
+pi
+i+1
+pi
+i+2
+. . . pi
+j
+. An example parse is shown in
+Figure 2.
+The important point is that we will place a
+score on each binary grammar rule. The score
+of the rule S
+i,k
+? S
+i,j
+S
+j,k
+is max(0,?
+i,j,k
+),
+where ?
+i,j,k
+is the benefit to swapping the sub-
+strings pi
+i+1
+pi
+i+2
+. . . pi
+j
+and pi
+j+1
+pi
+j+2
+. . . pi
+k
+. The
+rule is considered to be a ?swap rule? if its
+score is positive, showing that a swap will be
+beneficial (independent of the rest of the tree).
+If the parse in Figure 2 is the parse with
+the highest total score, and its swap rules are
+S
+0,5
+? S
+0,1
+S
+1,5
+and S
+3,5
+? S
+3,4
+S
+4,5
+, then
+our best permutation in the neighborhood of pi
+must be the (linguistically desirable) permutation
+die
+4
+Frau
+5
+hat
+3
+gekauft
+6
+die
+1
+Katze
+2
+, obtained from
+1009
+SS
+0,6
+
+
+
+
+
+
+H
+H
+H
+H
+H
+H
+S
+0,5
+
+
+
+
+H
+H
+H
+H
+S
+0,1
+die
+1
+S
+1,5
+
+
+
+
+H
+H
+H
+H
+S
+1,3
+
+
+H
+H
+S
+1,2
+die
+4
+S
+2,3
+Frau
+5
+S
+3,5
+
+
+H
+H
+S
+3,4
+gekauft
+6
+S
+4,5
+hat
+3
+S
+5,6
+Katze
+2
+Figure 2: One parse of the current permutation pi.
+In this example, pi has somehow gotten the input
+words into alphabetical order (owing to previous
+hill-climbing steps). We are now trying to further
+improve this order.
+pi by two swaps.
+How do we find this solution? Clearly
+the benefit (positive or negative) to swapping
+pi
+i+1
+pi
+i+2
+. . . pi
+j
+with pi
+j+1
+pi
+j+2
+. . . pi
+k
+is
+?
+i,j,k
+=
+j
+?
+`=i+1
+k
+?
+r=j+1
+B[pi
+r
+, pi
+`
+]?B[pi
+`
+, pi
+r
+] (5)
+We can evaluate all O(n
+3
+) possible swaps in to-
+tal time O(n
+3
+), using the dynamic programming
+recurrence
+?
+i,j,k
+= ?
+i,j,k?1
++ ?
+i+1,j,k
+??
+i+1,j,k?1
+(6)
++B[pi
+k
+, pi
+i+1
+]?B[pi
+i+1
+, pi
+k
+]
+with the base case ?
+i,j,k
+= 0 if i = j or j = k.
+This gives us the weights for the grammar rules,
+and then we can use weighted CKY parsing to
+find the highest-scoring (Viterbi) parse in O(n
+3
+)
+time. Extracting our new and improved permuta-
+tion pi
+?
+? N(pi) from this parse is a simple O(n)-
+time algorithm.
+Figure 3 gives pseudocode for our local search
+algorithm, showing how to compute the quan-
+tities (6) during parsing rather than beforehand.
+?[i, k] holds the weight of the best permuta-
+tion (in the neighborhood) of the subsequence
+pi
+i+1
+pi
+i+1
+. . . pi
+k
+.
+3
+3
+The use of ? is intended to suggest an analogy to inside
+probability?or more precisely, the Viterbi approximation to
+inside probability (since we are maximizing rather than sum-
+ming over parses).
+The next two sections describe how to use our
+local search algorithm to discriminatively learn the
+weights of the parameters from Section 2, equa-
+tion (1).
+4 Features
+Our objective function (2) works only to the extent
+that we can derive a good pairwise preference ma-
+trix B
+w
+. We do this by using a rich feature set in
+equation (1).
+We adapt the features of McDonald et al
+(2005), introduced there for dependency parsing,
+to the task of machine translation reordering. Be-
+cause both models construct features for pairs of
+words given the entire sentence, there is a close
+correspondence between the two tasks, although
+the output is quite different.
+Each feature ?(w, `, r) in equation (1) is a bi-
+nary feature that fires when (w, `, r) has some
+conjunction of properties. The properties that are
+considered include the words w
+`
+and w
+r
+, the parts
+of speech of {w
+`?1
+, . . . , w
+r+1
+}, and the distance
+r ? `. Table 1 shows the feature templates.
+We also tried features based on a dependency
+parse of the German, with the idea of using LOP
+features to reorder the dependents of each word,
+and thus model syntactic movement. This did
+produce better monolingual reorderings (as in Ta-
+ble 2), but it did not help final translation into En-
+glish (Table 3), so we do not report the details here.
+5 Learning to Reorder
+Ideally, we would have a large corpus of desir-
+able reorderings of source sentences?in our case,
+German sentences permuted into target English
+word order?from which to train the parameters of
+our model. Unfortunately, the alignments between
+German and English sentences are only infre-
+quently one-to-one. Furthermore, human-aligned
+parallel sentences are hard to come by, and never
+in the quantity we would like.
+Instead, we make do with automatically-
+generated word alignments, and we heuristi-
+cally derive an English-like word order for
+the German sentence based on the alignment.
+We used GIZA++ (Och and Ney, 2003) to
+align approximately 751,000 sentences from the
+German-English portion of the Europarl corpus
+(Koehn, 2005), in both the German-to-English and
+English-to-German directions. We combined the
+1010
+1: procedure LOCALSEARCHSTEP(B,pi, n)
+2: for i? 0 to n? 1 do
+3: ?[i, i+ 1]? 0
+4: for k ? i+ 1 to n do
+5: ?[i, i, k]? ?[i, k, k]? 0
+6: end for
+7: end for
+8: for w ? 2 to n do
+9: for i? 0 to n? w do
+10: k ? i+ w
+11: ?[i, k]? ??
+12: for j ? i+ 1 to k ? 1 do
+13: ?[i, j, k]? ?[i, j, k ? 1] + ?[i+ 1, j, k]??[i+ 1, j, k ? 1] +B[pi
+k
+, pi
+i+1
+]?B[pi
+i+1
+, pi
+k
+]
+14: ?[i, k]? max(?[i, k], ?[i, j] + ?[j, k] + max(0, ?[i, j, k]))
+15: end for
+16: end for
+17: end for
+18: return ?[0, n]
+19: end procedure
+Figure 3: Pseudocode for computing the score of the best permutation in the neighborhood of pi under
+the Linear Ordering Problem specified by the matrix B. Computing the best neighbor is a simple matter
+of keeping back pointers to the choices of max and ordering them as implied.
+alignments using the ?grow-diag-final-and? proce-
+dure provided with Moses (Koehn et al, 2007).
+For each of these German sentences, we derived
+the English-like reordering of it, which we call
+German
+?
+, by the following procedure. Each Ger-
+man token was assigned an integer key, namely
+the position of the leftmost of the English tokens
+to which it was aligned, or 0 if it was not aligned
+to any English tokens. We then did a stable sort of
+the German tokens based on these keys, meaning
+that if two German tokens had the same key, their
+order was preserved.
+This is similar to the oracle ordering used by
+Al-Onaizan and Papineni (2006), but differs in the
+handling of unaligned words. They kept unaligned
+words with the closest preceding aligned word.
+4
+Having found the German
+?
+corresponding to
+each German sentence, we randomly divided
+the sentences into 2,000 each for development
+and evaluation, and the remaining approximately
+747,000 for training.
+We used the averaged perceptron algorithm
+(Freund and Schapire, 1998; Collins, 2002) to
+train the parameters of the model. We ran the al-
+gorithm multiple times over the training sentences,
+4
+We tried two other methods for deriving English word
+order from word alignments. The first alternative was to
+align only in one direction, from English to German, with
+null alignments disallowed, so that every German word was
+aligned to a single English word. The second alternative
+used BerkeleyAligner (Liang et al, 2006; DeNero and Klein,
+2007), which shares information between the two alignment
+directions to improve alignment quality. Neither alternative
+produced improvements in our ultimate translation quality.
+measuring the quality of the learned parameters by
+reordering the held-out development set after each
+iteration. We stopped when the BLEU score on
+the development set failed to improve for two con-
+secutive iterations, which occurred after fourteen
+passes over the data.
+Each perceptron update should compare the true
+German
+?
+to the German
+?
+that would be predicted
+by the model (2). As the latter is NP-hard to find,
+we instead substitute the local maximum found by
+local search as described in Section 3, starting at
+the identity permutation, which corresponds to the
+original German word order.
+During training, we iterate the local search as
+described earlier. However, for decoding, we only
+do a single step of local search, thus restricting re-
+orderings to the ITG neighborhood of the origi-
+nal German. This restriction turns out to improve
+performance slightly, even though it reduces the
+quality of our approximation to the LOP prob-
+lem (4). In other words, it turns out that reorder-
+ings found outside the ITG neighborhood tend to
+be poor German
+?
+even if our LOP-based objective
+function thinks that they are good German
+?
+.
+This is not to say that the gold standard German
+?
+is always in the ITG neighborhood of the original
+German?often it is not. Thus, it might be bet-
+ter in future work to still allow the local search to
+take more than one step, but to penalize the second
+step. In effect, score(pi) would then include a fea-
+ture indicating whether pi is in the neighborhood
+of the original German.
+1011
+t`?1
+w
+`
+t
+`
+t
+`+1
+t
+b
+t
+r?1
+w
+r
+t
+r
+t
+r+1
+? ? ? ?
+? ? ?
+? ? ?
+? ? ?
+? ? ?
+? ?
+? ?
+? ?
+? ?
+?
+?
+?
+?
+? ? ?
+? ? ? ?
+? ? ?
+? ? ? ?
+? ? ?
+? ? ? ?
+? ? ?
+? ? ? ?
+? ? ?
+Table 1: Feature templates forB[`, r] (w
+`
+is the `th
+word, t
+`
+its part of speech tag, and b matches any
+index such that ` < b < r). Each of the above
+is also conjoined with the distance between the
+words, r ? `, to form an additional feature tem-
+plate. Distances are binned into 1, 2, 3, 4, 5, > 5,
+and > 10.
+The model is initialized at the start of train-
+ing using log-odds of the parameters. Let ?
+m
+=
+{(w, `, r) | ?
+m
+(w, `, r) = 1} be the set of word
+pairs in the training data for which feature m fires.
+Let
+?
+?
+m
+be the subset of ?
+m
+for which the words
+stay in order, and
+?
+?
+m
+the subset for which the
+words reverse order. Then in this model,
+?
+m
+= log
+(
+?
+?
+?
+?
+?
+m
+?
+?
+?
++
+1
+2
+)
+?log
+(
+?
+?
+?
+?
+?
+m
+?
+?
+?
++
+1
+2
+)
+. (7)
+This model is equivalent to smoothed na??ve Bayes
+if converted to probabilities. The learned model
+significantly outperforms it on the monolingual re-
+ordering task.
+Table 2 compares the model after perceptron
+training to the model at the start of training,
+measuring BLEU score of the predicted German
+?
+against the observed German
+?
+. In addition to these
+BLEU scores, we can measure precision and re-
+call of pairs of reordered words against the ob-
+Ordering p
+2
+p
+3
+p
+4
+BLEU
+German 57.4 38.3 27.7 49.65
+Log-odds 57.4 38.4 27.8 49.75
+Perceptron 58.6 40.3 29.8 51.51
+Table 2: Monolingual BLEU score on develop-
+ment data, measured against the ?true? German
+?
+ordering that was derived from automatic align-
+ments to known English translations. The table
+evaluates three candidate orderings: the original
+German, German reordered using the log-odds
+initialized model, and German reordered using
+the perceptron-learned model. In addition to the
+BLEU score, the table shows bigram, trigram, and
+4-gram precisions. The unigram precisions are al-
+ways 100%, because the correct words are given.
+served German
+?
+. On the held out test set, the pre-
+dicted German
+?
+achieves a recall of only 21%, but
+a precision of 64%. Thus, the learned model is
+too conservative, but makes moderately good de-
+cisions when it does reorder.
+6 Reordering as Preprocessing
+This section describes experiments using the
+model introduced in Section 2 and learned in Sec-
+tion 5 to preprocess German sentences for trans-
+lation into English. These experiments are similar
+to those of Collins et al (2005).
+We used the model learned in Section 5 to gen-
+erate a German
+?
+ordering of the training, develop-
+ment, and test sets. The training sentences are the
+same that the model was trained on, and the devel-
+opment set is the same that was used as the stop-
+ping criterion for the perceptron. The test set was
+unused in training.
+We used the resulting German
+?
+as the input to
+the Moses training pipeline. That is, Moses re-
+computed alignments of the German
+?
+training data
+to the English sentences using GIZA++, then con-
+structed a phrase table. Moses used the develop-
+ment data for minimum error-rate training (Och,
+2003) of its small number of parameters. Finally,
+Moses translated the test sentences, and we mea-
+sured performance against the English reference
+sentences. This is the standard Moses pipeline, ex-
+cept German has been replaced by German
+?
+.
+Table 3 shows the results of translation, both
+starting with unreordered German, and starting
+with German
+?
+, reordered using the learned Linear
+Ordering Problems. Note that Moses may itself re-
+1012
+System Input Moses Reord. p
+1
+p
+2
+p
+3
+p
+4
+BLEU METEOR TER
+baseline German Distance 59.6 31.4 18.8 11.6 25.27 54.03 60.60
+(a) German Lexical 60.0 32.0 19.3 12.1 25.55 54.18 59.76
+(b) German
+?
+Distance 60.4 32.7 20.2 12.8 26.40 54.91 58.63
+(a)+(b) German
+?
+Lexical 59.9 32.4 20.0 12.8 26.44 54.61 59.23
+Table 3: Machine translation performance of several systems, measured against a single English refer-
+ence translation. The results vary both the preprocessing?either none, or reordered using the learned
+Linear Ordering Problems?and the reordering model used in Moses. Performance is measured using
+BLEU, METEOR (Lavie et al, 2004), and TER (Snover et al, 2006). (For TER, smaller values are
+better.)
+order whatever input that it receives, during trans-
+lation into English. Thus, the results in the table
+also vary the reordering model used in Moses, set
+to either a single-parameter distance-based model,
+or to the lexicalized bidirectional msd model. The
+latter model has six parameters for each phrase
+in the phrase table, corresponding to monotone,
+swapped, or discontinuous ordering relative to the
+previous phrase in either the source or target lan-
+guage.
+How should we understand the results? The
+baseline system is Moses phrase-based translation
+with no preprocessing and only a simple distance-
+based reordering model. There are two ways to
+improve this: (a) ask Moses to use the lexicalized
+bidirectional msd reordering model that is pro-
+vided with Moses and is integrated with the rest of
+translation, or (b) keep the simple distance-based
+model within Moses, but preprocess its training
+and test data with our linear reordering model.
+Note that the preprocessing in (b) will obviously
+change the phrasal substrings that are learned by
+Moses, for better or for worse.
+First, remarkably, (b) is significantly better than
+(a) on BLEU, with p < 0.0001 according to a
+paired permutation test.
+Second, combining (a) with (b) produced no im-
+provement over (b) in BLEU score (the difference
+between 26.40 and 26.44 is not significant, even
+at p < 0.2, according to the same paired per-
+mutation test). Lexicalized reordering in Moses
+even degraded translation performance according
+to METEOR and TER. The TER change is sig-
+nificant according to the paired permutation test at
+p < 0.001. (We did not perform a significance test
+for METEOR.)
+Our word-based model surpasses the lexical-
+ized reordering in Moses largely because of long-
+distance movement. The 518 sentences (26%) in
+ll
+llll
+l
+l
+ll
+l
+lll
+l
+lll
+ll
+ll
+lll
+lllllllll
+llllllllll l l ll
+llllll
+l
+l
+ll
+l
+l
+ll
+l
+lll
+ll
+ll
+lll
+lllllllll
+lllllllll
+l l l ll
+0 10 20 30 40 50
+?
+0.00
+20
+.000
+0.00
+2
+0.00
+4
+0.00
+6
+0.00
+8
+0.01
+0
+Word Pairs Reordered
+Cum
+ulat
+ive 
+BLE
+U C
+han
+ge
+BLEU Improvement Aggregated by Amount of Reordering
+vs. baseline
+vs. (a)
+Figure 4: Cumulative change in BLEU score of
+(b) relative to the baseline and (a), aggregated by
+the number of reordered word pairs in each sen-
+tence. For those sentences where our model re-
+orders fewer than five word pairs, the BLEU score
+of translation degrades.
+the test set for which our model moves a word
+more than six words away from its starting posi-
+tion account for more than 67% of the improve-
+ment in BLEU from (a) to (b).
+Figure 4 shows another view of the BLEU im-
+provement. It shows that, compared to the base-
+line, our preprocessing has basically no effect for
+sentences where it does only a little reordering,
+changing the relative order of fewer than five pairs
+of words. Compared to Moses with lexicalized re-
+ordering, these same sentences actually hurt per-
+formance. This more than accounts for the differ-
+ence between the BLEU scores of (b) and (a)+(b).
+Going beyond preprocessing, our model could
+also be integrated into a phrase-based decoder. We
+briefly sketch that possibility here.
+1013
+Phrase-based decoders keep a source coverage
+vector with every partial translation hypothesis.
+That coverage vector allows us to incorporate the
+scores from a LOP matrix B directly. Whenever
+the decoder extends the hypothesis with a new
+source phrase, covering w
+i+1
+w
+i+2
+. . . w
+j
+, it adds
+j?1
+?
+`=i+1
+j
+?
+r=`+1
+B[`, r] +
+j
+?
+`=i+1
+?
+r?U
+B[`, r].
+The first term represents the phrase-internal score,
+and the second the score of putting the words in the
+phrase before all the remaining uncovered words
+U .
+7 Comparison to Prior Work
+Preprocessing the source language to improve
+translation is a common technique. Xia and Mc-
+Cord (2004) improved English-French translation
+using syntactic rewrite rules derived from Slot
+Grammar parses. Collins et al (2005) reported
+an improvement from 25.2% to 26.8% BLEU
+on German-English translation using six hand-
+written rules to reorder the German sentences
+based on automatically-generated phrase-structure
+trees. Our work differs from these approaches in
+providing an explicit model that scores all pos-
+sible reorderings. In this paper, our model was
+trained and used only for 1-best preprocessing, but
+it could potentially be integrated into decoding as
+well, where it would work together with the trans-
+lation model and target language model to find a
+congenial translation.
+Costa-juss`a and Fonollosa (2006) improved
+Spanish-English and Chinese-English translation
+using a two-step process, first reordering the
+source language, then translating it, both using dif-
+ferent versions of a phrase-based translation sys-
+tem. Many others have proposed more explicit
+reordering models (Tillmann, 2004; Kumar and
+Byrne, 2005; Koehn et al, 2005; Al-Onaizan and
+Papineni, 2006). The primary advantage of our
+model is that it directly accounts for interactions
+between distant words, leading to better treatment
+of long-distance movement.
+Xiong et al (2006) proposed a constituent
+reordering model for a bracketing transduction
+grammar (BTG) (Wu, 1995), which predicts the
+probability that a pair of subconstituents will re-
+order when combined to form a new constituent.
+The features of their model look only at the first
+source and target word of each constituent, mak-
+ing it something like a sparse version of our model.
+However, because of the target word features, their
+reordering model cannot be separated from their
+translation model.
+8 Conclusions and Future Work
+We have presented an entirely new model of re-
+ordering for statistical machine translation, based
+on the Linear Ordering Problem, and shown that
+it can substantially improve translation from Ger-
+man to English.
+The model is demonstrably useful in this pre-
+processing setting?which means that it can be
+very simply added as a preprocessing step to any
+MT system. German-to-English is a particularly
+attractive use case, because the word orders are
+sufficiently different as to require a good reorder-
+ing model that requires long-distance reordering.
+Our preprocessing here gave us a BLEU gain
+of 0.9 point over the best Moses-based result.
+English-to-German would obviously be another
+potential win, as would translating between En-
+glish and Japanese, for example.
+As mentioned in Section 6, our model could
+also be integrated into a phrase-based, or a syntax-
+based decoder. That possibility remains future
+work, but it is likely to lead to further improve-
+ments, because it allows the translation system to
+consider multiple possible reorderings under the
+model, as well as to tune the weight of the model
+relative to the other parts of the system during
+MERT.
+Tromble (2009) covers this integration in more
+detail, and proposes several other ways of integrat-
+ing our reordering model into machine translation.
+It also experiments with numerous other param-
+eter estimation procedures, including some that
+use the probabilistic interpretation of our model
+from (3). It presents numerous additional neigh-
+borhoods for search in the Linear Ordering Prob-
+lem.
+We mentioned several possible extensions to the
+model, such as going beyond the scoring model
+of equation (2), or considering syntax-based fea-
+tures. Another extension would try to reorder not
+words but phrases, following (Xiong et al, 2006),
+or segment choice models (Kuhn et al, 2006),
+which assume a single segmentation of the words
+into phrases. We would have to define the pair-
+wise preference matrix B over phrases rather than
+1014
+words (Eisner and Tromble, 2006). This would
+have the disadvantage of complicating the feature
+space, but might be a better fit for integration with
+a phrase-based decoder.
+Finally, we gave a novel algorithm for ap-
+proximately solving the Linear Ordering Prob-
+lem, interestingly combining dynamic program-
+ming with local search. Another novel contri-
+bution is that we showed how to parameterize a
+function that constructs a specific Linear Order-
+ing Problem instance from an input sentence w,
+and showed how to learn those parameters from
+a corpus of parallel sentences, using the percep-
+tron algorithm. Likelihood-based training using
+equation (3) would also be possible, with modifi-
+cations to our algorithm, notably the use of normal
+forms to avoid counting some permutations multi-
+ple times (Tromble, 2009).
+It would be interesting to compare the speed
+and accuracy of our dynamic-programming local-
+search method with an exact algorithm for solving
+the LOP, such as integer linear programming with
+branch and bound (cf. Charon and Hudry (2006)).
+Exact solutions can generally be found in practice
+for n ? 100.
+References
+Yaser Al-Onaizan and Kishore Papineni. 2006. Dis-
+tortion models for statistical machine translation. In
+COLING-ACL, pages 529?536, Sydney, July.
+Ir`ene Charon and Olivier Hudry. 2006. A branch-and-
+bound algorithm to solve the linear ordering problem
+for weighted tournaments. Discrete Applied Mathe-
+matics, 154(15):2097?2116, October.
+Michael Collins, Philipp Koehn, and Ivona Ku?cerov?a.
+2005. Clause restructuring for statistical machine
+translation. In ACL, pages 531?540, Ann Arbor,
+Michigan, June.
+Michael Collins. 2002. Discriminative training meth-
+ods for hidden Markov models: Theory and ex-
+periments with perceptron algorithms. In EMNLP,
+pages 1?8, Philadelphia, July.
+Marta R. Costa-juss`a and Jos?e A. R. Fonollosa. 2006.
+Statistical machine reordering. In EMNLP, pages
+70?76, Sydney, July.
+John DeNero and Dan Klein. 2007. Tailoring word
+alignments to syntactic machine translation. In ACL,
+pages 17?24, Prague, June.
+Jason Eisner and Roy W. Tromble. 2006. Local search
+with very large-scale neighborhoods for optimal per-
+mutations in machine translation. In Workshop on
+computationally hard problems and joint inference
+in speech and language processing, New York, June.
+Yoav Freund and Robert E. Schapire. 1998. Large
+margin classification using the perceptron algorithm.
+In COLT, pages 209?217, New York. ACM Press.
+Martin Gr?otschel, Michael J?unger, and Gerhard
+Reinelt. 1984. A cutting plane algorithm for
+the linear ordering problem. Operations Research,
+32(6):1195?1220, November?December.
+Philipp Koehn, Amittai Axelrod, Alexandra Birch
+Mayne, Chris Callison-Burch, Miles Osborne, and
+David Talbot. 2005. Edinburgh system description
+for the 2005 IWSLT speech translation evaluation.
+In IWSLT, Pittsburgh, October.
+Philipp Koehn, Hieu Hoang, Alexandra Birch, Chris
+Callison-Burch, Marcello Federico, Nicola Bertoldi,
+Brooke Cowan, Wade Shen, Christine Moran,
+Richard Zens, Chris Dyer, Ondrej Bojar, Alexan-
+dra Constantin, and Evan Herbst. 2007. Moses:
+Open source toolkit for statistical machine transla-
+tion. In ACL Demo and Poster Sessions, pages 177?
+180, Prague, June.
+Philipp Koehn. 2005. Europarl: A parallel corpus
+for statistical machine translation. In MT Summit
+X, pages 79?86, Phuket, Thailand, September.
+Roland Kuhn, Denis Yuen, Michel Simard, Patrick
+Paul, George Foster, Eric Joanis, and Howard John-
+son. 2006. Segment choice models: Feature-rich
+models for global distortion in statistical machine
+translation. In HLT-NAACL, pages 25?32, New
+York, June.
+Shankar Kumar and William Byrne. 2005. Lo-
+cal phrase reordering models for statistical machine
+translation. In HLT-EMNLP, pages 161?168, Van-
+couver, October.
+Alon Lavie, Kenji Sagae, and Shyamsundar Jayara-
+man. 2004. The signicance of recall in automatic
+metrics for MT evaluation. In Robert E. Frederking
+and Kathryn B. Taylor, editors, Machine Transla-
+tion: From Real Users to Research, pages 134?143.
+AMTA, Springer, September?October.
+Percy Liang, Ben Taskar, and Dan Klein. 2006. Align-
+ment by agreement. In HLT-NAACL, pages 104?
+111, New York, June.
+Ryan McDonald, Koby Crammer, and Fernando
+Pereira. 2005. Spanning tree methods for discrim-
+inative training of dependency parsers. Technical
+Report MS-CIS-05-11, UPenn CIS.
+Sounaka Mishra and Kripasindhu Sikdar. 2004. On
+approximability of linear ordering and related NP-
+optimization problems on graphs. Discrete Applied
+Mathematics, 136(2?3):249?269, February.
+1015
+Franz Josef Och and Hermann Ney. 2003. A sys-
+tematic comparison of various statistical alignment
+models. Computational Linguistics, 29(1):19?51,
+March.
+Franz Josef Och. 2003. Minimum error rate training in
+statistical machine translation. In ACL, pages 160?
+167, Sapporo, July.
+Kishore Papineni, Salim Roukos, Todd Ward, and Wei-
+Jing Zhu. 2002. BLEU: a method for automatic
+evaluation of machine translation. In ACL, pages
+311?318, Philadelphia, July.
+Tommaso Schiavinotto and Thomas St?utzle. 2004.
+The linear ordering problem: Instances, search
+space analysis and algorithms. Journal of Math-
+ematical Modelling and Algorithms, 3(4):367?402,
+December.
+Matthew Snover, Bonnie Dorr, Richard Schwartz, Lin-
+nea Micciulla, and John Makhoul. 2006. A study of
+translation edit rate with targeted human annotation.
+In AMTA.
+Christoph Tillmann. 2004. A unigram orientation
+model for statistical machine translation. In HLT-
+NAACL Short Papers, pages 101?104, Boston, May.
+Roy Wesley Tromble. 2009. Search and Learning for
+the Linear Ordering Problem with an Application
+to Machine Translation. Ph.D. thesis, Johns Hop-
+kins University, Baltimore, April. http://nlp.
+cs.jhu.edu/
+?
+royt/
+Dekai Wu. 1995. An algorithm for simultaneously
+bracketing parallel texts by aligning words. In ACL,
+pages 244?251, Cambridge, Massachusetts, June.
+Dekai Wu. 1997. Stochastic inversion transduction
+grammars and bilingual parsing of parallel corpora.
+Computational Linguistics, 23(3):377?404, Septem-
+ber.
+Fei Xia and Michael McCord. 2004. Improving
+a statistical MT system with automatically learned
+rewrite patterns. In COLING, pages 508?514,
+Geneva, August.
+Deyi Xiong, Qun Liu, and Shouxun Lin. 2006. Max-
+imum entropy based phrase reordering model for
+statistical machine translation. In COLING-ACL,
+pages 521?528, Sydney, July.
+Richard Zens and Hermann Ney. 2003. A comparative
+study on reordering constraints in statistical machine
+translation. In ACL, pages 144?151, Sapporo, July.
+1016

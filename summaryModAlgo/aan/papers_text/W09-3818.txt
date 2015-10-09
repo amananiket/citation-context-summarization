@@ -1,0 +1,1216 @@
+Proceedings of the 11th International Conference on Parsing Technologies (IWPT), pages 117?128,
+Paris, October 2009. c?2009 Association for Computational Linguistics
+Constructing parse forests that include exactly the n-best PCFG trees
+Pierre Boullier1, Alexis Nasr2 and Beno??t Sagot1
+1. Alpage, INRIA Paris-Rocquencourt & Universite? Paris 7
+Domaine de Voluceau ? Rocquencourt, BP 105 ? 78153 Le Chesnay Cedex, France
+{Pierre.Boullier,Benoit.Sagot}@inria.fr
+2. LIF, Univ. de la Me?diterranne?e
+163, avenue de Luminy - Case 901 ? 13288 Marseille Cedex 9, France
+Alexis.Nasr@lif.univ-mrs.fr
+Abstract
+This paper describes and compares two al-
+gorithms that take as input a shared PCFG
+parse forest and produce shared forests
+that contain exactly the n most likely trees
+of the initial forest. Such forests are
+suitable for subsequent processing, such
+as (some types of) reranking or LFG f-
+structure computation, that can be per-
+formed ontop of a shared forest, but that
+may have a high (e.g., exponential) com-
+plexity w.r.t. the number of trees contained
+in the forest. We evaluate the perfor-
+mances of both algorithms on real-scale
+NLP forests generated with a PCFG ex-
+tracted from the Penn Treebank.
+1 Introduction
+The output of a CFG parser based on dynamic
+programming, such as an Earley parser (Earley,
+1970), is a compact representation of all syntac-
+tic parses of the parsed sentence, called a shared
+parse forest (Lang, 1974; Lang, 1994). It can rep-
+resent an exponential number of parses (with re-
+spect to the length of the sentence) in a cubic size
+structure. This forest can be used for further pro-
+cessing, as reranking (Huang, 2008) or machine
+translation (Mi et al, 2008).
+When a CFG is associated with probabilistic in-
+formation, as in a Probabilistic CFG (PCFG), it
+can be interesting to process only the n most likely
+trees of the forest. Standard state-of-the-art algo-
+rithms that extract the n best parses (Huang and
+Chiang, 2005) produce a collection of trees, los-
+ing the factorization that has been achieved by the
+parser, and reproduce some identical sub-trees in
+several parses.
+This situation is not satisfactory since post-
+parsing processes, such as reranking algorithms
+or attribute computation, cannot take advantage
+of this lost factorization and may reproduce some
+identical work on common sub-trees, with a com-
+putational cost that can be exponentally high.
+One way to solve the problem is to prune the
+forest by eliminating sub-forests that do not con-
+tribute to any of the n most likely trees. But this
+over-generates: the pruned forest contains more
+than the n most likely trees. This is particularly
+costly for post-parsing processes that may require
+in the worst cases an exponential execution time
+w.r.t. the number of trees in the forest, such as
+LFG f-structures construction or some advanced
+reranking techniques. The experiments detailed
+in the last part of this paper show that the over-
+generation factor of pruned sub-forest is more or
+less constant (see 6): after pruning the forest so as
+to keep the n best trees, the resulting forest con-
+tains approximately 103n trees. At least for some
+post-parsing processes, this overhead is highly
+problematic. For example, although LFG parsing
+can be achieved by computing LFG f-structures
+on top of a c-structure parse forest with a reason-
+able efficiency (Boullier and Sagot, 2005), it is
+clear that a 103 factor drastically affects the overall
+speed of the LFG parser.
+Therefore, simply pruning the forest is not an
+adequate solution. However, it will prove useful
+for comparison purposes.
+The new direction that we explore in this pa-
+per is the production of shared forests that con-
+tain exactly the n most likely trees, avoiding both
+the explicit construction of n different trees and
+the over-generation of pruning techniques. This
+can be seen as a transduction which is applied on
+a forest and produces another forest. The trans-
+duction applies some local transformations on the
+structure of the forest, developing some parts of
+the forest when necessary.
+The structure of this paper is the following. Sec-
+tion 2 defines the basic objects we will be dealing
+with. Section 3 describes how to prune a shared
+117
+forest, and introduces two approaches for build-
+ing shared forests that contain exactly the n most
+likely parses. Section 4 describes experiments that
+were carried out on the Penn Treebank and sec-
+tion 5 concludes the paper.
+2 Preliminaries
+2.1 Instantiated grammars
+Let G = ?N ,T ,P, S? be a context-free grammar
+(CFG), defined in the usual way (Aho and Ullman,
+1972). Throughout this paper, we suppose that we
+manipulate only non-cyclic CFGs,1 but they may
+(and usually do) include ?-productions. Given a
+production p ? P, we note lhs(p) its left-hand
+side, rhs(p) its right-hand side and |p| the length
+of rhs(p). Moreover, we note rhsk(p), with 1 ?
+k ? |p|, the kth symbol of rhs(p). We call A-
+production any production p ? P of G such that
+lhs(p) = A.
+A complete derivation of a sentence w =
+t1 . . . t|w| (?i ? |w|, ti ? T ) w.r.t. G is of the form
+S ??
+G,w
+?A? ?
+G,w
+?X1X2 . . . Xr? ??
+G,w
+w. By def-
+inition, A ? X1X2 . . . Xr is a production of G.
+Each of A, X1, X2, . . . , Xr spans a unique oc-
+currence of a substring ti+1 . . . tj of w, that can
+be identified by the corresponding range, noted
+i..j. A complete derivation represents a parse tree
+whose yield is w, in which each symbol X of
+range i..j roots a subtree whose yield is ti+1 . . . tj
+(i.e., a derivation of the form X ??
+G,w
+ti+1 . . . tj).
+Let us define the w-instantiation operation (or
+instantiation). It can be applied to symbols and
+productions of G, and to G itself, w.r.t. a string
+w. It corresponds to the well-known intersection
+of G with the linear automaton that corresponds
+to the string w. We shall go into further detail for
+terminology, notation and illustration purposes.
+An instantiated non terminal symbol is a triple
+noted Ai..j where A ? N and 0 ? i ? j ? |w|.
+Similarly, an instantiated terminal symbol is a
+triple noted Ti..j where T ? T and 0 ? i ? j =
+i + 1 ? |w|. An instantiated symbol, terminal or
+non terminal, is noted Xi..j . For any instantiated
+symbol Xi..j , i (resp. j) is called its lower bound
+1Actually, cyclic CFG can be treated as well, but not
+cyclic parse forests. Therefore, if using a cyclic CFG which,
+on a particular sentence, builds a cyclic parse forest, cycles
+have to be removed before the algorithms descibed in the next
+sections are applied. This is the case in the SYNTAX system
+(see below).
+(resp. upper bound), and can be extracted by the
+operator lb() (resp. ub()).
+An instantiated production (or instantiated
+rule) is a context-free production Ai..j ?
+X1i1..j1X2i2..j2 . . . Xrir ..jr whose left-hand side is an
+instantiated non terminal symbol and whose right-
+hand side is a (possibly empty) sequence of in-
+stantiated (terminal or non terminal) symbols, pro-
+vided the followings conditions hold:
+1. the indexes involved are such that i = i1, j =
+jr , and ?l such that 1 ? l < r, jl = il+1;
+2. the corresponding non-instantiated produc-
+tion A ? X1X2 . . . Xr is a production of
+G.
+If lhs(p) = Ai..j , we set lb(p) = i and ub(p) = j.
+In a complete derivation S ??
+G,w
+?A? ?
+G,w
+?X1X2 . . . Xr? ??
+G,w
+w, any symbol X that spans
+the range i..j can be replaced by the instantiated
+symbols Xi..j . For example, the axiom S can be
+replaced by the instantiated axiom S0..|w| in the
+head of the derivation. If applied to the whole
+derivation, this operation creates an instantiated
+derivation, whose rewriting operations define a
+particular set of instantiated productions. Given
+G and w, the set of all instantiated productions in-
+volved in at least one complete derivation of w is
+unique, and noted Pw. An instantiated derivation
+represents an instantiated parse tree, i.e., a parse
+tree whose node labels are instantiated symbols.
+In an instantiated parse tree, each node label is
+unique, and therefore we shall not distinguish be-
+tween a node in an instantiated parse tree and its
+label (i.e., an instantiated symbol).
+Then, the w-instantiated grammar Gw for G
+and w is a CFG ?Nw,Tw,Pw, S0..|w|? such that:
+1. Pw is defined as explained above;
+2. Nw is a set of instantiated non terminal sym-
+bols;
+3. Tw is a set of instantiated terminal symbols.
+It follows from the definition of Pw that (instan-
+tiated) symbols of Gw have the following prop-
+erties: Ai..j ? Nw ? A ??G,w ti+1 . . . tj , and
+Ti..j ? Tw ? T = tj .
+The w-instantiated CFG Gw represents all parse
+trees for w in a shared (factorized) way. It is the
+grammar representation of the parse forest of w
+118
+w.r.t. G.2 In fact, L(Gw) = {w} and the set
+of parses of w with respect to Gw is isomorphic
+to the set of parses of w with respect to G, the
+isomorphism being the w-instantiation operation.
+The size of a forest is defined as the size of the
+grammar that represents it, i.e., as the number of
+symbol occurrences in this grammar, which is de-
+fined as the number of productions plus the sum of
+the lengths of all right-hand sides.
+Example 1: First running example.
+Let us illustrate these definitions by an example.
+Given the sentence w = the boy saw a man with a
+telescope and the grammar G (that the reader has
+in mind), the instantiated productions of Gw are:
+Det0..1 ? the0..1 N1..2 ? boy1..2
+NP0..2 ? Det0..1 N1..2 V2..3 ? saw2..3
+Det3..4 ? a3..4 N4..5 ? man4..5
+NP3..5 ? Det3..4 N4..5 Prep5..6 ? with5..6
+Det6..7 ? a6..7 N7..8 ? telescope7..8
+NP6..8 ? Det6..7 N7..8 PP5..8 ? Prep5..6 NP6..8
+NP3..8 ? NP3..5 PP5..8 VP2..8 ? V2..3 NP3..8
+VP2..5 ? V2..3 NP3..5 VP2..8 ? VP2..5 PP5..8
+S0..8 ? NP0..2 VP2..8
+They represent the parse forest of w according to
+G. This parse forest contains two trees, since there
+is one ambiguity: VP2..8 can be rewritten in two
+different ways.
+The instantiated grammar Gw can be repre-
+sented as an hypergraph (as in (Klein and Man-
+ning, 2001) or (Huang and Chiang, 2005)) where
+the instantiated symbols of Gw correspond to the
+vertices of the hypergraph and the instantiated pro-
+ductions to the hyperarcs.
+We define the extension of an instantiated sym-
+bol Xi..j , noted E(Xi..j), as the set of instantiated
+parse trees that have Xi..j as a root. The set of all
+parse trees of w w.r.t. G is therefore E(S0..|w|). In
+the same way, we define the extension of an in-
+stantiated production Xi..j ? ? to be the subset
+of E(Xi..j) that corresponds to derivations of the
+form Xi..j ?G,w ?
+??
+G,w
+ti+1 . . . tj (i.e., trees rooted
+in Xi..j and where the daughters of the node Xi..j
+are the symbols of ?).
+2.2 Forest traversals
+Let us suppose that we deal with non-cyclic
+forests, i.e., we only consider forests that are rep-
+2In particular, if G is a binary grammar, its w-instantation
+(i.e., the parse forest of w) has a size O(|w|3), whereas it rep-
+resents a potentially exponential number of parse trees w.r.t
+|w| since we manipulate only non-cyclic grammars.
+resented by a non-recursive instantiated CFG. In
+this case, we can define two different kinds of for-
+est traversals.
+A bottom-up traversal of a forest is a traversal
+with the following constraint: an Ai..j-production
+is visited if and only if all its instantiated right-
+hand side symbols have already been visited; the
+instantiated symbol Ai..j is visited once all Ai..j-
+productions have been visited. The bottom-up
+visit starts by visiting all instantiated productions
+with right-hand sides that are empty or contain
+only (instantiated) terminal symbols.
+A top-down traversal of a forest is a traversal
+with the following constraint: a node Ai..j is vis-
+ited if and only if all the instantiated productions
+in which it occurs in right-hand side have already
+been visited; once an instantiated production Ai..j
+has been visited, all its Ai..j-productions are vis-
+ited as well. Of course the top-down visit starts by
+the visit of the axiom S0..|w|.
+2.3 Ranked instantiated grammar
+When an instantiated grammar Gw =
+?Nw,Tw,Pw, S0..|w|? is built on a PCFG, ev-
+ery parse tree in E(S0..|w|) has a probability that
+is computed in the usual way (Booth, 1969). We
+might be interested in extracting the kth most
+likely tree of the forest represented by Gw,3 with-
+out unfolding the forest, i.e., without enumerating
+trees. In order to do so, we need to add some
+extra structure to the instantiated grammar. The
+augmented instantiated grammar will be called a
+ranked instantiated grammar.
+This extra structure takes the form of n-best ta-
+bles that are associated with each instantiated non
+terminal symbol (Huang and Chiang, 2005), thus
+leading to ranked instantiated non terminal sym-
+bols, or simply instantiated symbols when the con-
+text is non ambiguous. A ranked instantiated non
+terminal symbol is written ?Ai..j,T (Ai..j)?, where
+T (Ai..j) is the n-best table associated with the in-
+stantiated symbol Ai..j .
+T (Ai..j) is a table of at most n entries. The
+k-th entry of the table, noted e, describes how to
+build the k-th most likely tree of E(Ai..j). This
+tree will be called the k-th extention of Ai..j , noted
+Ek(Ai..j). More precisely, e indicates the instanti-
+ated Ai..j-production p such that Ek(Ai..j) ? E(p).
+It indicates furthermore which trees of the exten-
+3In this paper, we shall use the kth most likely tree and the
+tree of rank k as synonyms.
+119
+sions of p?s right-hand side symbols must be com-
+bined together in order to build Ek(Ai..j).
+We also define the m,n-extension of Ai..j as
+follows: Em,n(Ai..j) = ?m?k?nEk(Ai..j).
+Example 2: n-best tables for the first running
+example.
+Let us illustrate this idea on our first running ex-
+ample. Recall that in Example 1, the symbol VP2..8
+can be rewritten using the two following produc-
+tions :
+VP2..8 ? V2..3 NP3..8
+VP2..8 ? VP2..5 PP5..8
+T (VP2..8) has the following form:
+1 P1 VP2..8 ? V2..3 NP3..8 ?1, 1? 1
+2 P2 VP2..8 ? VP2..5 PP5..8 ?1, 1? 1
+This table indicates that the most likely tree
+associated with VP2..8 (line one) has probability
+P1 and is built using the production VP2..8 ?
+V2..3 NP3..8 by combining the most likely tree of
+E(V2..3) (indicated by the first 1 in ?1, 1?) with the
+most likely tree of E(NP3..8) (indicated by the sec-
+ond 1 in ?1, 1?). It also indicates that the most
+likely tree of E(VP2..8) is the most likely tree of
+E(VP2..8 ? V2..3 NP3..8) (indicated by the pres-
+ence of 1 in the last column of entry 1) and the
+second most likely tree of E(VP2..8) is the most
+likely tree of E(VP2..8 ? VP2..5 PP5..8). This last
+integer is called the local rank of the entry.
+More formally, the entry T (Ai..j)[k] is defined
+as a 4-tuple ?Pk, pk, ~vk, lk? where k is the rank
+of the entry, Pk is the probability of the tree
+Ek(Ai..j), pk is the instantiated production such
+that Ek(Ai..j) ? E(pk), ~vk is a tuple of |rhs(pk)|
+integers and lk is the local rank.
+The tree Ek(Ai..j) is rooted by Ai..j , and its
+daughters root N = |rhs(pk)| subtrees that are
+E ~vk[1](rhs1(pk)), . . . , E ~vk [N ](rhsN (pk)).
+Given an instantiated symbol Ai..j and an in-
+stantitated production p ? P (Ai..j), we define
+the n-best table of p to be the table composed
+of the entries ?Pk, pk, ~vk, lk? of T (Ai..j) such that
+pk = p.
+Example 3: Second running example.
+The following is a standard PCFG (probabili-
+ties are shown next to the corresponding clauses).
+S ? A B 1
+A ? A1 0.7 A1 ? a 1
+A ? A2 0.3 A2 ? a 1
+B ? B1 0.6 B1 ? b 1
+B ? B2 0.4 B2 ? b 1
+The instantiation of the underlying (non-
+probabilistic) CFG grammar by the input text
+w = a b is the following.
+S1..3 ? A1..2 B2..3
+A1..2 ? A11..2 A11..2 ? a1..2
+A1..2 ? A21..2 A21..2 ? a1..2
+B2..3 ? B12..3 B12..3 ? b2..3
+B2..3 ? B22..3 B22..3 ? b2..3
+This grammar represents a parse forest that con-
+tains four different trees, since on the one hand one
+can reach (parse) the instantiated terminal symbol
+a1..2 through A1 or A2, and on the other hand one
+can reach (parse) the instantiated terminal sym-
+bol b1..2 through B1 or B2. Therefore, when dis-
+cussing this example in the remainder of the paper,
+each of these four trees will be named accordingly:
+the tree obtained by reaching a through Ai and b
+through Bj (i and j are 1 or 2) shall be called
+Ti,j .
+The corresponding n-best tables are trivial
+(only one line) for all instantiated symbols but
+A1..2, B2..3 and S1..3. That of A1..2 is the follow-
+ing 2-line table.
+1 0.7 A ? A1 ?1? 1
+2 0.3 A ? A2 ?1? 1
+The n-best table for B2..3 is similar. The n-best
+table for S1..3 is:
+1 0.42 S1..3 ? A1..2 B2..3 ?1, 1? 1
+2 0.28 S1..3 ? A1..2 B2..3 ?1, 2? 2
+3 0.18 S1..3 ? A1..2 B2..3 ?2, 1? 3
+4 0.12 S1..3 ? A1..2 B2..3 ?2, 2? 4
+Thanks to the algorithm sketched in section 2.4,
+these tables allow to compute the following obvi-
+ous result: the best tree is T1,1, the second-best
+tree is T1,2, the third-best tree is T2,1 and the worst
+tree is T2,2.
+If n = 3, the pruned forest over-generates: all
+instantiated productions take part in at least one
+of the three best trees, and therefore the pruned
+forest is the full forest itself, which contains four
+trees.
+We shall use this example later on so as to il-
+lustrate both methods we introduce for building
+forests that contain exactly the n best trees, with-
+out overgenerating.
+2.4 Extracting the kth-best tree
+An efficient algorithm for the extraction of the n-
+best trees is introduced in (Huang and Chiang,
+2005), namely the authors? algorithm 3, which
+120
+is a re-formulation of a procedure originally pro-
+posed by (Jime?nez and Marzal, 2000). Contrar-
+ily to (Huang and Chiang, 2005), we shall sketch
+this algorithm with the terminology introduced
+above (whereas the authors use the notion of hy-
+pergraph). The algorithm relies on the n-best ta-
+bles described above: extracting the kth-best tree
+consists in extending the n-best tables as much as
+necessary by computing all lines in each n-best ta-
+ble up to those that concern the kth-best tree.4
+The algorithm can be divided in two sub-
+algorithms: (1) a bottom-up traversal of the for-
+est for extracting the best tree; (2) a top-down
+traversal for extracting the kth-best tree provided
+the (k ? 1)th-best has been already extracted.
+The extraction of the best tree can be seen as a
+bottom-up traversal that initializes the n-best ta-
+bles: when visiting a node Ai..j , the best probabil-
+ity of each Ai..j-production is computed by using
+the tables associated with each of their right-hand
+side symbols. The best of these probabilities gives
+the first line of the n-best table for Ai..j (the result
+for other productions are stored for possible later
+use). Once the traversal is completed (the instanti-
+ated axiom has been reached), the best tree can be
+easily output by following recursively where the
+first line of the axiom?s n-best table leads to.
+Let us now assume we have extracted all k?-best
+trees, 1 ? k? < k, for a given k ? n. We want
+to extract the kth-best tree. We achieve this recur-
+sively by a top-down traversal of the forest. In or-
+der to start the construction of the kth-best tree, we
+need to know the following:
+? which instantiated production p must be used
+for rewriting the instantiated axiom,
+? for each of p?s right-hand side symbols Ai..j ,
+which subtree rooted in Ai..j must be used;
+this subtree is identified by its local rank
+kAi..j , i.e., the rank of its probability among
+all subtrees rooted in Ai..j.
+This information is given by the kth line of the n-
+best table associated with the instantiated axiom.
+If this kth line has not been filled yet, it is com-
+puted recursively.5 Once the kth line of the n-best
+4In the remainder of this paper, we shall use ?extracting
+the kth-best tree? as a shortcut for ?extending the n-best ta-
+bles up to what is necessary to extract the kth-best tree? (i.e.,
+we do not necessarily really build or print the kth-best tree).
+5Because the k ? 1th-best tree has been computed, this n-
+best table is filled exactly up to line k?1. The kth line is then
+table is known, i.e., p and all kAi..j ?s are known,
+the rank k is added to p?s so-called rankset, noted
+?(p). Then, the top-down traversal extracts recur-
+sively for each Ai..j the appropriate subtree as de-
+fined by kAi..j . After having extracted the n-th
+best tree, we know that a given production p is in-
+cluded in the kth-best tree, 1 ? k ? n, if and only
+if k ? ?(p).
+3 Computing sub-forests that only
+contain the n best trees
+Given a ranked instantiated grammar Gw, we are
+interested in building a new instantiated grammar
+which contains exactly the n most likely trees of
+E(Gw). In this section, we introduce two algo-
+rithms that compute such a grammar (or forest).
+Both methods rely on the construction of new
+symbols, obtained by decorating instantiated sym-
+bols of Gw.
+An empirical comparison of the two methods is
+described in section 4. In order to evaluate the
+size of the new constructed grammars (forests),
+we consider as a lower bound the so-called pruned
+forest, which is the smallest sub-grammar of the
+initial instantiated grammar that includes the n
+best trees. It is built simply by pruning produc-
+tions with an empty rankset: no new symbols
+are created, original instantiated symbols are kept.
+Therefore, it is a lower bound in terms of size.
+However, the pruned forest usually overgenerates,
+as illustrated by Example 3.
+3.1 The ranksets method
+The algorithm described in this section builds an
+instantiated grammar Gnw by decorating the sym-
+bols of Gw. The new (decorated) symbols have
+the form A?i..j where ? is a set of integers called
+a rankset. An integer r is a rank iff we have
+1 ? r ? n.
+The starting point of this algorithm is set of n-
+best tables, built as explained in section 2.4, with-
+out explicitely unfolding the forest.
+computed as follows: while constructing the k?th-best trees
+for each k? between 1 and k?1, we have identified many pos-
+sible rewritings of the instantiated axiom, i.e., many (produc-
+tion, right-hand side local ranks) pairs; we know the proba-
+bility of all these rewritings, although only some of them con-
+situte a line of the instantiated axiom?s n-best table; we now
+identify new rewritings, starting from known rewritings and
+incrementing only one of their local ranks; we compute (re-
+cursively) the probability of these newly identified rewritings;
+the rewriting that has the best probability among all those that
+are not yet a line of the n-best table is then added: it is its kth
+line.
+121
+A preliminary top-down step uses these n-best
+tables for building a parse forest whose non-
+terminal symbols (apart from the axiom) have the
+form A?i..j where ? is a singleton {r}: the sub-
+forest rooted in A{r}i..j contains only one tree, that
+of local rank r. Only the axiom is not decorated,
+and remains unique. Terminal symbols are not af-
+fected either.
+At this point, the purpose of the algorithm is to
+merge productions with identical right-hand sides,
+whenever possible. This is achieved in a bottom-
+up fashion as follows. Consider two symbols A?1i..j
+and A?2i..j , which differ only by their underlying
+ranksets. These symbols correspond to two dif-
+ferent production sets, namely the set of all A?1i..j-
+productions (resp. A?2i..j-productions). Each of
+these production sets define a set of right-hand
+sides. If these two right-hand side sets are iden-
+tical we say that A?1i..j and A
+?2
+i..j are equivalent. In
+that case introduce the rankset ? = ?1 ? ?2 and
+create a new non-terminal symbol A?i..j . We now
+simply replace all occurrences of A?1i..j and A
+?2
+i..j
+in left- and right-hand sides by A?i..j . Of course
+(newly) identical productions are erased. After
+such a transformation, the newly created symbol
+may appear in the right-hand side of productions
+that now only differ by their left-hand sides; the
+factorization spreads to this symbol in a bottom-
+up way. Therefore, we perform this transforma-
+tion until no new pair of equivalent symbols is
+found, starting from terminal leaves and percolat-
+ing bottom-up as far as possible.
+Example 4: Applying the ranksets method to
+the second running example.
+Let us come back to the grammar of Example 3,
+and the same input text w = a b as before. As
+in Example 3, we consider the case when we are
+interested in the n = 3 best trees.
+Starting from the instantiated grammar and the
+n-best tables given in Example 3, the preliminary
+top-down step builds the following forest (for clar-
+ity, ranksets have not been shown on symbols that
+root sub-forests containing only one tree):
+S1..3 ? A{1}1..2 B
+{1}
+2..3
+S1..3 ? A{1}1..2 B
+{2}
+2..3
+S1..3 ? A{2}1..2 B
+{1}
+2..3
+A{1}1..2 ? A11..2 A11..2 ? a1..2
+A{2}1..2 ? A21..2 A21..2 ? a1..2
+B{1}2..3 ? B12..3 B12..3 ? b2..3
+B{2}2..3 ? B22..3 B22..3 ? b2..3
+In this example, the bottom-up step doesn?t fac-
+torize out any other symbols, and this is therefore
+the final output of the ranksets method. It con-
+tains 2 more productions and 3 more symbols than
+the pruned forest (which is the same as the origi-
+nal forest), but it contains exactly the 3 best trees,
+contrarily to the pruned forest.
+3.2 The rectangles method
+In this section only, we assume that the grammar
+G is binary (and therefore the forest, i.e., the gram-
+mar Gw, is binary). Standard binarization algo-
+rithms can be found in the litterature (Aho and Ull-
+man, 1972).
+The algorithm described in this section per-
+forms, as the preceding one, a decoration of the
+symbols of Gw. The new (decorated) symbols
+have the form Ax,yi..j , where x and y denote ranks
+such that 1 ? x ? y ? n. The semantics of the
+decoration is closely related to the x, y extention
+of Ai..j , introduced in 2.3:
+E(Ax,yi..j) = Ex,y(Ai..j)
+It corresponds to ranksets (in the sense of the
+previous section) that are intervals: Ax,yi..j is equiv-
+alent to the previous section?s A{x,x+1,...,y?1,y}i..j . In
+other words, the sub-forest rooted with Ax,yi..j con-
+tains exactly the trees of the initial forest, rooted
+with Ai..j , which rank range from x to y.
+The algorithm performs a top-down traversal of
+the initial instantiated grammar Gw. This traver-
+sal also takes as input two parameters x and y. It
+starts with the symbol S0..|w| and parameters 1 and
+n. At the end of the traversal, a new decorated for-
+est is built which contains exactly n most likely
+the parses. During the traversal, every instantiated
+symbol Ai..j will give birth to decorated instanti-
+ated symbols of the form Ax,yi..j where x and y are
+determined during the traversal. Two different ac-
+tions are performed depending on whether we are
+122
+visiting an instantiated symbol or an instantiated
+production.
+3.2.1 Visiting an instantiated symbol
+When visiting an instantiated symbol Ai..j with
+parameters x and y, a new decorated instan-
+tiated symbol Ax,yi,j is created and the traver-
+sal continues on the instantiated productions of
+P (Ai..j) with parameters that have to be com-
+puted. These parameters depend on how the el-
+ements of Ex,y(Ai..j) are ?distributed? among the
+sets E(p) with p ? P (Ai..j). In other words, we
+need to determine xk?s and yk?s such that:
+Ex,y(Ai..j) =
+?
+pk?P (Ai..j)
+Exk,yk(pk)
+The idea can be easily illustrated on an exam-
+ple. Suppose we are visiting the instantiated sym-
+bol Ai..j with parameters 5 and 10. Suppose also
+that Ai..j can be rewritten using the two instanti-
+ated productions p1 and p2. Suppose finally that
+the 5 to 10 entries of T (Ai..j) are as follows6:
+5 p1 4
+6 p2 2
+7 p2 3
+8 p1 5
+9 p2 4
+10 p1 6
+This table says that E5(Ai..j) = E4(p1) i.e. the
+5th most likely analysis of E(Ai..j) is the 4th most
+likely analysis of E(p1) and E6(Ai..j) = E2(p2)
+and so on. From this table we can deduce that:
+E5,10(Ai..j) = E4,6(p1) ? E2,4(p2)
+The traversal therefore continues on p1 and p2
+with parameters 4, 6 and 2, 4.
+3.2.2 Visiting an instantiated production
+When visiting an instantiated production p of the
+form Ai..j ? Bi..l Cl..j with parameters x and y,
+a collection of q instantiated productions pr of the
+form Ax,yi..j ? B
+x1r,x2r
+i..l C
+y1r ,y2r
+l..j , with 1 ? r ? q,
+are built, where the parameters x1r, x2r , y1r , y2r and
+q have to be computed.
+Once the parameters q and x1r, x2r , y1r , y2r with
+1 ? r ? q, have been computed, the traversal
+continues independently on Bi..l with parameters
+x1r and x2r and on Cl..j with parameters y1r and y2r .
+6Only the relevant part of the table have been kept in the
+figure.
+The computation of the parameters x1r, x2r , y1r
+and y2r for 1 ? r ? q, is the most complex part of
+the algorithm, it relies on the three notions of rect-
+angles, q-partitions and n-best matrices, which are
+defined below.
+Given a 4-tuple of parameters x1r , x2r, y1r , y2r ,
+a rectangle is simply a pairing of the form
+??x1r , x2r?, ?y1r , y2r ??. A rectangle can be interpreted
+as a couple of rank ranges : ?x1r , y1r ? and ?x2r , y2r?.
+It denotes the cartesian product
+[
+x1r, x2r
+]?[y1r , y2r
+]
+.
+Let ??x11, x21?, ?y11 , y21??, . . . , ??x1q , x2q?, ?y1q , y2q ??
+be a collection of q rectangles. It will be called a
+q-partition of the instantiated production p iff the
+following is true:
+Ex,y(p) =
+?
+1?r?q
+E(Ax,yi..j ? Bx
+1
+r,x2r
+i..l C
+y1r ,y2r
+l..j )
+To put it differently, this definition means that
+??x11, x21?, ?y11 , y21??, . . . , ??x1q , x2q?, ?y1q , y2q?? is a q
+partition of p if any tree of E(Bx1r,x2ri..l ) combined
+with any tree of E(Cy1r ,y2rl..j ) is a tree of Ex,y(p) and,
+conversely, any tree of Ex,y(p) is the combination
+of a tree of E(Bx1r,x2ri..l ) and a tree of E(Cy
+1
+r ,y2r
+l..j ).
+The n-best matrix associated with an instanti-
+ated production p, introduced in (Huang and Chi-
+ang, 2005), is merely a two dimensional represen-
+tation of the n-best table of p. Such a matrix, rep-
+resents how the n most likely trees of E(p) are
+built. An example of an n-best matrix is repre-
+sented in figure 1. This matrix says that the first
+most likely tree of p is built by combining the
+tree E1(Bi..l) with the tree E1(Cl..j) (there is a 1
+in the cell of coordinate ?1, 1?). The second most
+likely tree is built by combining the tree E1(Bi..l)
+and E2(Cl..j) (there is a 2 in the cell of coordinate
+?1, 2?) and so on.
+1 2
+3
+4
+6
+7
+8
+9
+10
+11
+12
+13
+14 15
+16
+17
+18
+20 21
+23
+5
+24
+26
+2 3 5 6
+2
+3
+4
+5
+6
+19
+41
+1
+22 2725
+28
+29
+30
+31 32 34
+33
+35
+36
+Cl..j
+Bi..l
+Figure 1: n-best matrix
+An n-best matrix M has, by construction, the
+remarkable following properties:
+123
+M(i, y) < M(x, y) ?i 1 ? i < x
+M(x, j) < M(x, y) ?j 1 ? j < y
+Given an n-best matrix M of dimensions d =
+X ? Y and two integers x and y such that 1 ? x <
+y ? d, M can be decomposed into three regions:
+? the lower region, composed of the cells
+which contain ranks i with 1 ? i < x
+? the intermediate region, composed of the
+cells which contain ranks i with x ? i ? y
+? the upper region, composed of the cells
+which contain ranks i such that y < i ? d.
+The three regions of the matrix of figure 1, for
+x = 4 and y = 27 have been delimited with bold
+lines in figure 2.
+1 2
+3
+4
+6
+7
+8
+9
+10
+11
+12
+13
+14 15
+16
+17
+18
+20 21
+23
+5
+24
+26
+2 3 5 6
+2
+3
+4
+5
+6
+19
+41
+1
+22 2725
+28
+29
+30
+31 32 34
+33
+35
+36
+Bi..l
+Cl..j
+Figure 2: Decomposition of an n-best matrix into
+a lower, an intermediate and an upper region with
+parameters 4 and 27.
+It can be seen that a rectangle, as introduced
+earlier, defines a sub-matrix of the n-best matrix.
+For example the rectangle ??2, 5?, ?2, 5?? defines
+the sub-matrix which north west corner is M(2, 2)
+and south east corner is M(5, 5), as represented in
+figure 3.
+When visiting an instantiated production p, hav-
+ing M as an n-best matrix, with the two parame-
+ters x and y, the intermediate region of M , with
+respect to x and y, contains, by definition, all the
+ranks that we are interested in (the ranks rang-
+ing from x to y). This region can be partitioned
+into a collection of disjoint rectangular regions.
+Each such partition therefore defines a collection
+of rectangles or a q-partition.
+The computation of the parameters x1r, y1r , x2r
+and y2r for an instantiated production p therefore
+boils down to the computation of a partition of the
+intermediate region of the n-best matrix of p.
+9
+10
+11
+12
+13
+17
+18
+20 21
+5
+24
+26
+2 5
+2
+5 19 22 2725
+Cl..j
+Bi..l
+Figure 3: The sub-matrix corresponding to the
+rectangle ??2, 5?, ?2, 5??
+We have represented schematically, in figure 4,
+two 4-partitions and a 3-partition of the interme-
+diate region of the matrix of figure 2. The left-
+most (resp. rightmost) partition will be called the
+vertical (resp. horizontal) partition. The middle
+partition will be called an optimal partition, it de-
+composes the intermediate region into a minimal
+number of sub-matrices.
+   
+   
+   
+
+
+
+III
+IV
+I
+II
+   
+   
+   
+
+
+
+I
+III
+II
+   
+   
+   
+
+
+
+II
+I 
+III
+IV
+Figure 4: Three partitions of an n-best matrix
+The three partitions of figure 4 will give birth to
+the following instantiated productions:
+? Vertical partition
+A4,27i..j ? B3,6i..l C
+1,1
+l..j A
+4,27
+i..j ? B2,5i..l C
+2,2
+l..j
+A4,27i..j ? B1,5i..l C
+3,5
+l..j A
+4,27
+i..j ? B1,1i..l C
+6,6
+l..j
+? Optimal partition
+A4,27i..j ? B1,1i..l C
+3,6
+l..j A
+4,27
+i..j ? B2,5i..l C
+2,5
+l..j
+A4,27i..j ? B3,6i..l C
+1,1
+l..j
+? Horizontal partition
+A4,27i..j ? B1,1i..l C
+3,6
+l..j A
+4,27
+i..j ? B2,2i..l C
+2,5
+l..j
+A4,27i..j ? B3,5i..l C
+1,5
+l..j A
+4,27
+i..j ? B6,6i..l C
+1,1
+l..j
+Vertical and horizontal partition of the interme-
+diate region of a n-best matrix can easily be com-
+puted. We are not aware of an efficient method that
+computes an optimal partition. In the implemen-
+tation used for experiments described in section 4,
+124
+a simple heuristic has been used which computes
+horizontal and vertical partitions and keeps the
+partition with the lower number of parts.
+The size of the new forest is clearly linked to
+the partitions that are computed: a partition with
+a lower number of parts will give birth to a lower
+number of decorated instantiated productions and
+therefore a smaller forest. But this optimization
+is local, it does not take into account the fact that
+an instantiated symbol may be shared in the initial
+forest. During the computation of the new forest,
+an instantiated production p can therefore be vis-
+ited several times, with different parameters. Sev-
+eral partitions of p will therefore be computed. If
+a rectangle is shared by several partitions, this will
+tend to decrease the size of the new forest. The
+global optimal must therefore take into account all
+the partitions of an instantiated production that are
+computed during the construction of the new for-
+est.
+Example 5: Applying the rectangles method to
+the second running example.
+We now illustrate more concretely the rectan-
+gles method on our second running example intro-
+duced in Example 3. Let us recall that we are in-
+terested in the n = 3 best trees, the original forest
+containing 4 trees.
+As said above, this method starts on the instan-
+tiated axiom S1..3. Since it is the left-hand side
+of only one production, this production is visited
+with parameters 1, 3. Moreover, its n-best table is
+the same as that of S1..3, given in Example 3. We
+show here the corresponding n-best matrix, with
+the empty lower region, the intermediate region
+(cells corresponding to ranks 1 to 3) and the upper
+region:
+4
+1 2
+3
+2
+2
+1
+1A1..2
+B2..3
+As can be seen on that matrix, there are two op-
+timal 2-partitions, namely the horizontal and the
+vertical partitions, illustrated as follows:
+II
+I
+II I
+Let us arbitrarily chose the vertical partition. It
+gives birth to two S 1..3-productions, namely:
+S 1,31..3 ? A1,21..2 B1,12..3
+S 1,31..3 ? A1,11..2 B2,22..3
+Since this is the only non-trivial step while apply-
+ing the rectangles algorithm to this example, we
+can now give its final result, in which the axiom?s
+(unnecessary) decorations have been removed:
+S1..3 ? A1,21..2 B
+{1,1}
+2..3
+S1..3 ? A1,11..2 B
+{2,2}
+2..3
+A1,21..2 ? A11..2 A11..2 ? a1..2
+A1,21..2 ? A21..2 A21..2 ? a1..2
+B1,22..3 ? B12..3 B12..3 ? b2..3
+B2,22..3 ? B22..3 B22..3 ? b2..3
+Compared to the forest built by the ranksets algo-
+rithm, this forest has one less production and one
+less non-terminal symbol. It has only one more
+production than the over-generating pruned for-
+est.
+4 Experiments on the Penn Treebank
+The methods described in section 3 have been
+tested on a PCFG G extracted from the Penn Tree-
+bank (Marcus et al, 1993). G has been extracted
+naively: the trees have been decomposed into bi-
+nary context free rules, and the probability of ev-
+ery rule has been estimated by its relative fre-
+quency (number of occurrences of the rule divided
+by the number of occurrences of its left hand side).
+Rules occurring less than 3 times and rules with
+probabilities lower than 3? 10?4 have been elim-
+inated. The grammar produced contains 932 non
+terminals and 3, 439 rules.7
+The parsing has been realized using the SYN-
+TAX system which implements, and optimizes, the
+Earley algorithm (Boullier, 2003).
+The evaluation has been conducted on the 1, 845
+sentences of section 1, which constitute our test
+set. For every sentence and for increasing values
+of n, an n-best sub-forest has been built using the
+rankset and the rectangles method.
+The performances of the algorithms have been
+measured by the average compression rate they
+7We used this test set only to generate practical NLP
+forests, with a real NLP grammar, and evaluate the perfor-
+mances of our algorithms for constucting sub-forests that
+contain only the n-best trees, both in terms of compression
+rate and execution time. Therefore, the evaluation carried out
+here has nothing to do with the usual evaluation of the pre-
+cision and recall of parsers based on the Penn Treebank. In
+particular, we are not interested here in the accuracy of such
+a grammar, its only purpose is to generate parse forests from
+which n-best sub-forests will be built.
+125
+0e+00
+1e+05
+2e+05
+3e+05
+4e+05
+5e+05
+6e+05
+7e+05
+8e+05
+9e+05
+ 0  100  200  300  400  500  600  700  800  900 1000
+av
+g.
+ n
+b 
+of
+ t
+re
+es
+ i
+n 
+th
+e 
+pr
+un
+ed
+ f
+or
+es
+t
+n
+Figure 5: Overgeneration of the pruned n-best forest
+ 1
+ 10
+ 100
+ 1000
+ 1  10  100  1000
+co
+mp
+re
+ss
+io
+n 
+ra
+te
+n
+pruned forest
+rectangles
+ranksets
+Figure 6: Average compression rates
+achieve for different values of n. The compres-
+sion rate is obtained by dividing the size of the
+n-best sub-forest of a sentence, as defined in sec-
+tion 2, by the size of the (unfolded) n-best forest.
+The latter is the sum of the sizes of all trees in the
+forest, where every tree is seen as an instantiated
+grammar, its size is therefore the size of the corre-
+sponding instantiated grammar.
+The size of the n-best forest constitutes a natu-
+ral upper bound for the representation of the n-best
+trees. Unfortunately, we have no natural lower
+bound for the size of such an object. Neverthe-
+less, we have computed the compression rates of
+the pruned n-best forest and used it as an imperfect
+lower bound. As already mentioned, its imper-
+fection comes from the fact that a pruned n-best
+forest contains more trees than the n best ones.
+This overgeneration appears clearly in Figure 5
+which shows, for increasing values of n, the av-
+erage number of trees in the n-best pruned forest
+for all sentences in our test set.
+Figure 6 shows the average compression rates
+achieved by the three methods (forest pruning,
+rectangles and ranksets) on the test set for increas-
+ing values of n. As predicted, the performances lie
+between 1 (no compression) and the compression
+of the n-best pruned forest. The rectangle method
+outperforms the ranksets algorithm for every value
+of n.
+The time needed to build an 100-best forest with
+the rectangle and the ranksets algorithms is shown
+in Figure 7. This figure shows the average parsing
+126
+ 0
+ 200
+ 400
+ 600
+ 800
+ 1000
+ 1200
+ 5  10  15  20  25  30  35  40  45
+ti
+me
+ i
+n 
+mi
+ll
+is
+ec
+on
+ds
+sentence length
+parsing
+ranksets
+rectangles
+Figure 7: Processing time
+time for sentences of a given length, as well as the
+average time necessary for building the 100-best
+forest using the two aforementioned algorithms.
+This time includes the parsing time i.e. it is the
+time necessary for parsing a sentence and build-
+ing the 100-best forest. As shown by the figure,
+the time complexities of the two methods are very
+close.
+5 Conclusion and perspectives
+This work presented two methods to build n-
+best sub-forests. The so called rectangle meth-
+ods showed to be the most promising, for it al-
+lows to build efficient sub-forests with little time
+overhead. Future work will focus on computing
+optimized partitions of the n-best matrices, a cru-
+cial part of the rectangle method, and adapting the
+method to arbitrary (non binary) CFG. Another
+line of research will concentrate on performing
+re-ranking of the n-best trees directly on the sub-
+forest.
+Acknowledgments
+This research is supported by the French National
+Research Agency (ANR) in the context of the
+SEQUOIA project (ANR-08-EMER-013).
+References
+Alfred V. Aho and Jeffrey D. Ullman. 1972. The
+Theory of Parsing, Translation, and Compiling, vol-
+ume 1. Prentice-Hall, Englewood Cliffs, NJ.
+Taylor L. Booth. 1969. Probabilistic representation of
+formal languages. In Tenth Annual Symposium on
+Switching and Automata Theory, pages 74?81.
+Pierre Boullier and Philippe Deschamp. 1988.
+Le syste`me SYNTAXTM - manuel d?utilisation.
+http://syntax.gforge.inria.fr/syntax3.8-manual.pdf.
+Pierre Boullier and Benot Sagot. 2005. Efficient and
+robust LFG parsing: SXLFG. In Proceedings of
+IWPT?05, Vancouver, Canada.
+Pierre Boullier. 2003. Guided Earley parsing. In Pro-
+ceedings of IWPT?03, pages 43?54.
+Jay Earley. 1970. An efficient context-free parsing
+algorithm. Communication of the ACM, 13(2):94?
+102.
+Liang Huang and David Chiang. 2005. Better k-best
+parsing. In Proceedings of IWPT?05, pages 53?64.
+Liang Huang. 2008. Forest reranking: Discriminative
+parsing with non-local features. In Proceedings of
+ACL?08, pages 586?594.
+V??ctor M. Jime?nez and Andre?s Marzal. 2000. Com-
+putation of the n best parse trees for weighted and
+stochastic context-free grammars. In Proceedings
+of the Joint IAPR International Workshops on Ad-
+vances in Pattern Recognition, pages 183?192, Lon-
+don, United Kingdom. Springer-Verlag.
+Dan Klein and Christopher D. Manning. 2001. Parsing
+and hypergraphs. In Proceedings of IWPT?01.
+Bernard Lang. 1974. Deterministic techniques for ef-
+ficient non-deterministic parsers. In J. Loeckx, ed-
+itor, Proceedings of the Second Colloquium on Au-
+tomata, Languages and Programming, volume 14 of
+Lecture Notes in Computer Science, pages 255?269.
+Springer-Verlag.
+127
+Bernard Lang. 1994. Recognition can be harder then
+parsing. Computational Intelligence, 10:486?494.
+Mitchell P. Marcus, Beatrice Santorini, and Mary Ann
+Marcinkiewicz. 1993. Building a large annotated
+corpus of English: The Penn treebank. Computa-
+tional Linguistics, 19(2):313?330, June.
+Haitao Mi, Liang Huang, and Qun Liu. 2008. Forest-
+based translation. In Proceedings of ACL-08: HLT,
+pages 192?199.
+128

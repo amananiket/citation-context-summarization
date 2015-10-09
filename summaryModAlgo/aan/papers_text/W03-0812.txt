@@ -1,0 +1,761 @@
+SDL?A Description Language for Building NLP Systems
+Hans-Ulrich Krieger
+Language Technology Lab
+German Research Center for Arti?cial Intelligence (DFKI)
+Stuhlsatzenhausweg 3, D-66123 Saarbru?cken, Germany
+krieger@dfki.de
+Abstract
+We present the system description language
+SDL that offers a declarative way of specify-
+ing new complex NLP systems from already
+existing modules with the help of three oper-
+ators: sequence, parallelism, and unrestricted
+iteration. Given a system description and mod-
+ules that implement a minimal interface, the
+SDL compiler returns a running Java program
+which realizes exactly the desired behavior of
+the original speci?cation. The execution se-
+mantics of SDL is complemented by a precise
+formal semantics, de?ned in terms of concepts
+of function theory. The SDL compiler is part
+of the SProUT shallow language platform, a
+system for the development and processing of
+multilingual resources.
+1 Introduction
+In this paper, we focus on a general system description
+language, called SDL, which allows the declarative spec-
+i?cation of NLP systems from a set of already existing
+base modules. Assuming that each initial module imple-
+ments a minimal interface of methods, a new complex
+system is composed with the help of three operators, re-
+alizing a sequence of two modules, a (quasi-)parallel ex-
+ecution of several modules, and a potentially unrestricted
+self-application of a single module. Communication be-
+tween independent modules is decoupled by a mediator
+which is sensitive to the operators connecting the mod-
+ules and to the modules themselves. To put it in an-
+other way: new systems can be de?ned by simply putting
+together existing independent modules, sharing a com-
+mon interface. The interface assumes functionality which
+modules usually already provide, such as set input, clear
+internal state, start computation, etc. It is clear that such
+an approach permits ?exible experimentation with dif-
+ferent software architectures during the set up of a new
+(NLP) system. The use of mediators furthermore guar-
+antees that an independently developed module will stay
+independent when integrated into a new system. In the
+worst case, only the mediator needs to be modi?ed or up-
+graded, resp. In many cases, not even a modi?cation of
+the mediator is necessary. The execution semantics of
+SDL is complemented by an abstract semantics, de?ned
+in terms of concepts of function theory, such as Cartesian
+product, functional composition & application, Lambda
+abstraction, and unbounded minimization. Contrary to
+an interpreted approach to system speci?cation, our ap-
+proach compiles a syntactically well-formed SDL expres-
+sion into a Java program. This code might then be incor-
+porated into a larger system or might be directly compiled
+by the Java compiler, resulting in an executable ?le. This
+strategy has two advantages: ?rstly, the compiled Java
+code is faster than an interpretation of the corresponding
+SDL expression, and secondly, the generated Java code
+can be modi?ed or even extended by additional software.
+The structure of this paper is as follows. In the next
+section, we motivate the development of SDL and give
+a ?avor of how base expressions can be compiled. We
+then come up with an EBNF speci?cation of the concrete
+syntax for SDL in section 3 and explain SDL with the
+help of an example. Since modules can be seen as func-
+tions in the mathematical sense, we argue in section 4
+that a system speci?cation can be given a precise formal
+semantics. We also clarify the formal status of the me-
+diators and show how they are incorporated in the de?-
+nition of the abstract semantics. Section 5 then de?nes
+the programming interfaces and their default implemen-
+tation, both for modules and for mediators. In the ?nal
+section, we present some details of the compilation pro-
+cess.
+2 Motivation & Idea
+The shallow text processing system SProUT (Becker
+et al, 2002) developed at DFKI is a complex plat-
+form for the development and processing of multilin-
+gual resources. SProUT arranges processing components
+(e.g., tokenizer, gazetteer, named entity recognition) in
+a strictly sequential fashion, as is known from standard
+cascaded ?nite-state devices (Abney, 1996).
+In order to connect such (independently developed) NL
+components, one must look at the application program-
+mer interface (API) of each module, hoping that there are
+API methods which allow, e.g., to call a module with a
+speci?c input, to obtain the result value, etc. In the best
+case, API methods from different modules can be used di-
+rectly without much programming overhead. In the worst
+case, however, there is no API available, meaning that we
+have to inspect the programming code of a module and
+have to write additional code to realize interfaces between
+modules (e.g., data transformation). Even more demand-
+ing, recent hybrid NLP systems such as WHITEBOARD
+(Crysmann et al, 2002) implement more complex inter-
+actions and loops, instead of using a simple pipeline of
+modules.
+We have overcome this in?exible behavior by imple-
+menting the following idea. Since we use typed feature
+structures (Carpenter, 1992) in SProUT as the sole data
+interchange format between processing modules, the con-
+struction of a new system can be reduced to the interpre-
+tation of a regular expression of modules. Because the ?
+sign for concatenation can not be found on a keyboard,
+we have given the three characters +, |, and ? the follow-
+ing meaning:
+? sequence or concatenation
+m1+m2 expresses the fact that (1) the input tom1+
+m2 is the input given tom1, (2) the output of module
+m1 serves as the input to m2, and (3) that the ?nal
+output of m1 + m2 is equal to the output of m2.
+This is the usual ?ow of information in a sequential
+cascaded shallow NL architecture.
+? concurrency or parallelism
+| denotes a quasi-parallel computation of indepen-
+dent modules, where the ?nal output of each mod-
+ule serves as the input to a subsequent module (per-
+haps grouped in a structured object, as we do by de-
+fault). This operator has far reaching potential. We
+envisage, e.g., the parallel computation of several
+morphological analyzers with different coverage or
+the parallel execution of a shallow topological parser
+and a deep HPSG parser (as in WHITEBOARD). In
+a programming language such as Java, the execution
+of modules can even be realized by independently
+running threads.
+? unrestricted iteration or ?xpoint computation
+m? has the following interpretation. Module m
+feeds its output back into itself, until no more
+changes occur, thus implementing a kind of a ?x-
+point computation (Davey and Priestley, 1990). It is
+clear that such a ?xpoint might not be reached in ?-
+nite time, i.e., the computation must not stop. A pos-
+sible application was envisaged in (Braun, 1999),
+where an iterative application of a base clause mod-
+ule was necessary to model recursive embedding
+of subordinate clauses in a system for parsing Ger-
+man clause sentential structures. Notice that unre-
+stricted iteration would even allow us to simulate an
+all-paths context-free parsing behavior, since such
+a feedback loop can in principle simulate an un-
+bounded number of cascade stages in a ?nite-state
+device (each level of a CF parse tree has been con-
+structed by a single cascade stage).
+We have de?ned a Java interface of methods which
+each module must ful?ll that will be incorporated in the
+construction of a new system. Implementing such an in-
+terface means that a module must provide an implementa-
+tion for all methods speci?ed in the interface with exactly
+the same method name and method signature, e.g., set-
+Input(), clear(), or run(). To ease this implementa-
+tion, we have also implemented an abstract Java class that
+provides a default implementation for all these methods
+with the exception of run(), the method which starts the
+computation of the module and which delivers the ?nal
+result.
+The interesting point now is that a new system, declar-
+atively speci?ed by means of the above apparatus, can be
+automatically compiled into a single Java class. Even the
+newly generated Java class implements the above inter-
+face of methods. This Java code can then be compiled by
+the Java compiler into a running program, realizing ex-
+actly the intended behavior of the original system speci-
+?cation. The execution semantics for an arbitrary mod-
+ule m is de?ned to be always the execution of the run()
+method of m, written in Java as m.run()
+Due to space limitations, we can only outline the basic
+idea and present a simpli?ed version of the compiled code
+for a sequence of two module instances m1 +m2, for the
+independent concurrent computation m1 | m2, and for
+the unbounded iteration of a single module instance m?.
+Note that we use the typewriter font when referring to
+the concrete syntax or the implementation, but use italics
+to denote the abstract syntax.
+(m1 + m2)(input) ?
+m1.clear();
+m1.setInput(input);
+m1.setOutput(m1.run(m1.getInput()));
+m2.clear();
+m2.setInput(seq(m1, m2));
+m2.setOutput(m2.run(m2.getInput()));
+return m2.getOutput();
+(m1 | m2)(input) ?
+m1.clear();
+m1.setInput(input);
+m1.setOutput(m1.run(m1.getInput()));
+m2.clear();
+m2.setInput(input);
+m2.setOutput(m2.run(m2.getInput()));
+return par(m1, m2);
+(m?)(input) ?
+m.clear();
+m.setInput(input);
+m.setOutput(fix(m));
+return m.getOutput();
+The pseudo code above contains three methods,
+seq(), par(), and fix(), methods which mediate be-
+tween the output of one module and the input of a suc-
+ceeding module. Clearly, such functionality should not
+be squeezed into independently developed modules, since
+otherwise a module m must have a notion of a ?xpoint
+during the execution of m? or must be sensitive to the
+output of every other module, e.g., during the processing
+of (m1 | m2) + m. Note that the mediators take mod-
+ules as input, and so having access to their internal in-
+formation via the public methods speci?ed in the module
+interface (the API).
+The default implementation for seq is of course the
+identity function (speaking in terms of functional compo-
+sition). par wraps the two results in a structured object
+(default implementation: a Java array). fix() imple-
+ments a ?xpoint computation (see section 5.3 for the Java
+code). These mediators can be made speci?c to special
+module-module combinations and are an implementation
+of the mediator design pattern, which loosely couples in-
+dependent modules by encapsulating their interaction in
+a new object (Gamma et al, 1995, pp. 273). I.e., the
+mediators do not modify the original modules and only
+have read access to input and output via getInput()
+and getOutput().
+In the following, we present a graphical representation
+for displaying module combination. Given such pictures,
+it is easy to see where the mediators come into play. De-
+picting a sequence of two modules is, at ?rst sight, not
+hard.
+m1 m2
+Now, if the input format of m2 is not compatible with
+the output of m1, must we change the programming code
+for m2? Even more serious, if we would have another
+expression m3 + m2, must m2 also be sensitive to the
+output format of m3? In order to avoid these and other
+cases, we decouple module interaction and introduce a
+special mediator method for the sequence operator (seq
+in the above code), depicted by ?.
+m1 + m2
+? connects two modules. This fact is re?ected by mak-
+ing seq a binary method which takes m1 and m2 as input
+parameters (see example code).
+Let us now move to the parallel execution of several
+modules (not necessarily two, as in the above example).
+mk
+m1
+.
+.
+.
+There is one problem here. What happens to the output
+of each module when the lines come together, meeting in
+the outgoing arrow? The next section has a few words
+on this and presents a solution. We only note here that
+there exists a mediator method par, which, by default,
+groups the output in a structured object. Since par does
+not know the number of modules in advance, it takes as
+its parameter an array of modules. Note further that the
+input arrows are ?ne?every module gets the same data.
+Hence, we have the following modi?ed picture.
+mk
+m1
+.
+.
+.
+|
+Now comes the ? operator. As we already said, the
+module feeds itself with its own output, until a ?xpoint
+has been reached, i.e., until input equals output. Instead
+of writing
+m
+we make the mediator method for ? explicit, since it em-
+bodies the knowledge about ?xpoints (and not the mod-
+ule):
+m ?
+3 Syntax
+A new system is built from an initial set of already ex-
+isting modules M with the help of the three operators +,
+|, and ?. The set of all syntactically well-formed module
+descriptions D in SDL is inductively de?ned as follows:
+? m ?M ? m ? D
+? m1,m2 ? D ? m1 +m2 ? D
+? m1, . . . ,mk ? D ? (| m1 . . .mk) ? D
+? m ? D ? m? ? D
+Examples in the concrete syntax are written using the
+typewriter font, e.g., module. All operators have the
+same priority. Succeeding modules are written from left
+to right, using in?x notation, e.g., m1 + m2.
+Parallel executed modules must be put in parentheses
+with the | operator ?rst, for instance (| m1 m2). Note
+that we use the pre?x notation for the concurrency op-
+erator | to allow for an arbitrary number of arguments,
+e.g., (| m1 m2 m3). This technique furthermore cir-
+cumvents notorious grouping ambiguities which might
+lead to different results when executing the modules. No-
+tice that since | must neither be commutative nor must it
+be associative, the result of (| m1 m2 m3) might be dif-
+ferent to (| m1 (| m2 m3)), to (| (| m1 m2) m3),
+or even to (| m2 (| m1 m3)), etc. Whether | is com-
+mutative or associative is determined by the implemen-
+tation of concurrency mediator par. Let us give an ex-
+ample. Assume, for instance, that m1, m2, and m3 would
+return typed feature structures and that par() would join
+the results by using uni?cation. In this case, | is clearly
+commutative and associative, since uni?cation is commu-
+tative and associative (and idempotent).
+Finally, the unrestricted self-application of a module
+should be expressed in the concrete syntax by using the
+module name, pre?xed by the asterisk sign, and grouped
+using parentheses, e.g., (* module). module here
+might represent a single module or a complex expression
+(which itself must be put in parentheses).
+Making | and ? pre?x operators (in contrast to +) ease
+the work of the syntactical analysis of an SDL expression.
+The EBNF for a complete system description system is
+given by ?gure 1. A concrete running example is shown
+in ?gure 2.
+The example system from ?gure 2 should be read
+as de?ne a new module de.dfki.lt.test.System
+as (| rnd1 rnd2 rnd3) + inc1 + ..., varia-
+bles rnd1, rnd2, and rnd3 refer to instances
+of module de.dfki.lt.sdl.test.Randomize,
+module Randomize belongs to package
+de.dfki.lt.sdl.test, the value of rnd1 should
+be initialized with ("foo", "bar", "baz"), etc.
+Every single line must be separated by the newline
+character.
+The use of variables (instead of using directly module
+names, i.e., Java classes) has one important advantage:
+variables can be reused (viz., rnd2 and rnd3 in the ex-
+ample), meaning that the same instances are used at sev-
+eral places throughout the system description, instead of
+using several instances of the same module (which, of
+course, can also be achieved; cf. rnd1, rnd2, and rnd3
+which are instances of module Randomize). Notice that
+the value of a variable can not be rede?ned during the
+course of a system description.
+4 Modules as Functions
+Before we start the description of the implementation in
+the next section, we will argue that a system description
+can be given a precise formal semantics, assuming that
+the initial modules, which we call base modules are well
+de?ned. First of all, we only need some basic mathemat-
+ical knowledge from secondary school, viz., the concept
+of a function.
+A function f (sometimes called a mapping) from S to
+T , written as f : S ?? T , can be seen as a special
+kind of relation, where the domain of f is S (written as
+DOM(f) = S), and for each element in the domain of f ,
+there is at most one element in the range (or codomain)
+RNG(f). If there always exists an element in the range,
+we say that f is a total function (or well de?ned) and write
+f ?. Otherwise, f is said to be a partial function, and for
+an s ? S for which f is not de?ned, we then write f(s)?.
+Since S itself might consist of ordered n-tuples and
+thus is the Cartesian product of S1, . . . , Sn, depicted as
+?ni=1Si, we use the vector notation and write f(~s) instead
+of f(s). The n-fold functional composition of f : S ??
+T (n ? 0) is written as fn and has the following induc-
+tive de?nition: f 0(~s) := ~s and f i+1(~s) := f(f i(~s)).
+s ? S is said to be a ?xpoint of f : S ?? S iff
+f(f(s)) =S f(s) (we use =S to denote the equality rela-
+tion in S).
+Assuming that m is a module for which a proper run()
+method has been de?ned, we will, from now on, refer to
+the function m as abbreviating m.run(), the execution
+of method run() from module m. Hence, we de?ne the
+execution semantics of m to be equivalent to m.run().
+4.1 Sequence
+Let us start with the sequence m1 + m2 of two mod-
+ules, regarded as two function m1 : S1 ?? T1 and
+m2 : S2 ?? T2. + here is the analogue to functional
+composition ?, and so we de?ne the meaning (or abstract
+semantics) [[ ? ]] of m1 +m2 as
+[[m1 +m2]](~s) := (m2 ?m1)(~s) = m2(m1(~s))
+m1 +m2 then is well-de?ned if m1 ?, m2 ?, and T1 ?
+S2 is the case, due to the following biconditional:
+m1 ?,m2 ?, T1 ? S2 ?? (m1 ?m2 : S1 ?? T2)?
+4.2 Parallelism
+We now come to the parallel execution of k modules mi :
+Si ?? Ti (1 ? i ? k), operating on the same input. As
+already said, the default mediator for | returns an ordered
+system ? de?nition {command}? variables
+de?nition ?module "=" regexpr newline
+module ? a fully quali?ed Java class name
+regexpr ? var | "(" regexpr ")" | regexpr "+" regexpr | "(" "|" {regexpr}+ ")" | "(" "*" regexpr ")"
+newline ? the newline character
+command?mediator | threaded
+mediator ? "Mediator =" med newline
+med ? a fully quali?ed Java class name
+threaded ? "Threaded =" {"yes" | "no"} newline
+variables ?{vareq newline}+
+vareq ? var "=" module [initexpr]
+var ? a lowercase symbol
+initexpr ? "(" string {"," string}? ")"
+string ? a Java string
+Figure 1: The EBNF for the syntax of SDL.
+de.dfki.lt.test.System = (| rnd1 rnd2 rnd3) + inc1 + inc2 + (* i5ut42) + (* (rnd3 + rnd2))
+Mediator = de.dfki.lt.sdl.test.MaxMediator
+Threaded = Yes
+rnd1 = de.dfki.lt.sdl.test.Randomize("foo", "bar", "baz")
+rnd2 = Randomize("bar", "baz")
+rnd3 = de.dfki.lt.sdl.test.Randomize("baz")
+inc1 = de.dfki.lt.sdl.test.Increment
+inc2 = de.dfki.lt.sdl.test.Increment
+i5ut42 = de.dfki.lt.sdl.test.Incr5UpTo42
+Figure 2: An example in the concrete syntax of SDL.
+sequence of the results of m1, . . . ,mk, hence is similar
+to the Cartesian product ?:
+[[(| m1 . . . mk)]](~s) := ?m1(~s), . . . ,mk(~s) ?
+(| m1 . . . mk) is well-de?ned if each module is well
+de?ned and the domain of each module is a superset of
+the domain of the new composite module:
+m1 ?, . . . ,mk ? =?
+(m1? . . .?mk : (S1 ? . . . ? Sk)k ?? T1? . . .?Tk)?
+4.3 Iteration
+A proper de?nition of unrestricted iteration, however, de-
+serves more attention and a bit more work. Since a mod-
+ule m feeds its output back into itself, it is clear that the
+iteration (m?)(~s) must not terminate. I.e., the question
+whetherm?? holds, is undecidable in general. Obviously,
+a necessary condition for m?? is that S ? T , and so if
+m : S ?? T and m? holds, we have m? : S ?? S.
+Since m is usually not a monotonic function, it must not
+be the case that m has a least and a greatest ?xpoint. Of
+course, m might not possess any ?xpoint at all.
+Within our very practical context, we are interested in
+?nitely-reachable ?xpoints. From the above remarks, it is
+clear that given ~s ? S, (m?)(~s) terminates in ?nite time
+iff no more changes occur during the iteration process,
+i.e.,
+?n ? N . mn(~s) =S mn?1(~s)
+We can formalize the meaning of ? with the help of
+Kleene?s ? operator, known from recursive function the-
+ory (Hermes, 1978). ? is a functional and so, given a
+function f as its input, returns a new function ?(f), the
+unbounded minimization of f . Originally employed to
+precisely de?ne (partial) recursive functions of natural
+numbers, we need a slight generalization, so that we can
+apply ? to functions, not necessarily operating on natural
+numbers.
+Let f : Nk+1 ?? N (k ? N). ?(f) : Nk ?? N is
+given by
+?(f)(~x) :=
+?
+?
+?
+n if f(~x, n) = 0 and f(~x, i) > 0,
+for all 0 ? i ? n? 1
+? otherwise
+I.e., ?(f)(~x) returns the least n for which f(~x, n) = 0.
+Such an n, of course, must not exist.
+We now move from the natural numbers N to an arbi-
+trary (structured) set S with equality relation =S . The
+task of ? here is to return the number of iteration steps
+n for which a self-application of module m no longer
+changes the output, when applied to the original input
+~s ? S. And so, we have the following de?nitional equa-
+tion for the meaning of m?:
+[[m?]](~s) := m?(m)(~s)(~s)
+Obviously, the number of iteration steps needed to ob-
+tain a ?xpoint is given by ?(m)(~s), where ? : (S ??
+S) ?? N. Given m, we de?ne ?(m) as
+?(m)(~s) :=
+?
+?
+?
+?
+?
+?
+?
+n if mn(~s) =S mn?1(~s) and
+mi(~s) 6=S mi?1(~s),
+for all 0 ? i ? n? 1
+? otherwise
+Compare this de?nition with the original ?(f)(~x) on
+natural numbers above. Testing for zero is replaced here
+by testing for equality in S. This last de?nition completes
+the semantics for m?.
+4.4 Incorporating Mediators
+The above formalization does not include the use of
+mediators. The effects the mediators have on the in-
+put/output of modules are an integral part of the de?nition
+for the meaning of m1 +m2, (| m1 . . . mk), and m?. In
+case we explicitly want to represent (the default imple-
+mentation of) the mediators in the above de?nitions, we
+must, ?rst of all, clarify their status.
+Let us focus, for instance, on the mediator for the se-
+quence operator +. We already said that the mediator for
++ uses the output of m1 to feed m2, thus can be seen as
+the identity function id, speaking in terms of functional
+composition. Hence, we might rede?ne [[(m1 +m2)]](~s)
+as
+[[(m1 +m2)]](~s) :=
+(m2 ? id ?m1)(~s) = m2(id(m1(~s))) = m2(m1(~s))
+If so, mediators were functions and would have the
+same status as modules. Clearly, they pragmatically dif-
+fer from modules in that they coordinate the interaction
+between independent modules (remember the mediator
+metaphor). However, we have also said that the media-
+tor methods take modules as input. When adopting this
+view, a mediator is different from a module: it is a func-
+tional (as is ?), taking functions as arguments (the mod-
+ules) and returning a function. Now, let S be the mediator
+for the + operator. We then obtain a different semantics
+for m1 +m2.
+[[(m1 +m2)]](~s) := (m2 ? S(m1,m2) ?m1)(~s)
+and
+S(m1,m2) := id
+is the case in the default implementation for +. This view,
+in fact, precisely corresponds to the implementation.
+Let us quickly make the two other de?nitions re?ect
+this new view and let P and F be the functionals for |
+and ?, resp. For |, we now have
+[[(| m1 . . . mk)]](~s) := (P(m1, . . . ,mk)?(?ki=1mi))(~s k)
+(?ki=1mi)(~s k) denotes the ordered sequence
+?m1(~s), . . . ,mk(~s) ? to which function P(m1, . . . ,mk)
+is applied. At the moment,
+P(m1, . . . ,mk) := ?ki=1id
+i.e., the identity function is applied to the result
+of each mi(~s), and so in the end, we still obtain
+?m1(~s), . . . ,mk(~s) ?.
+The adaption of m? is also not hard: F is exactly the
+?(m)(~x)-fold composition of m, given value ~x. Since ~x
+are free variables, we use Church?s Lambda abstraction
+(Barendregt, 1984), make them bound, and write
+F(m) := ?~x .m?(m)(~x)(~x)
+Thus
+[[m?]](~s) := (F(m))(~s)
+It is clear that the above set of de?nitions is still not
+complete, since it does not cover the cases where a mod-
+ule m consists of several submodules, as does the syntax
+of SDL clearly admit. This leads us to the ?nal four in-
+ductive de?nitions which conclude this section:
+? [[m]](~s) := m(~s) iff m is a base module
+? [[(m1 +m2)]](~s) :=
+([[m2]] ? S([[m1]], [[m2]]) ? [[m1]])(~s)
+? [[(| m1 . . . mk)]](~s) :=
+(P([[m1]], . . . , [[mk]]) ? (?ki=1[[mi]]))(~s k)
+? [[m?]](~s) := (F([[m]]))(~s),
+whereas F([[m]]) := ?~x . [[m]]?([[m]])(~x)(~x)
+Recall that the execution semantics of m(~s) has not
+changed after all and is still m.run(s), whereas s abbre-
+viates the Java notation for the k-tuple ~s.
+5 Interfaces
+This section gives a short scetch of the API methods
+which every module must implement and presents the de-
+fault implementation of the mediator methods.
+5.1 Module Interface IModule
+The following seven methods must be implemented by a
+module which should contribute to a new system. The
+next subsection provides a default implementation for
+six of them. The exception is the one-argument method
+run() which is assumed to execute a module.
+? clear() clears the internal state of the module it
+is applied to. clear() is useful when a module
+instance is reused during the execution of a sys-
+tem. clear() might throw a ModuleClearError
+in case something goes wrong during the clearing
+phase.
+? init() initializes a given module by providing
+an array of init strings. init() might throw a
+ModuleInitError.
+? run() starts the execution of the module to which
+it belongs and returns the result of this computa-
+tion. An implementation of run() might throw
+a ModuleRunError. Note that run() should not
+store the input nor the output of the computation.
+This is supposed to be done independently by using
+setInput() and setOutput() (see below).
+? setInput() stores the value of parameter input
+and returns this value.
+? getInput() returns the input originally given to
+setInput().
+? setOutput() stores the value of parameter
+output and returns this value.
+? getOutput() returns the output originally given to
+setOutput().
+5.2 Module Methods
+Six of the seven module methods are provided by a
+default implementation in class Modules which imple-
+ments interface IModule (see above). New modules are
+advised to inherit from Modules, so that only run()
+must actually be speci?ed. Input and output of a module
+is memorized by introducing the two additional private
+instance ?elds input and output.
+public abstract class Modules implements IModule {
+private Object input, output;
+protected Modules() {
+this.input = null;
+this.output = null; }
+public Object run(Object input) throws
+UnsupportedOperationException {
+throw new UnsupportedOperationException("..."); }
+public void clear() {
+this.input = null;
+this.output = null; }
+public void init(String[] initArgs) {
+}
+public Object setInput(Object input) {
+return (this.input = input); }
+public Object getInput() {
+return this.input; }
+public Object setOutput(Object output) {
+return (this.output = output); }
+public Object getOutput() {
+return this.output; }
+}
+5.3 Mediator Methods
+The public class Mediators provides a default imple-
+mentation for the three mediator methods, speci?ed in
+interface IMediator. It is worth noting that although
+fix() returns the ?xpoint, it relocates its computation
+into an auxiliary method fixpoint() (see below), due
+to the fact that mediators are not allowed to change the
+internal state of a module. And thus, the input ?eld still
+contains the original input, whereas the output ?eld refers
+to the ?xpoint, at last.
+public class Mediators implements IMediator {
+public Mediators() {
+}
+public Object seq(IModule module1, IModule module2) {
+return module1.getOutput(); }
+public Object par(IModule[] modules) {
+Object[] result = new Object[modules.length];
+for (int i = 0; i < modules.length; i++)
+result[i] = modules[i].getOutput();
+return result; }
+public Object fix(IModule module) {
+return fixpoint(module, module.getInput()); }
+private Object fixpoint(IModule module, Object input) {
+Object output = module.run(input);
+if (output.equals(input))
+return output;
+else
+return fixpoint(module, output); }
+}
+6 Compiler
+In section 2, we have already seen how basic expressions
+are compiled into a sequence of instructions, consisting
+of API methods from the module and mediator interface.
+Here, we like to glance at the compilation of more com-
+plex SDL expressions.
+First of all, we note that complex expressions are de-
+composed into ?at basic expressions which are not fur-
+ther structured. Each subexpression is associated with a
+new module variable and these variables are inserted into
+the original system description which will also then be-
+come ?at. In case of the example from ?gure 2, we have
+the following subexpressions together with their vari-
+ables (we pre?x every variable by the dollar sign): $1
+= (| $rnd1 $rnd2 $rnd3), $2 = (* $i5ut42), $3
+= ($rnd3 + $rnd2), and $4 = (* $3). As a result,
+the original system description reduces to $1 + $inc1
++ $inc2 + $2 + $4 and thus is normalized as $1, . . .,
+$4 are. The SDL compiler then introduces so-called local
+or inner Java classes for such subexpressions and locates
+them in the same package to which the newly de?ned
+system belongs. Clearly, each new inner class must also
+ful?ll the module interface IModule (see section 5) and
+the SDL compiler produces the corresponding Java code,
+similar to the default implementation in class Modules
+(section 5), together with the right constructors for the
+inner classes.
+For each base module and each newly introduced inner
+class, the compiler generates a private instance ?eld (e.g.,
+private Randomize $rnd1) and a new instance (e.g.,
+this.$rnd1 = new Randomize()) to which the API
+methods can be applied. Each occurence of the operators
++, |, and * corresponds to the execution of the mediator
+methods seq, par, and fix (see below).
+Local variables (pre?xed by the low line character) are
+also introduced for the individual run() methods ( 15,
+. . ., 23 below). These variables are introduced by the
+SDL compiler to serve as handles (or anchors) to already
+evaluated subexpression, helping to establish a proper
+?ow of control during the recursive compilation process.
+We ?nish this paper by presenting the generated code
+for the run() method for system System from ?gure 2.
+public Object run(Object input)
+throws ModuleClearError, ModuleRunError {
+this.clear();
+this.setInput(input);
+IMediator _med = new MaxMediator();
+this.$1.clear();
+this.$1.setInput(input);
+Object _15 = this.$1.run(input);
+this.$1.setOutput(_15);
+Object _16 = _med.seq(this.$1, this.$inc1);
+this.$inc1.clear();
+this.$inc1.setInput(_16);
+Object _17 = this.$inc1.run(_16);
+this.$inc1.setOutput(_17);
+Object _18 = _med.seq(this.$inc1, this.$inc2);
+this.$inc2.clear();
+this.$inc2.setInput(_18);
+Object _19 = this.$inc2.run(_18);
+this.$inc2.setOutput(_19);
+Object _20 = _med.seq(this.$inc2, this.$2);
+this.$2.clear();
+this.$2.setInput(_20);
+Object _21 = this.$2.run(_20);
+this.$2.setOutput(_21);
+Object _22 = _med.seq(this.$2, this.$4);
+this.$4.clear();
+this.$4.setInput(_22);
+Object _23 = this.$4.run(_22);
+this.$4.setOutput(_23);
+return this.setOutput(_23);
+}
+We always generate a new mediator object ( med) for
+each local class in order to make the parallel execution
+of modules thread-safe. Note that in the above code, the
+mediator method seq() is applied four times due to the
+fact that + occurs four times in the original speci?cation.
+The full code generated by the SDL compiler
+for the example from ?gure 2 can be found under
+http://www.dfki.de/?krieger/public/. The di-
+rectory also contains the Java code of the involved mod-
+ules, plus the default implementation of the mediator and
+module methods. In the workshop, we hope to further
+report on the combination of WHAT (Scha?fer, 2003), an
+XSLT-based annotation transformer, with SDL.
+Acknowledgement
+I am grateful to my colleagues Bernd Kiefer, Markus
+Pilzecker, and Ulrich Scha?fer, helping me to make things
+clear. Thanks to the anonymous reviewers who have iden-
+ti?ed weak points. This work was supported by the Ger-
+man Federal Ministry for Education, Science, Research,
+and Technology under grant no. 01 IW C02 (QUETAL)
+and by an EU grant under no. IST 12179 (Airforce).
+References
+S. Abney. 1996. Partial parsing via ?nite-state cascades. Natu-
+ral Language Engineering, 2(4):337?344.
+H. Barendregt. 1984. The Lambda Calculus, its Syntax and
+Semantics. North-Holland.
+M. Becker, W. Dro?zd?zyn?ski, H.-U. Krieger, J. Piskorski, U.
+Scha?fer, and F. Xu. 2002. SProUT?shallow processing
+with uni?cation and typed feature structures. In Proceedings
+of ICON.
+C. Braun. 1999. Flaches und robustes Parsen Deutscher
+Satzgefu?ge. Master?s thesis, Universita?t des Saarlandes. In
+German.
+B. Carpenter. 1992. The Logic of Typed Feature Structures.
+Cambridge University Press.
+B. Crysmann, A. Frank, B. Kiefer, S. Mu?ller, G. Neumann, J.
+Piskorski, U. Scha?fer, M. Siegel, H. Uszkoreit, F. Xu, M.
+Becker, and H.-U. Krieger. 2002. An integrated architecture
+for shallow and deep processing. In Proceedings of ACL,
+pages 441?448.
+B.A. Davey and H.A. Priestley. 1990. Introduction to Lattices
+and Order. Cambridge University Press.
+E. Gamma, R. Helm, R. Johnson, and J. Vlissides. 1995. De-
+sign Patterns. Elements of Reusable Object-Oriented Soft-
+ware. Addison-Wesley.
+H. Hermes. 1978. Aufza?hlbarkeit, Entscheidbarkeit, Berechen-
+barkeit: Einfu?hrung in die Theorie der rekursiven Funktio-
+nen. Springer, 3rd ed. In German. Also as Enumerability,
+Decidability, Computability: An Introduction to the Theory
+of Recursive Functions.
+U. Scha?fer. 2003. WHAT: an XSLT-based infrastructure for the
+integration of natural language processing components. In
+Proceedings of SEALTS.

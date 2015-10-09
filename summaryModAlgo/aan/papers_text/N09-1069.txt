@@ -1,0 +1,845 @@
+Human Language Technologies: The 2009 Annual Conference of the North American Chapter of the ACL, pages 611?619,
+Boulder, Colorado, June 2009. c?2009 Association for Computational Linguistics
+Online EM for Unsupervised Models
+Percy Liang Dan Klein
+Computer Science Division, EECS Department
+University of California at Berkeley
+Berkeley, CA 94720
+{pliang,klein}@cs.berkeley.edu
+Abstract
+The (batch) EM algorithm plays an important
+role in unsupervised induction, but it some-
+times suffers from slow convergence. In this
+paper, we show that online variants (1) provide
+significant speedups and (2) can even find bet-
+ter solutions than those found by batch EM.
+We support these findings on four unsuper-
+vised tasks: part-of-speech tagging, document
+classification, word segmentation, and word
+alignment.
+1 Introduction
+In unsupervised NLP tasks such as tagging, parsing,
+and alignment, one wishes to induce latent linguistic
+structures from raw text. Probabilistic modeling has
+emerged as a dominant paradigm for these problems,
+and the EM algorithm has been a driving force for
+learning models in a simple and intuitive manner.
+However, on some tasks, EM can converge
+slowly. For instance, on unsupervised part-of-
+speech tagging, EM requires over 100 iterations to
+reach its peak performance on the Wall-Street Jour-
+nal (Johnson, 2007). The slowness of EM is mainly
+due to its batch nature: Parameters are updated only
+once after each pass through the data. When param-
+eter estimates are still rough or if there is high redun-
+dancy in the data, computing statistics on the entire
+dataset just to make one update can be wasteful.
+In this paper, we investigate two flavors of on-
+line EM?incremental EM (Neal and Hinton, 1998)
+and stepwise EM (Sato and Ishii, 2000; Cappe? and
+Moulines, 2009), both of which involve updating pa-
+rameters after each example or after a mini-batch
+(subset) of examples. Online algorithms have the
+potential to speed up learning by making updates
+more frequently. However, these updates can be
+seen as noisy approximations to the full batch up-
+date, and this noise can in fact impede learning.
+This tradeoff between speed and stability is famil-
+iar to online algorithms for convex supervised learn-
+ing problems?e.g., Perceptron, MIRA, stochastic
+gradient, etc. Unsupervised learning raises two ad-
+ditional issues: (1) Since the EM objective is non-
+convex, we often get convergence to different local
+optima of varying quality; and (2) we evaluate on
+accuracy metrics which are at best loosely correlated
+with the EM likelihood objective (Liang and Klein,
+2008). We will see that these issues can lead to sur-
+prising results.
+In Section 4, we present a thorough investigation
+of online EM, mostly focusing on stepwise EM since
+it dominates incremental EM. For stepwise EM, we
+find that choosing a good stepsize and mini-batch
+size is important but can fortunately be done ade-
+quately without supervision. With a proper choice,
+stepwise EM reaches the same performance as batch
+EM, but much more quickly. Moreover, it can even
+surpass the performance of batch EM. Our results
+are particularly striking on part-of-speech tagging:
+Batch EM crawls to an accuracy of 57.3% after 100
+iterations, whereas stepwise EM shoots up to 65.4%
+after just two iterations.
+2 Tasks, models, and datasets
+In this paper, we focus on unsupervised induction
+via probabilistic modeling. In particular, we define
+a probabilistic model p(x, z; ?) of the input x (e.g.,
+611
+a sentence) and hidden output z (e.g., a parse tree)
+with parameters ? (e.g., rule probabilities). Given a
+set of unlabeled examples x(1), . . . ,x(n), the stan-
+dard training objective is to maximize the marginal
+log-likelihood of these examples:
+`(?) =
+n?
+i=1
+log p(x(i); ?). (1)
+A trained model ?? is then evaluated on the accuracy
+of its predictions: argmaxz p(z | x(i); ??) against the
+true output z(i); the exact evaluation metric depends
+on the task. What makes unsupervised induction
+hard at best and ill-defined at worst is that the train-
+ing objective (1) does not depend on the true outputs
+at all.
+We ran experiments on four tasks described be-
+low. Two of these tasks?part-of-speech tagging and
+document classification?are ?clustering? tasks. For
+these, the output z consists of labels; for evalua-
+tion, we map each predicted label to the true label
+that maximizes accuracy. The other two tasks?
+segmentation and alignment?only involve unla-
+beled combinatorial structures, which can be eval-
+uated directly.
+Part-of-speech tagging For each sentence x =
+(x1, . . . , x`), represented as a sequence of words, we
+wish to predict the corresponding sequence of part-
+of-speech (POS) tags z = (z1, . . . , z`). We used
+a simple bigram HMM trained on the Wall Street
+Journal (WSJ) portion of the Penn Treebank (49208
+sentences, 45 tags). No tagging dictionary was used.
+We evaluated using per-position accuracy.
+Document classification For each document x =
+(x1, . . . , x`) consisting of ` words,1 we wish to pre-
+dict the document class z ? {1, . . . , 20}. Each doc-
+ument x is modeled as a bag of words drawn inde-
+pendently given the class z. We used the 20 News-
+groups dataset (18828 documents, 20 classes). We
+evaluated on class accuracy.
+Word segmentation For each sentence x =
+(x1, . . . , x`), represented as a sequence of English
+phonemes or Chinese characters without spaces
+separating the words, we would like to predict
+1We removed the 50 most common words and words that
+occurred fewer than 5 times.
+a segmentation of the sequence into words z =
+(z1, . . . , z|z|), where each segment (word) zi is a
+contiguous subsequence of 1, . . . , `. Since the na??ve
+unigram model has a degenerate maximum likeli-
+hood solution that makes each sentence a separate
+word, we incorporate a penalty for longer segments:
+p(x, z; ?) ? ?|z|k=1 p(xzk ; ?)e?|zk|? , where ? > 1determines the strength of the penalty. For English,
+we used ? = 1.6; Chinese, ? = 2.5. To speed up in-
+ference, we restricted the maximum segment length
+to 10 for English and 5 for Chinese.
+We applied this model on the Bernstein-Ratner
+corpus from the CHILDES database used in
+Goldwater et al (2006) (9790 sentences) and
+the Academia Sinica (AS) corpus from the first
+SIGHAN Chinese word segmentation bakeoff (we
+used the first 100K sentences). We evaluated using
+F1 on word tokens.
+To the best of our knowledge, our penalized uni-
+gram model is new and actually beats the more com-
+plicated model of Johnson (2008) 83.5% to 78%,
+which had been the best published result on this task.
+Word alignment For each pair of translated sen-
+tences x = (e1, . . . , ene , f1, . . . , fnf ), we wish to
+predict the word alignments z ? {0, 1}nenf . We
+trained two IBM model 1s using agreement-based
+learning (Liang et al, 2008). We used the first
+30K sentence pairs of the English-French Hansards
+data from the NAACL 2003 Shared Task, 447+37
+of which were hand-aligned (Och and Ney, 2003).
+We evaluated using the standard alignment error rate
+(AER).
+3 EM algorithms
+Given a probabilistic model p(x, z; ?) and unla-
+beled examples x(1), . . . ,x(n), recall we would like
+to maximize the marginal likelihood of the data
+(1). Let ?(x, z) denote a mapping from a fully-
+labeled example (x, z) to a vector of sufficient statis-
+tics (counts in the case of multinomials) for the
+model. For example, one component of this vec-
+tor for HMMs would be the number of times state
+7 emits the word ?house? in sentence x with state
+sequence z. Given a vector of sufficient statistics ?,
+let ?(?) denote the maximum likelihood estimate. In
+our case, ?(?) are simply probabilities obtained by
+normalizing each block of counts. This closed-form
+612
+Batch EM
+?? initialization
+for each iteration t = 1, . . . , T :
+??? ? 0
+?for each example i = 1, . . . , n:
+??s?i ?
+?
+z p(z | x(i); ?(?))?(x(i), z) [inference]
+???? ? ?? + s?i [accumulate new]
+??? ?? [replace old with new]
+solution is one of the features that makes EM (both
+batch and online) attractive.
+3.1 Batch EM
+In the (batch) EM algorithm, we alternate between
+the E-step and the M-step. In the E-step, we com-
+pute the expected sufficient statistics ?? across all
+the examples based on the posterior over z under the
+current parameters ?(?). In all our models, this step
+can be done via a dynamic program (for example,
+forward-backward for POS tagging).
+In the M-step, we use these sufficient statistics
+?? to re-estimate the parameters. Since the M-step
+is trivial, we represent it implicitly by ?(?) in order
+to concentrate on the computation of the sufficient
+statistics. This focus will be important for online
+EM, so writing batch EM in this way accentuates
+the parallel between batch and online.
+3.2 Online EM
+To obtain an online EM algorithm, we store a sin-
+gle set of sufficient statistics ? and update it after
+processing each example. For the i-th example, we
+compute sufficient statistics s?i. There are two main
+variants of online EM algorithms which differ in ex-
+actly how the new s?i is incorporated into ?.
+The first is incremental EM (iEM) (Neal and Hin-
+ton, 1998), in which we not only keep track of ? but
+also the sufficient statistics s1, . . . , sn for each ex-
+ample (? =?ni=1 si). When we process example i,
+we subtract out the old si and add the new s?i.
+Sato and Ishii (2000) developed another variant,
+later generalized by Cappe? and Moulines (2009),
+which we call stepwise EM (sEM). In sEM, we in-
+terpolate between ? and s?i based on a stepsize ?k (k
+is the number of updates made to ? so far).
+The two algorithms are motivated in different
+ways. Recall that the log-likelihood can be lower
+Incremental EM (iEM)
+si ? initialization for i = 1, . . . , n
+???ni=1 sifor each iteration t = 1, . . . , T :
+?for each example i = 1, . . . , n in random order:
+??s?i ?
+?
+z p(z | x(i); ?(?))?(x(i), z) [inference]
+???? ?+ s?i ? si; si ? s?i [replace old with new]
+Stepwise EM (sEM)
+?? initialization; k = 0
+for each iteration t = 1, . . . , T :
+?for each example i = 1, . . . , n in random order:
+??s?i ?
+?
+z p(z | x(i); ?(?))?(x(i), z) [inference]
+???? (1??k)?+ ?ks?i; k ? k+1 [towards new]
+bounded as follows (Neal and Hinton, 1998):
+`(?) ? L(q1, . . . , qn, ?) (2)
+def=
+n?
+i=1
+[?
+z
+qi(z | x(i)) log p(x(i), z; ?) +H(qi)
+]
+,
+where H(qi) is the entropy of the distribution qi(z |
+x(i)). Batch EM alternates between optimizing L
+with respect to q1, . . . , qn in the E-step (represented
+implicitly via sufficient statistics ??) and with re-
+spect to ? in the M-step. Incremental EM alternates
+between optimizing with respect to a single qi and ?.
+Stepwise EM is motivated from the stochastic ap-
+proximation literature, where we think of approxi-
+mating the update ?? in batch EM with a single sam-
+ple s?i. Since one sample is a bad approximation,
+we interpolate between s?i and the current ?. Thus,
+sEM can be seen as stochastic gradient in the space
+of sufficient statistics.
+Stepsize reduction power ? Stepwise EM leaves
+open the choice of the stepsize ?k. Standard results
+from the stochastic approximation literature state
+that ??k=0 ?k = ? and
+??
+k=0 ?2k < ? are suffi-
+cient to guarantee convergence to a local optimum.
+In particular, if we take ?k = (k + 2)??, then any
+0.5 < ? ? 1 is valid. The smaller the ?, the larger
+the updates, and the more quickly we forget (decay)
+our old sufficient statistics. This can lead to swift
+progress but also generates instability.
+Mini-batch size m We can add some stability
+to sEM by updating on multiple examples at once
+613
+instead of just one. In particular, partition the
+n examples into mini-batches of size m and run
+sEM, treating each mini-batch as a single exam-
+ple. Formally, for each i = 0,m, 2m, 3m, . . . , first
+compute the sufficient statistics s?i+1, . . . , s?i+m on
+x(i+1), . . . ,x(i+m) and then update ? using s?i+1 +
+? ? ? + s?i+m. The larger the m, the less frequent
+the updates, but the more stable they are. In this
+way, mini-batches interpolate between a pure online
+(m = 1) and a pure batch (m = n) algorithm.2
+Fast implementation Due to sparsity in NLP, the
+sufficient statistics of an example s?i are nonzero for
+a small fraction of its components. For iEM, the
+time required to update ? with s?i depends only on
+the number of nonzero components of s?i. However,
+the sEM update is ?? (1??k)?+?ks?i, and a na??ve
+implementation would take time proportional to the
+total number of components. The key to a more effi-
+cient solution is to note that ?(?) is invariant to scal-
+ing of ?. Therefore, we can store S = ?Q
+j<k(1??j)instead of ? and make the following sparse update:
+S ? S + ?kQ
+j?k(1??j)
+s?i, taking comfort in the fact
+that ?(?) = ?(S).
+For both iEM and sEM, we also need to efficiently
+compute ?(?). We can do this by maintaining the
+normalizer for each multinomial block (sum of the
+components in the block). This extra maintenance
+only doubles the number of updates we have to make
+but allows us to fetch any component of ?(?) in con-
+stant time by dividing out the normalizer.
+3.3 Incremental versus stepwise EM
+Incremental EM increases L monotonically after
+each update by virtue of doing coordinate-wise as-
+cent and thus is guaranteed to converge to a local
+optimum of both L and ` (Neal and Hinton, 1998).
+However, ` is not guaranteed to increase after each
+update. Stepwise EM might not increase either L or
+` after each update, but it is guaranteed to converge
+to a local optimum of ` given suitable conditions on
+the stepsize discussed earlier.
+Incremental and stepwise EM actually coincide
+under the following setting (Cappe? and Moulines,
+2Note that running sEM with m = n is similar but not
+equivalent to batch EM since old sufficient statistics are still
+interpolated rather than replaced.
+2009): If we set (?,m) = (1, 1) for sEM and ini-
+tialize all si = 0 for iEM, then both algorithms make
+the same updates on the first pass through the data.
+They diverge thereafter as iEM subtracts out old sis,
+while sEM does not even remember them.
+One weakness of iEM is that its memory require-
+ments grow linearly with the number of examples
+due to storing s1, . . . , sn. For large datasets, these
+sis might not even fit in memory, and resorting to
+physical disk would be very slow. In contrast, the
+memory usage of sEM does not depend on n.
+The relationship between iEM and sEM (with
+m = 1) is analogous to the one between exponen-
+tiated gradient (Collins et al, 2008) and stochastic
+gradient for supervised learning of log-linear mod-
+els. The former maintains the sufficient statistics of
+each example and subtracts out old ones whereas the
+latter does not. In the supervised case, the added sta-
+bility of exponentiated gradient tends to yield bet-
+ter performance. For the unsupervised case, we will
+see empirically that remembering the old sufficient
+statistics offers no benefit, and much better perfor-
+mance can be obtained by properly setting (?,m)
+for sEM (Section 4).
+4 Experiments
+We now present our empirical results for batch EM
+and online EM (iEM and sEM) on the four tasks de-
+scribed in Section 2: part-of-speech tagging, docu-
+ment classification, word segmentation (English and
+Chinese), and word alignment.
+We used the following protocol for all experi-
+ments: We initialized the parameters to a neutral set-
+ting plus noise to break symmetries.3 Training was
+performed for 20 iterations.4 No parameter smooth-
+ing was used. All runs used a fixed random seed for
+initializing the parameters and permuting the exam-
+ples at the beginning of each iteration. We report two
+performance metrics: log-likelihood normalized by
+the number of examples and the task-specific accu-
+racy metric (see Section 2). All numbers are taken
+from the final iteration.
+3Specifically, for each block of multinomial probabilities
+?1, . . . , ?K , we set ?k ? exp{10?3(1 + ak)}, where ak ?
+U [0, 1]. Exception: for batch EM on POS tagging, we used 1
+instead of 10?3; more noise worked better.
+4Exception: for batch EM on POS tagging, 100 iterations
+was needed to get satisfactory performance.
+614
+Stepwise EM (sEM) requires setting two
+optimization parameters: the stepsize reduc-
+tion power ? and the mini-batch size m (see
+Section 3.2). As Section 4.3 will show, these
+two parameters can have a large impact on
+performance. As a default rule of thumb, we
+chose (?,m) ? {0.5, 0.6, 0.7, 0.8, 0.9, 1.0} ?
+{1, 3, 10, 30, 100, 300, 1K, 3K, 10K} to maximize
+log-likelihood; let sEM` denote stepwise EM with
+this setting. Note that this setting requires no labeled
+data. We will also consider fixing (?,m) = (1, 1)
+(sEMi) and choosing (?,m) to maximize accuracy
+(sEMa).
+In the results to follow, we first demonstrate that
+online EM is faster (Section 4.1) and sometimes
+leads to higher accuracies (Section 4.2). Next, we
+explore the effect of the optimization parameters
+(?,m) (Section 4.3), briefly revisiting the connec-
+tion between incremental and stepwise EM. Finally,
+we show the stability of our results under different
+random seeds (Section 4.4).
+4.1 Speed
+One of the principal motivations for online EM
+is speed, and indeed we found this motivation to
+be empirically well-justified. Figure 1 shows that,
+across all five datasets, sEM` converges to a solution
+with at least comparable log-likelihood and accuracy
+with respect to batch EM, but sEM` does it anywhere
+from about 2 (word alignment) to 10 (POS tagging)
+times faster. This supports our intuition that more
+frequent updates lead to faster convergence. At the
+same time, note that the other two online EM vari-
+ants in Figure 1 (iEM and sEMi) are prone to catas-
+trophic failure. See Section 4.3 for further discus-
+sion on this issue.
+4.2 Performance
+It is fortunate but perhaps not surprising that step-
+wise EM is faster than batch EM. But Figure 1 also
+shows that, somewhat surprisingly, sEM` can actu-
+ally converge to a solution with higher accuracy, in
+particular on POS tagging and document classifica-
+tion. To further explore the accuracy-increasing po-
+tential of sEM, consider choosing (?,m) to maxi-
+mize accuracy (sEMa). Unlike sEM`, sEMa does re-
+quire labeled data. In practice, (?,m) can be tuned
+EM sEM` sEMa ?` m` ?a ma
+POS 57.3 59.6 66.7 0.7 3 0.5 3
+DOC 39.1 47.8 49.9 0.8 1K 0.5 3K
+SEG(en) 80.5 80.7 83.5 0.7 1K 1.0 100
+SEG(ch) 78.2 77.2 78.1 0.6 10K 1.0 10K
+ALIGN 78.8 78.9 78.9 0.7 10K 0.7 10K
+Table 1: Accuracy of batch EM and stepwise EM, where
+the optimization parameters (?,m) are tuned to either
+maximize log-likelihood (sEM`) or accuracy (sEMa).
+With an appropriate setting of (?,m), stepwise EM out-
+performs batch EM significantly on POS tagging and
+document classification.
+on a small labeled set alng with any model hyper-
+parameters.
+Table 1 shows that sEMa improves the accuracy
+compared to batch EM even more than sEM`. The
+result for POS is most vivid: After one iteration of
+batch EM, the accuracy is only at 24.0% whereas
+sEMa is already at 54.5%, and after two iterations,
+at 65.4%. Not only is this orders of magnitude faster
+than batch EM, batch EM only reaches 57.3% after
+100 iterations.
+We get a similarly striking result for document
+classification, but the results for word segmentation
+and word alignment are more modest. A full un-
+derstanding of this phenomenon is left as an open
+problem, but we will comment on one difference be-
+tween the tasks where sEM improves accuracy and
+the tasks where it doesn?t. The former are ?clus-
+tering? tasks (POS tagging and document classifi-
+cation), while the latter are ?structural? tasks (word
+segmentation and word alignment). Learning of
+clustering models centers around probabilities over
+words given a latent cluster label, whereas in struc-
+tural models, there are no cluster labels, and it is
+the combinatorial structure (the segmentations and
+alignments) that drives the learning.
+Likelihood versus accuracy From Figure 1, we
+see that stepwise EM (sEM`) can outperform batch
+EM in both likelihood and accuracy. This suggests
+that stepwise EM is better at avoiding local minima,
+perhaps leveraging its stochasticity to its advantage.
+However, on POS tagging, tuning sEM to maxi-
+mize accuracy (sEMa) results in a slower increase
+in likelihood: compare sEMa in Figure 2 with sEM`
+in Figure 1(a). This shouldn?t surprise us too much
+given that likelihood and accuracy are only loosely
+615
+20 40 60 80
+iterations
+0.2
+0.4
+0.6
+0.8
+1.0
+acc
+ura
+cy
+20 40 60 80
+iterations
+-9.8
+-8.8
+-7.8
+-6.9
+-5.9
+log
+-lik
+elih
+ood
+EM
+sEMi
+sEM`
+2 4 6 8 10
+iterations
+0.2
+0.4
+0.6
+0.8
+1.0
+acc
+ura
+cy
+2 4 6 8 10
+iterations
+-9.8
+-9.3
+-8.8
+-8.3
+-7.8
+log
+-lik
+elih
+ood
+EM
+iEM
+sEMi
+sEM`
+(a) POS tagging (b) Document classification
+2 4 6 8 10
+iterations
+0.2
+0.4
+0.6
+0.8
+1.0
+F 1
+2 4 6 8 10
+iterations
+-4.8
+-4.6
+-4.4
+-4.2
+-4.0
+log
+-lik
+elih
+ood
+EM
+iEM
+sEMi
+sEM`
+2 4 6 8 10
+iterations
+0.2
+0.4
+0.6
+0.8
+1.0
+F 1
+2 4 6 8 10
+iterations
+-9.5
+-8.9
+-8.4
+-7.8
+-7.2
+log
+-lik
+elih
+ood
+EM
+iEM
+sEMi
+sEM`
+(c) Word segmentation (English) (d) Word segmentation (Chinese)
+2 4 6 8 10
+iterations
+0.2
+0.4
+0.6
+0.8
+1.0
+1?
+AE
+R
+2 4 6 8 10
+iterations
+-10.9
+-9.4
+-7.9
+-6.5
+-5.0
+log
+-lik
+elih
+ood
+EM
+iEM
+sEMi
+sEM`
+accuracy log-likelihood
+EM sEM` EM sEM`pos 57.3 59.6 -6.03 -6.08doc 39.1 47.8 -7.96 -7.88seg(en) 80.5 80.7 -4.11 -4.11seg(ch) 78.2 77.2 -7.27 -7.28align 78.8 78.9 -5.05 -5.12
+(e) Word alignment (f) Results after convergence
+Figure 1: Accuracy and log-likelihood plots for batch EM, incremental EM, and stepwise EM across all five datasets.
+sEM` outperforms batch EM in terms of convergence speed and even accuracy and likelihood; iEM and sEMi fail in
+some cases. We did not run iEM on POS tagging due to memory limitations; we expect the performance would be
+similar to sEMi, which is not very encouraging (Section 4.3).
+correlated (Liang and Klein, 2008). But it does sug-
+gest that stepwise EM is injecting a bias that favors
+accuracy over likelihood?a bias not at all reflected
+in the training objective.
+We can create a hybrid (sEMa+EM) that com-
+bines the strengths of both sEMa and EM: First run
+sEMa for 5 iterations, which quickly takes us to a
+part of the parameter space yielding good accura-
+cies; then run EM, which quickly improves the like-
+lihood. Fortunately, accuracy does not degrade as
+likelihood increases (Figure 2).
+4.3 Varying the optimization parameters
+Recall that stepwise EM requires setting two opti-
+mization parameters: the stepsize reduction power ?
+and the mini-batch size m. We now explore the ef-
+fect of (?,m) on likelihood and accuracy.
+As mentioned in Section 3.2, larger mini-batches
+(increasing m) stabilize parameter updates, while
+larger stepsizes (decreasing ?) provide swifter
+616
+doc accuracy?\m 1 3 10 30 100 300 1K 3K 10K0.5 5.4 5.4 5.5 5.6 6.0 25.7 48.8 49.9 44.60.6 5.4 5.4 5.6 5.6 22.3 36.1 48.7 49.3 44.20.7 5.5 5.5 5.6 11.1 39.9 43.3 48.1 49.0 43.50.8 5.6 5.6 6.0 21.7 47.3 45.0 47.8 49.5 42.80.9 5.8 6.0 13.4 32.4 48.7 48.4 46.4 49.4 42.41.0 6.2 11.8 19.6 35.2 47.6 49.5 47.5 49.3 41.7
+pos doc align
+doc log-likelihood?\m 1 3 10 30 100 300 1K 3K 10K0.5 -8.875 -8.71 -8.61 -8.555 -8.505 -8.172 -7.92 -7.906 -7.9160.6 -8.604 -8.575 -8.54 -8.524 -8.235 -8.041 -7.898 -7.901 -7.9160.7 -8.541 -8.533 -8.531 -8.354 -8.023 -7.943 -7.886 -7.896 -7.9180.8 -8.519 -8.506 -8.493 -8.228 -7.933 -7.896 -7.883 -7.89 -7.9220.9 -8.505 -8.486 -8.283 -8.106 -7.91 -7.889 -7.889 -7.891 -7.9271.0 -8.471 -8.319 -8.204 -8.052 -7.919 -7.889 -7.892 -7.896 -7.937
+seg(en) seg(ch)
+Figure 3: Effect of optimization parameters (stepsize reduction power ? and mini-batch size m) on accuracy and
+likelihood. Numerical results are shown for document classification. In the interest of space, the results for each task
+are compressed into two gray scale images, one for accuracy (top) and one for log-likelihood (bottom), where darker
+shades represent larger values. Bold (red) numbers denote the best ? for a given m.
+20 40 60 80
+iterations
+0.2
+0.4
+0.6
+0.8
+1.0
+acc
+ura
+cy
+20 40 60 80
+iterations
+-12.7
+-11.0
+-9.3
+-7.6
+-5.9
+log
+-lik
+elih
+ood
+EM
+sEMa
+sEMa+EM
+Figure 2: sEMa quickly obtains higher accuracy than
+batch EM but suffers from a slower increase in likeli-
+hood. The hybrid sEMa+EM (5 iterations of EMa fol-
+lowed by batch EM) increases both accuracy and likeli-
+hood sharply.
+progress. Remember that since we are dealing with a
+nonconvex objective, the choice of stepsize not only
+influences how fast we converge, but also the quality
+of the solution that we converge to.
+Figure 3 shows the interaction between ? and m
+in terms of likelihood and accuracy. In general, the
+best (?,m) depends on the task and dataset. For ex-
+ample, for document classification, larger m is criti-
+cal for good performance; for POS tagging, it is bet-
+ter to use smaller values of ? and m.
+Fortunately, there is a range of permissible set-
+tings (corresponding to the dark regions in Figure 3)
+that lead to reasonable performance. Furthermore,
+the settings that perform well on likelihood gener-
+ally correspond to ones that perform well on accu-
+racy, which justifies using sEM`.
+A final observation is that as we use larger mini-
+batches (larger m), decreasing the stepsize more
+gradually (smaller ?) leads to better performance.
+Intuitively, updates become more reliable with larger
+m, so we can afford to trust them more and incorpo-
+rate them more aggressively.
+Stepwise versus incremental EM In Section 3.2,
+we mentioned that incremental EM can be made
+equivalent to stepwise EM with ? = 1 and m = 1
+(sEMi). Figure 1 provides the empirical support:
+iEM and sEMi have very similar training curves.
+Therefore, keeping around the old sufficient statis-
+tics does not provide any advantage and still requires
+a substantial storage cost. As mentioned before, set-
+ting (?,m) properly is crucial. While we could sim-
+ulate mini-batches with iEM by updating multiple
+coordinates simultaneously, iEM is not capable of
+exploiting the behavior of ? < 1.
+4.4 Varying the random seed
+All our results thus far represent single runs with a
+fixed random seed. We now investigate the impact
+of randomness on our results. Recall that we use
+randomness for two purposes: (1) initializing the
+parameters (affects both batch EM and online EM),
+617
+accuracy log-likelihood
+EM sEM` EM sEM`
+POS 56.2 ?1.36 58.8 ?0.73, 1.41 ?6.01 ?6.09
+DOC 41.2 ?1.97 51.4 ?0.97, 2.82 ?7.93 ?7.88
+SEG(en) 80.5 ?0.0 81.0 ?0.0, 0.42 ?4.1 ?4.1
+SEG(ch) 78.2 ?0.0 77.2 ?0.0, 0.04 ?7.26 ?7.27
+ALIGN 79.0 ?0.14 78.8 ?0.14, 0.25 ?5.04 ?5.11
+Table 2: Mean and standard deviation over different ran-
+dom seeds. For EM and sEM, the first number after ?
+is the standard deviation due to different initializations
+of the parameters. For sEM, the second number is the
+standard deviation due to different permutations of the
+examples. Standard deviation for log-likelihoods are all
+< 0.01 and therefore left out due to lack of space.
+and (2) permuting the examples at the beginning of
+each iteration (affects only online EM).
+To separate these two purposes, we used two
+different seeds, Si ? {1, 2, 3, 4, 5} and Sp ?
+{1, 2, 3, 4, 5} for initializing and permuting, respec-
+tively. Let X be a random variable denoting either
+log-likelihood or accuracy. We define the variance
+due to initialization as var(E(X | Si)) (E averages
+over Sp for each fixed Si) and the variance due to
+permutation as E(var(X | Si)) (E averages over Si).
+These two variances provide an additive decompo-
+sition of the total variance: var(X) = var(E(X |
+Si)) + E(var(X | Si)).
+Table 2 summarizes the results across the 5 tri-
+als for EM and 25 for sEM`. Since we used a very
+small amount of noise to initialize the parameters,
+the variance due to initialization is systematically
+smaller than the variance due to permutation. sEM`
+is less sensitive to initialization than EM, but addi-
+tional variance is created by randomly permuting the
+examples. Overall, the accuracy of sEM` is more
+variable than that of EM, but not by a large amount.
+5 Discussion and related work
+As datasets increase in size, the demand for online
+algorithms has grown in recent years. One sees
+this clear trend in the supervised NLP literature?
+examples include the Perceptron algorithm for tag-
+ging (Collins, 2002), MIRA for dependency parsing
+(McDonald et al, 2005), exponentiated gradient al-
+gorithms (Collins et al, 2008), stochastic gradient
+for constituency parsing (Finkel et al, 2008), just
+to name a few. Empirically, online methods are of-
+ten faster by an order of magnitude (Collins et al,
+2008), and it has been argued on theoretical grounds
+that the fast, approximate nature of online meth-
+ods is a good fit given that we are interested in test
+performance, not the training objective (Bottou and
+Bousquet, 2008; Shalev-Shwartz and Srebro, 2008).
+However, in the unsupervised NLP literature, on-
+line methods are rarely seen,5 and when they are,
+incremental EM is the dominant variant (Gildea and
+Hofmann, 1999; Kuo et al, 2008). Indeed, as we
+have shown, applying online EM does require some
+care, and some variants (including incremental EM)
+can fail catastrophically in face of local optima.
+Stepwise EM provides finer control via its optimiza-
+tion parameters and has proven quite successful.
+One family of methods that resembles incremen-
+tal EM includes collapsed samplers for Bayesian
+models?for example, Goldwater et al (2006) and
+Goldwater and Griffiths (2007). These samplers
+keep track of a sample of the latent variables for
+each example, akin to the sufficient statistics that we
+store in incremental EM. In contrast, stepwise EM
+does not require this storage and operates more in
+the spirit of a truly online algorithm.
+Besides speed, online algorithms are of interest
+for two additional reasons. First, in some applica-
+tions, we receive examples sequentially and would
+like to estimate a model in real-time, e.g., in the clus-
+tering of news articles. Second, since humans learn
+sequentially, studying online EM might suggest new
+connections to cognitive mechanisms.
+6 Conclusion
+We have explored online EM on four tasks and
+demonstrated how to use stepwise EM to overcome
+the dangers of stochasticity and reap the benefits of
+frequent updates and fast learning. We also discov-
+ered that stepwise EM can actually improve accu-
+racy, a phenomenon worthy of further investigation.
+This paper makes some progress on elucidating the
+properties of online EM. With this increased under-
+standing, online EM, like its batch cousin, could be-
+come a mainstay for unsupervised learning.
+5Other types of learning methods have been employed
+successfully, for example, Venkataraman (2001) and Seginer
+(2007).
+618
+References
+L. Bottou and O. Bousquet. 2008. The tradeoffs of large
+scale learning. In Advances in Neural Information
+Processing Systems (NIPS).
+O. Cappe? and E. Moulines. 2009. Online expectation-
+maximization algorithm for latent data models. Jour-
+nal of the Royal Statistics Society: Series B (Statistical
+Methodology), 71.
+M. Collins, A. Globerson, T. Koo, X. Carreras, and
+P. Bartlett. 2008. Exponentiated gradient algorithms
+for conditional random fields and max-margin Markov
+networks. Journal of Machine Learning Research, 9.
+M. Collins. 2002. Discriminative training methods for
+hidden Markov models: Theory and experiments with
+Perceptron algorithms. In Empirical Methods in Nat-
+ural Language Processing (EMNLP).
+J. R. Finkel, A. Kleeman, and C. Manning. 2008. Effi-
+cient, feature-based, conditional random field parsing.
+In Human Language Technology and Association for
+Computational Linguistics (HLT/ACL).
+D. Gildea and T. Hofmann. 1999. Topic-based language
+models using EM. In Eurospeech.
+S. Goldwater and T. Griffiths. 2007. A fully Bayesian
+approach to unsupervised part-of-speech tagging. In
+Association for Computational Linguistics (ACL).
+S. Goldwater, T. Griffiths, and M. Johnson. 2006. Con-
+textual dependencies in unsupervised word segmenta-
+tion. In International Conference on Computational
+Linguistics and Association for Computational Lin-
+guistics (COLING/ACL).
+M. Johnson. 2007. Why doesn?t EM find good HMM
+POS-taggers? In Empirical Methods in Natural Lan-
+guage Processing and Computational Natural Lan-
+guage Learning (EMNLP/CoNLL).
+M. Johnson. 2008. Using adaptor grammars to identify
+synergies in the unsupervised acquisition of linguistic
+structure. In Human Language Technology and As-
+sociation for Computational Linguistics (HLT/ACL),
+pages 398?406.
+J. Kuo, H. Li, and C. Lin. 2008. Mining transliterations
+from web query results: An incremental approach. In
+Sixth SIGHAN Workshop on Chinese Language Pro-
+cessing.
+P. Liang and D. Klein. 2008. Analyzing the errors
+of unsupervised learning. In Human Language Tech-
+nology and Association for Computational Linguistics
+(HLT/ACL).
+P. Liang, D. Klein, and M. I. Jordan. 2008. Agreement-
+based learning. In Advances in Neural Information
+Processing Systems (NIPS).
+R. McDonald, K. Crammer, and F. Pereira. 2005. On-
+line large-margin training of dependency parsers. In
+Association for Computational Linguistics (ACL).
+R. Neal and G. Hinton. 1998. A view of the EM algo-
+rithm that justifies incremental, sparse, and other vari-
+ants. In Learning in Graphical Models.
+F. J. Och and H. Ney. 2003. A systematic comparison of
+various statistical alignment models. Computational
+Linguistics, 29:19?51.
+M. Sato and S. Ishii. 2000. On-line EM algorithm for the
+normalized Gaussian network. Neural Computation,
+12:407?432.
+Y. Seginer. 2007. Fast unsupervised incremental parsing.
+In Association for Computational Linguistics (ACL).
+S. Shalev-Shwartz and N. Srebro. 2008. SVM optimiza-
+tion: Inverse dependence on training set size. In Inter-
+national Conference on Machine Learning (ICML).
+A. Venkataraman. 2001. A statistical model for word
+discovery in transcribed speech. Computational Lin-
+guistics, 27:351?372.
+619

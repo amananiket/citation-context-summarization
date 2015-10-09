@@ -1,0 +1,895 @@
+Human Language Technologies: The 2009 Annual Conference of the North American Chapter of the ACL, pages 557?565,
+Boulder, Colorado, June 2009. c?2009 Association for Computational Linguistics
+Hierarchical Search for Parsing
+Adam Pauls Dan Klein
+Computer Science Division
+University of California at Berkeley
+Berkeley, CA 94720, USA
+{adpauls,klein}@cs.berkeley.edu
+Abstract
+Both coarse-to-fine and A? parsing use simple
+grammars to guide search in complex ones.
+We compare the two approaches in a com-
+mon, agenda-based framework, demonstrat-
+ing the tradeoffs and relative strengths of each
+method. Overall, coarse-to-fine is much faster
+for moderate levels of search errors, but be-
+low a certain threshold A? is superior. In addi-
+tion, we present the first experiments on hier-
+archical A? parsing, in which computation of
+heuristics is itself guided by meta-heuristics.
+Multi-level hierarchies are helpful in both ap-
+proaches, but are more effective in the coarse-
+to-fine case because of accumulated slack in
+A? heuristics.
+1 Introduction
+The grammars used by modern parsers are ex-
+tremely large, rendering exhaustive parsing imprac-
+tical. For example, the lexicalized grammars of
+Collins (1997) and Charniak (1997) and the state-
+split grammars of Petrov et al (2006) are all
+too large to construct unpruned charts in memory.
+One effective approach is coarse-to-fine pruning, in
+which a small, coarse grammar is used to prune
+edges in a large, refined grammar (Charniak et al,
+2006). Indeed, coarse-to-fine is even more effective
+when a hierarchy of successive approximations is
+used (Charniak et al, 2006; Petrov and Klein, 2007).
+In particular, Petrov and Klein (2007) generate a se-
+quence of approximations to a highly subcategorized
+grammar, parsing with each in turn.
+Despite its practical success, coarse-to-fine prun-
+ing is approximate, with no theoretical guarantees
+on optimality. Another line of work has explored
+A? search methods, in which simpler problems are
+used not for pruning, but for prioritizing work in
+the full search space (Klein and Manning, 2003a;
+Haghighi et al, 2007). In particular, Klein and Man-
+ning (2003a) investigated A? for lexicalized parsing
+in a factored model. In that case, A? vastly im-
+proved the search in the lexicalized grammar, with
+provable optimality. However, their bottleneck was
+clearly shown to be the exhaustive parsing used to
+compute the A? heuristic itself. It is not obvious,
+however, how A? can be stacked in a hierarchical or
+multi-pass way to speed up the computation of such
+complex heuristics.
+In this paper, we address three open questions
+regarding efficient hierarchical search. First, can
+a hierarchy of A? bounds be used, analogously to
+hierarchical coarse-to-fine pruning? We show that
+recent work in hierarchical A? (Felzenszwalb and
+McAllester, 2007) can naturally be applied to both
+the hierarchically refined grammars of Petrov and
+Klein (2007) as well as the lexicalized grammars
+of Klein and Manning (2003a). Second, what are
+the tradeoffs between coarse-to-fine pruning and A?
+methods? We show that coarse-to-fine is generally
+much faster, but at the cost of search errors.1 Below
+a certain search error rate, A? is faster and, of course,
+optimal. Finally, when and how, qualitatively, do
+these methods fail? A? search?s work grows quickly
+as the slack increases between the heuristic bounds
+and the true costs. On the other hand, coarse-to-fine
+prunes unreliably when the approximating grammar
+1In this paper, we consider only errors made by the search
+procedure, not modeling errors.
+557
+Name Rule Priority
+IN r : wr I(Bt, i, k) : ?B I(Ct, k, j) : ?C ? I(At, i, j) : ?A = ?B + ?C + wr ?A + h(A, i, j)
+Table 1: Deduction rule for A? parsing. The items on the left of the ? indicate what edges must be present on the
+chart and what rule can be used to combine them, and the item on the right is the edge that may be added to the agenda.
+The weight of each edge appears after the colon. The rule r is A ? B C.
+is very different from the target grammar. We em-
+pirically demonstrate both failure modes.
+2 Parsing algorithms
+Our primary goal in this paper is to compare hi-
+erarchical A? (HA?) and hierarchical coarse-to-fine
+(CTF) pruning methods. Unfortunately, these two
+algorithms are generally deployed in different archi-
+tectures: CTF is most naturally implemented using
+a dynamic program like CKY, while best-first al-
+gorithms like A? are necessarily implemented with
+agenda-based parsers. To facilitate comparison, we
+would like to implement them in a common architec-
+ture. We therefore work entirely in an agenda-based
+setting, noting that the crucial property of CTF is
+not the CKY order of exploration, but the pruning
+of unlikely edges, which can be equally well done
+in an agenda-based parser. In fact, it is possible to
+closely mimic dynamic programs like CKY using a
+best-first algorithm with a particular choice of prior-
+ities; we discuss this in Section 2.3.
+While a general HA? framework is presented in
+Felzenszwalb and McAllester (2007), we present
+here a specialization to the parsing problem. We first
+review the standard agenda-driven search frame-
+work and basic A? parsing before generalizing to
+HA?.
+2.1 Agenda-Driven Parsing
+A non-hierarchical, best-first parser takes as input a
+PCFG G (with root symbol R), a priority function
+p(?) and a sentence consisting of terminals (words)
+T0 . . .Tn?1. The parser?s task is to find the best
+scoring (Viterbi) tree structure which is rooted at R
+and spans the input sentence. Without loss of gen-
+erality, we consider grammars in Chomsky normal
+form, so that each non-terminal rule in the grammar
+has the form r = A ? B C with weight wr. We
+assume that weights are non-negative (e.g. negative
+log probabilities) and that we wish to minimize the
+sum of the rule weights.
+A
+CB
+B C
+?
+B
+A
+?
+A
+=
+?
+B
++?
+C
++w
+r
+p=?
+A
++h(A,i,j)
+i k k j ji
+w
+r
+?
+C
+Figure 1: Deduction rule for A? depicted graphically.
+Items to the left of the arrow indicate edges and rules that
+can be combined to produce the edge to the right of the ar-
+row. Edges are depicted as complete triangles. The value
+inside an edge represents the weight of that edge. Each
+new edge is assigned the priority written above the arrow
+when added to the agenda.
+The objects in an agenda-based parser are edges
+e = I(X, i, j), also called items, which represent
+parses spanning i to j and rooted at symbol X. We
+denote edges as triangles, as in Figure 1. At all
+times, edges have scores ?e, which are estimates
+of their Viterbi inside probabilities (also called path
+costs). These estimates improve over time as new
+derivations are considered, and may or may not be
+correct at termination, depending on the properties
+of p. The parser maintains an agenda (a priority
+queue of edges), as well as a chart (or closed list
+in search terminology) of edges already processed.
+The fundamental operation of the algorithm is to pop
+the best (lowest) priority edge e from the agenda,
+put it into the chart, and enqueue any edges which
+can be built by combining e with other edges in the
+chart. The combination of two adjacent edges into
+a larger edge is shown graphically in Figure 1 and
+as a weighted deduction rule in Table 1 (Shieber et
+al., 1995; Nederhof, 2003). When an edge a is built
+from adjacent edges b and c and a rule r, its cur-
+rent score ?a is compared to ?b + ?c + wr and up-
+dated if necessary. To allow reconstruction of best
+parses, backpointers are maintained in the standard
+way. The agenda is initialized with I(Ti, i, i + 1)
+558
+for i = 0 . . . n ? 1. The algorithm terminates when
+I(R, 0, n) is popped off the queue.
+Priorities are in general different than weights.
+Whenever an edge e?s score changes, its priority
+p(e), which may or may not depend on its score,
+may improve. Edges are promoted accordingly in
+the agenda if their priorities improve. In the sim-
+plest case, the priorities are simply the ?e estimates,
+which gives a correct uniform cost search wherein
+the root edge is guaranteed to have its correct inside
+score estimate at termination (Caraballo and Char-
+niak, 1996).
+A? parsing (Klein and Manning, 2003b) is a spe-
+cial case of such an agenda-driven parser in which
+the priority function p takes the form p(e) = ?e +
+h(e), where e = I(X, i, j) and h(?) is some approx-
+imation of e?s Viterbi outside cost (its completion
+cost). If h is consistent, then the A? algorithm guar-
+antees that whenever an edge comes off the agenda,
+its weight is its true Viterbi inside cost. In particular,
+this guarantee implies that the first edge represent-
+ing the root I(R, 0, n) will be scored with the true
+Viterbi score for the sentence.
+2.2 Hierarchical A?
+In the standard A? case the heuristics are assumed
+to come from a black box. For example, Klein and
+Manning (2003b) precomputes most heuristics of-
+fline, while Klein and Manning (2003a) solves sim-
+pler parsing problems for each sentence. In such
+cases, the time spent to compute heuristics is often
+non-trivial. Indeed, it is typical that effective heuris-
+tics are themselves expensive search problems. We
+would therefore like to apply A? methods to the
+computation of the heuristics themselves. Hierar-
+chical A? allows us to do exactly that.
+Formally, HA? takes as input a sentence and a se-
+quence (or hierarchy) of m + 1 PCFGs G0 . . .Gm,
+where Gm is the target grammar and G0 . . .Gm?1
+are auxiliary grammars. Each grammar Gt has an in-
+ventory of symbols ?t, hereafter denoted with capi-
+tal letters. In particular, each grammar has a distin-
+guished terminal symbol Tit for each word Ti in the
+input and a root symbol Rt.
+The grammars G0 . . .Gm must form a hierarchy in
+which Gt is a relaxed projection of Gt+1. A grammar
+Gt?1 is a projection of Gt if there exists some onto
+function pit : ?t $? ?t?1 defined for all symbols in
+Agenda
+Chart
+I(NP, 3, 5)
+O(VP, 4, 8)
+I(NN, 2, 3)
+.
+.
+.
+.
+.
+I
+I
+I
+O
+O
+O
+G1
+G0
+G2
+Figure 3: Operation of hierarchical A? parsing. An edge
+comes off the agenda and is added to the chart (solid line).
+From this edge, multiple new edges can be constructed
+and added to the agenda (dashed lines). The chart is com-
+posed of two subcharts for each grammar in the hierar-
+chy: an inside chart (I) and an outside chart (O).
+Gt; hereafter, we will use A?t to represent pit(At). A
+projection is a relaxation if, for every rule r = At ?
+Bt Ct with weight wr the projection r? = pit(r) =
+A?t ? B?tC?t has weight wr? ? wr in Gt?1. Given
+a target grammar Gm and a projection function pim,
+it is easy to construct a relaxed projection Gm?1 by
+minimizing over rules collapsed by pim:
+wr? = min
+r?Gm:pim(r)=r?
+wr
+Given a series of projection functions pi1 . . .pim,
+we can construct relaxed projections by projecting
+Gm to Gm?1, then Gm?1 to Gm?2 and so on. Note
+that by construction, parses in a relaxed projection
+give lower bounds on parses in the target grammar
+(Klein and Manning, 2003b).
+HA? differs from standard A? in two ways.
+First, it tracks not only standard inside edges
+e = I(X, i, j) which represent derivations of
+X ? Ti . . .Tj , but also outside edges o =
+O(X, i, j) which represent derivations of R ?
+T0 . . .Ti?1 X Tj+1 . . .Tn. For example, where
+I(VP, 0, 3) denotes trees rooted at VP covering the
+span [0, 3], O(VP, 0, 3) denotes the derivation of the
+?rest? of the structure to the root. Where inside
+edges e have scores ?e which represent (approxima-
+tions of) their Viterbi inside scores, outside edges o
+have scores ?o which are (approximations of) their
+Viterbi outside scores. When we need to denote the
+inside version of an outside edge, or the reverse, we
+write o = e?, etc.
+559
+Name Rule Priority
+IN-BASE O(T?it , i, i + 1) : ?T ? I(Tit, i, i + 1) : 0 ?TIN r : wr O(A?t, i, j) : ?A? I(Bt, i, k) : ?B I(Ct, k, j) : ?C ? I(At, i, j) : ?A = ?B + ?C + wr ?A + ?A?
+OUT-BASE I(Rt, 0, n) : ?R ? O(Rt, 0, n) : 0 ?R
+OUT-L r : wr O(At, i, j) : ?A I(Bt, i, k) : ?B I(Ct, k, j) : ?C ? O(Bt, i, k) : ?B = ?A + ?C + wr ?B + ?B
+OUT-R r : wr O(At, i, j) : ?A I(Bt, i, k) : ?B I(Ct, k, j) : ?C ? O(Ct, k, j) : ?C = ?A + ?B + wr ?C + ?C
+Table 2: Deduction rules for HA?. The rule r is in all cases At ? Bt Ct.
+A
+CB
+A'
+B C
+?
+B
+A
+?
+A
+=
+?
+B
++?
+C
++w
+r
+?
+A'
+p=?
+A
++?
+A'
+i k k j ji
+IN
+i j
+p
+=
+?
+B
++
+?
+B
+?
+B
+=
+?
+A
++?
+C
++w
+r
+B
+p
+=
+?
+C
++
+?
+C
+?
+C
+=
+?
+A
++?
+B
++w
+r
+C
+i k
+k j
+O
+U
+T
+-
+L
+O
+U
+T
+-
+R
+A
+CB
+A
+B C
+?
+C
+?
+B
+i k k
+j
+w
+r
+w
+r
+i j n0
+0
+n
+?
+A
+?
+C
+n
+0
+0 n
+(a)
+(b)
+Figure 2: Non-base case deduction rules for HA? depicted graphically. (a) shows the rule used to build inside edges
+and (b) shows the rules to build outside edges. Inside edges are depicted as complete triangles, while outside edges
+are depicted as chevrons. An edge from a previous level in the hierarchy is denoted with dashed lines.
+The second difference is that HA? tracks items
+from all levels of the hierarchy on a single, shared
+agenda, so that all items compete (see Figure 3).
+While there is only one agenda, it is useful to imag-
+ine several charts, one for each type of edge and each
+grammar level. In particular, outside edges from one
+level of the hierarchy are the source of completion
+costs (heuristics) for inside edges at the next level.
+The deduction rules for HA? are given in Table 2
+and represented graphically in Figure 2. The IN rule
+(a) is the familiar deduction rule from standard A?:
+we can combine two adjacent inside edges using a
+binary rule to form a new inside edge. The new twist
+is that because heuristics (scores of outside edges
+from the previous level) are also computed on the
+fly, they may not be ready yet. Therefore, we cannot
+carry out this deduction until the required outside
+edge is present in the previous level?s chart. That
+is, fine inside deductions wait for the relevant coarse
+outside edges to be popped. While coarse outside
+edges contribute to priorities of refined inside scores
+(as heuristic values), they do not actually affect the
+inside scores of edges (again just like basic A?).
+In standard A?, we begin with all terminal edges
+on the agenda. However, in HA?, we cannot en-
+queue refined terminal edges until their outside
+scores are ready. The IN-BASE rule specifies the
+base case for a grammar Gt: we cannot begin un-
+til the outside score for the terminal symbol T is
+ready in the coarser grammar Gt?1. The initial queue
+contains only the most abstract level?s terminals,
+I(Ti0, i, i + 1). The entire search terminates when
+the inside edge I(Rm, 0, n), represting root deriva-
+tions in the target grammar, is dequeued.
+The deductions which assemble outside edges are
+less familiar from the standard A? algorithm. These
+deductions take larger outside edges and produce
+smaller sub-edges by linking up with inside edges,
+as shown in Figure 2(b). The OUT-BASE rule states
+that an outside pass for Gt can be started if the in-
+side score of the root symbol for that level Rt has
+been computed. The OUT-L and OUT-R rules are
+560
+the deduction rules for building outside edges. OUT-
+L states that, given an outside edge over the span
+[i, j] and some inside edge over [i, k], we may con-
+struct an outside edge over [k, j]. For outside edges,
+the score reflects an estimate of the Viterbi outside
+score.
+As in standard A?, inside edges are placed on the
+agenda with a priority equal to their path cost (inside
+score) and some estimate of their completion cost
+(outside score), now taken from the previous projec-
+tion rather than a black box. Specifically, the priority
+function takes the form p(e) = ?e + ?e?? , where e??
+is the outside version of e one level previous in the
+hierarchy.
+Outside edges also have priorities which combine
+path costs with a completion estimate, except that
+the roles of inside and outside scores are reversed:
+the path cost for an outside edge o is its (outside)
+score ?o, while the completion cost is some estimate
+of the inside score, which is the weight ?e of o?s
+complementary edge e = o?. Therefore, p(o) = ?o+
+?o?.
+Note that inside edges combine their inside score
+estimates with outside scores from a previous level
+(a lower bound), while outside edges combine their
+outside score estimates with inside scores from the
+same level, which are already available. Felzen-
+szwalb and McAllester (2007) show that these
+choices of priorities have the same guarantee as stan-
+dard A?: whenever an inside or outside edge comes
+off the queue, its path cost is optimal.
+2.3 Agenda-driven Coarse-to-Fine Parsing
+We can always replace the HA? priority function
+with an alternate priority function of our choosing.
+In doing so, we may lose the optimality guarantees
+of HA?, but we may also be able to achieve sig-
+nificant increases in performance. We do exactly
+this in order to put CTF pruning in an agenda-based
+framework. An agenda-based implementation al-
+lows us to put CTF on a level playing field with HA?,
+highlighting the effectiveness of the various parsing
+strategies and normalizing their implementations.
+First, we define coarse-to-fine pruning. In stan-
+dard CTF, we exhaustively parse in each projection
+level, but skip edges whose projections in the previ-
+ous level had sufficiently low scores. In particular,
+an edge e in the grammar Gt will be skipped entirely
+if its projection e? in Gt?1 had a low max marginal:
+?e?? + ?e? , that is, the score of the best tree contain-
+ing e? was low compared to the score best overall
+root derivation ?R? . Formally, we prune all e where
+?e?? + ?e? > ?R? + ? for some threshold ? .
+The priority function we use to implement CTF in
+our agenda-based framework is:
+p(e) = ?e
+p(o) =
+8
+><
+>:
+? ?o + ?o? >
+?Rt + ?t
+?o + ?o? otherwise
+Here, ?t ? 0 is a user-defined threshold for level
+t and ?Rt is the inside score of the root for gram-
+mar Gt. These priorities lead to uniform-cost explo-
+ration for inside edges and completely suppress out-
+side edges which would have been pruned in stan-
+dard CTF. Note that, by the construction of the IN
+rule, pruning an outside edge also prunes all inside
+edges in the next level that depend on it; we there-
+fore prune slightly earlier than in standard CTF. In
+any case, this priority function maintains the set of
+states explored in CKY-based CTF, but does not nec-
+essarily explore those states in the same order.
+3 Experiments
+3.1 Evaluation
+Our focus is parsing speed. Thus, we would ideally
+evaluate our algorithms in terms of CPU time. How-
+ever, this measure is problematic: CPU time is influ-
+enced by a variety of factors, including the architec-
+ture of the hardware, low-level implementation de-
+tails, and other running processes, all of which are
+hard to normalize.
+It is common to evaluate best-first parsers in terms
+of edges popped off the agenda. This measure is
+used by Charniak et al (1998) and Klein and Man-
+ning (2003b). However, when edges from grammars
+of varying size are processed on the same agenda,
+the number of successor edges per edge popped
+changes depending on what grammar the edge was
+constructed from. In particular, edges in more re-
+fined grammars are more expensive than edges in
+coarser grammars. Thus, our basic unit of measure-
+ment will be edges pushed onto the agenda. We
+found in our experiments that this was well corre-
+lated with CPU time.
+561
+UCS A*
+3
+HA*
+3
+HA*
+3-5
+HA*
+0-5
+CTF
+3
+CTF
+3-5
+CTF
+0-5
+Edges 
+pushed
+ (billio
+ns)
+0
+100
+200
+300
+400 424
+86.6
+78.2
+58.8 60.1
+8.83 7.12
+1.98
+Figure 4: Efficiency of several hierarchical parsing algo-
+rithms, across the test set. UCS and all A? variants are
+optimal and thus make no search errors. The CTF vari-
+ants all make search errors on about 2% of sentences.
+3.2 State-Split Grammars
+We first experimented with the grammars described
+in Petrov et al (2006). Starting with an X-Bar gram-
+mar, they iteratively refine each symbol in the gram-
+mar by adding latent substates via a split-merge pro-
+cedure. This training procedure creates a natural hi-
+erarchy of grammars, and is thus ideal for our pur-
+poses. We used the Berkeley Parser2 to train such
+grammars on sections 2-21 of the Penn Treebank
+(Marcus et al, 1993). We ran 6 split-merge cycles,
+producing a total of 7 grammars. These grammars
+range in size from 98 symbols and 8773 rules in the
+unsplit X-Bar grammar to 1139 symbols and 973696
+rules in the 6-split grammar. We then parsed all sen-
+tences of length ? 30 of section 23 of the Treebank
+with these grammars. Our ?target grammar? was in
+all cases the largest (most split) grammar. Our pars-
+ing objective was to find the Viterbi derivation (i.e.
+fully refined structure) in this grammar. Note that
+this differs from the objective used by Petrov and
+Klein (2007), who use a variational approximation
+to the most probable parse.
+3.2.1 A? versus HA?
+We first compare HA? with standard A?. In A? as
+presented by Klein and Manning (2003b), an aux-
+iliary grammar can be used, but we are restricted
+to only one and we must compute inside and out-
+side estimates for that grammar exhaustively. For
+our single auxiliary grammar, we chose the 3-split
+grammar; we found that this grammar provided the
+best overall speed.
+For HA?, we can include as many or as few
+auxiliary grammars from the hierarchy as desired.
+Ideally, we would find that each auxiliary gram-
+2http://berkeleyparser.googlecode.com
+mar increases performance. To check this, we per-
+formed experiments with all 6 auxiliary grammars
+(0-5 split); the largest 3 grammars (3-5 split); and
+only the 3-split grammar.
+Figure 4 shows the results of these experiments.
+As a baseline, we also compare with uniform cost
+search (UCS) (A? with h = 0 ). A? provides a
+speed-up of about a factor of 5 over this UCS base-
+line. Interestingly, HA? using only the 3-split gram-
+mar is faster than A? by about 10% despite using the
+same grammars. This is because, unlike A?, HA?
+need not exhaustively parse the 3-split grammar be-
+fore beginning to search in the target grammar.
+When we add the 4- and 5-split grammars to HA?,
+it increases performance by another 25%. However,
+we can also see an important failure case of HA?:
+using all 6 auxiliary grammars actually decreases
+performance compared to using only 3-5. This is be-
+cause HA? requires that auxiliary grammars are all
+relaxed projections of the target grammar. Since the
+weights of the rules in the smaller grammars are the
+minimum of a large set of rules in the target gram-
+mar, these grammars have costs that are so cheap
+that all edges in those grammars will be processed
+long before much progress is made in the refined,
+more expensive levels. The time spent parsing in
+the smaller grammars is thus entirely wasted. This
+is in sharp contrast to hierarchical CTF (see below)
+where adding levels is always beneficial.
+To quantify the effect of optimistically cheap
+costs in the coarsest projections, we can look at the
+degree to which the outside costs in auxiliary gram-
+mars underestimate the true outside cost in the target
+grammar (the ?slack?). In Figure 5, we plot the aver-
+age slack as a function of outside context size (num-
+ber of unincorporated words) for each of the auxil-
+iary grammars. The slack for large outside contexts
+gets very large for the smaller, coarser grammars. In
+Figure 6, we plot the number of edges pushed when
+bounding with each auxiliary grammar individually,
+against the average slack in that grammar. This plot
+shows that greater slack leads to more work, reflect-
+ing the theoretical property of A? that the work done
+can be exponential in the slack of the heuristic.
+3.2.2 HA? versus CTF
+In this section, we compare HA? to CTF, again
+using the grammars of Petrov et al (2006). It is
+562
+5 10 15 20
+020
+4060
+80100
+Number of words in outside context
+Average slack
+0 split
+1 split
+2 split
+3 split
+4 split
+5 split
+Figure 5: Average slack (difference between estimated
+outside cost and true outside cost) at each level of ab-
+straction as a function of the size of the outside context.
+The average is over edges in the Viterbi tree. The lower
+and upper dashed lines represent the slack of the exact
+and uniformly zero heuristics.
+5 10 15 20 25 30 35
+0500
+1500
+2500
+3500
+Slack for span length 10
+Edges 
+pushed
+ (million
+s)
+Figure 6: Edges pushed as a function of the average slack
+for spans of length 10 when parsing with each auxiliary
+grammar individually.
+important to note, however, that we do not use the
+same grammars when parsing with these two al-
+gorithms. While we use the same projections to
+coarsen the target grammar, the scores in the CTF
+case need not be lower bounds. Instead, we fol-
+low Petrov and Klein (2007) in taking coarse gram-
+mar weights which make the induced distribution
+over trees as close as possible to the target in KL-
+divergence. These grammars represent not a mini-
+mum projection, but more of an average.3
+The performance of CTF as compared to HA?
+is shown in Figure 4. CTF represents a significant
+speed up over HA?. The key advantage of CTF, as
+shown here, is that, where the work saved by us-
+3We tried using these average projections as heuristics in
+HA?, but doing so violates consistency, causes many search er-
+rors, and does not substantially speed up the search.
+5 10 15 20 25 30
+020
+4060
+80
+120
+Length of sentence
+Edges pu
+shed per
+ sentenc
+e (millio
+ns)
+HA* 3-5
+CTF 0-5
+Figure 7: Edges pushed as function of sentence length for
+HA? 3-5 and CTF 0-5.
+ing coarser projections falls off for HA?, the work
+saved with CTF increases with the addition of highly
+coarse grammars. Adding the 0- through 2-split
+grammars to CTF was responsible for a factor of 8
+speed-up with no additional search errors.
+Another important property of CTF is that it
+scales far better with sentence length than does HA?.
+Figure 7 shows a plot of edges pushed against sen-
+tence length. This is not surprising in light of the in-
+crease in slack that comes with parsing longer sen-
+tences. The more words in an outside context, the
+more slack there will generally be in the outside es-
+timate, which triggers the time explosion.
+Since we prune based on thresholds ?t in CTF,
+we can explore the relationship between the number
+of search errors made and the speed of the parser.
+While it is possible to tune thresholds for each gram-
+mar individually, we use a single threshold for sim-
+plicity. In Figure 8, we plot the performance of CTF
+using all 6 auxiliary grammars for various values of
+? . For a moderate number of search errors (< 5%),
+CTF parses more than 10 times faster than HA? and
+nearly 100 times faster than UCS. However, below a
+certain tolerance for search errors (< 1%) on these
+grammars, HA? is the faster option.4
+3.3 Lexicalized parsing experiments
+We also experimented with the lexicalized parsing
+model described in Klein and Manning (2003a).
+This lexicalized parsing model is constructed as the
+product of a dependency model and the unlexical-
+4In Petrov and Klein (2007), fewer search errors are re-
+ported; this difference is because their search objective is more
+closely aligned to the CTF pruning criterion.
+563
+0.65 0.70 0.75 0.80 0.85 0.90 0.95 1.00
+0.5
+2.05.0
+20.0
+100.0
+500.0
+Fraction of sentences without search errors
+Edges p
+ushed (b
+illions) HA* 3-5
+UCS
+Figure 8: Performance of CTF as a function of search er-
+rors for state split grammars. The dashed lines represent
+the time taken by UCS and HA? which make no search
+errors. As search accuracy increases, the time taken by
+CTF increases until it eventually becomes slower than
+HA?. The y-axis is a log scale.
+ized PCFG model in Klein and Manning (2003c).
+We constructed these grammars using the Stanford
+Parser.5 The PCFG has 19054 symbols 36078 rules.
+The combined (sentence-specific) grammar has n
+times as many symbols and 2n2 times as many rules,
+where n is the length of an input sentence. This
+model was trained on sections 2-20 of the Penn Tree-
+bank and tested on section 21.
+For these lexicalized grammars, we did not per-
+form experiments with UCS or more than one level
+of HA?. We used only the single PCFG projection
+used in Klein and Manning (2003a). This grammar
+differs from the state split grammars in that it factors
+into two separate projections, a dependency projec-
+tion and a PCFG. Klein and Manning (2003a) show
+that one can use the sum of outside scores computed
+in these two projections as a heuristic in the com-
+bined lexicalized grammar. The generalization of
+HA? to the factored case is straightforward but not
+effective. We therefore treated the dependency pro-
+jection as a black box and used only the PCFG pro-
+jection inside the HA? framework. When comput-
+ing A? outside estimates in the combined space, we
+use the sum of the two projections? outside scores as
+our completion costs. This is the same procedure as
+Klein and Manning (2003a). For CTF, we carry out
+a uniform cost search in the combined space where
+we have pruned items based on their max-marginals
+5http://nlp.stanford.edu/software/
+0.65 0.70 0.75 0.80 0.85 0.90 0.95 1.00
+3
+4
+5
+67
+8
+Fraction of sentences without search errors
+Edges p
+ushed (b
+illions)
+A*
+Figure 9: Performance of CTF for lexicalized parsing as
+a function of search errors. The dashed line represents
+the time taken by A?, which makes no search errors. The
+y-axis is a log scale.
+in the PCFG model only.
+In Figure 9, we examine the speed/accuracy trade
+off for the lexicalized grammar. The trend here is
+the reverse of the result for the state split grammars:
+HA? is always faster than posterior pruning, even for
+thresholds which produce many search errors. This
+is because the heuristic used in this model is actu-
+ally an extraordinarily tight bound ? on average, the
+slack even for spans of length 1 was less than 1% of
+the overall model cost.
+4 Conclusions
+We have a presented an empirical comparison of
+hierarchical A? search and coarse-to-fine pruning.
+While HA? does provide benefits over flat A?
+search, the extra levels of the hierarchy are dramat-
+ically more beneficial for CTF. This is because, in
+CTF, pruning choices cascade and even very coarse
+projections can prune many highly unlikely edges.
+However, in HA?, overly coarse projections become
+so loose as to not rule out anything of substance. In
+addition, we experimentally characterized the fail-
+ure cases of A? and CTF in a way which matches
+the formal results on A?: A? does vastly more work
+as heuristics loosen and only outperforms CTF when
+either near-optimality is desired or heuristics are ex-
+tremely tight.
+Acknowledgements
+This work was partially supported by an NSERC Post-Graduate
+Scholarship awarded to the first author.
+564
+References
+Sharon Caraballo and Eugene Charniak. 1996. Figures
+of Merit for Best-First Probabalistic Parsing. In Pro-
+ceedings of the Conference on Empirical Methods in
+Natural Language Processing.
+Eugene Charniak. 1997 Statistical Parsing with a
+Context-Free Grammar and Word Statistics. In Pro-
+ceedings of the Fourteenth National Conference on Ar-
+tificial Intelligence.
+Eugene Charniak, Sharon Goldwater and Mark Johnson.
+1998. Edge-based Best First Parsing. In Proceedings
+of the Sixth Workshop on Very Large Corpora.
+Eugene Charniak, Mark Johnson, Micha Elsner, Joseph
+Austerweil, David Ellis, Isaac Haxton, Catherine Hill,
+R. Shrivaths, Jeremy Moore, Michael Pozar, and
+Theresa Vu. 2006. Multilevel Coarse-to-fine PCFG
+Parsing. In Proceedings of the North American Chap-
+ter of the Association for Computational Linguistics.
+Michael Collins. 1997. Three Generative, Lexicalised
+Models for Statistical Parsing. In Proceedings of the
+Annual Meeting of the Association for Computational
+Linguistics.
+P. Felzenszwalb and D. McAllester. 2007. The General-
+ized A? Architecture. In Journal of Artificial Intelli-
+gence Research.
+Aria Haghighi, John DeNero, and Dan Klein. 2007. Ap-
+proximate Factoring for A? Search. In Proceedings
+of the North American Chapter of the Association for
+Computational Linguistics.
+Dan Klein and Chris Manning. 2002. Fast Exact In-
+ference with a Factored Model for Natural Language
+Processing. In Advances in Neural Information Pro-
+cessing Systems.
+Dan Klein and Chris Manning. 2003. Factored A?
+Search for Models over Sequences and Trees. In Pro-
+ceedings of the International Joint Conference on Ar-
+tificial Intelligence.
+Dan Klein and Chris Manning. 2003. A? Parsing: Fast
+Exact Viterbi Parse Selection. In Proceedings of the
+North American Chapter of the Association for Com-
+putational Linguistics
+Dan Klein and Chris Manning. 2003. Accurate Unlexi-
+calized Parsing. In Proceedings of the North American
+Chapter of the Association for Computational Linguis-
+tics.
+M. Marcus, B. Santorini, and M. Marcinkiewicz. 1993.
+Building a large annotated corpus of English: The
+Penn Treebank. In Computational Linguistics.
+Mark-Jan Nederhof. 2003. Weighted deductive parsing
+and Knuth?s algorithm. In Computational Linguistics,
+29(1):135?143.
+Slav Petrov, Leon Barrett, Romain Thibaux, and Dan
+Klein. 2003. Learning Accurate, Compact, and In-
+terpretable Tree Annotation. In Proceedings of the
+Annual Meeting of the Association for Computational
+Linguistics.
+Slav Petrov and Dan Klein. 2007. Improved Inference
+for Unlexicalized Parsing. In Proceedings of the North
+American Chapter of the Association for Computa-
+tional Linguistics.
+Stuart M. Shieber, Yves Schabes, and Fernando C. N.
+Pereira. 1995. Principles and implementation of de-
+ductive parsing. In Journal of Logic Programming,
+24:3?36.
+565

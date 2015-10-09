@@ -1,0 +1,897 @@
+Proceedings of the NAACL HLT Workshop on Integer Linear Programming for Natural Language Processing, pages 1?9,
+Boulder, Colorado, June 2009. c?2009 Association for Computational Linguistics
+Summarization with a Joint Model
+for Sentence Extraction and Compression
+Andre? F. T. Martins?? and Noah A. Smith?
+?School of Computer Science, Carnegie Mellon University, Pittsburgh, PA 15213, USA
+?Instituto de Telecomunicac?o?es, Instituto Superior Te?cnico, Lisboa, Portugal
+{afm,nasmith}@cs.cmu.edu
+Abstract
+Text summarization is one of the oldest prob-
+lems in natural language processing. Popu-
+lar approaches rely on extracting relevant sen-
+tences from the original documents. As a side
+effect, sentences that are too long but partly
+relevant are doomed to either not appear in the
+final summary, or prevent inclusion of other
+relevant sentences. Sentence compression is a
+recent framework that aims to select the short-
+est subsequence of words that yields an infor-
+mative and grammatical sentence. This work
+proposes a one-step approach for document
+summarization that jointly performs sentence
+extraction and compression by solving an in-
+teger linear program. We report favorable ex-
+perimental results on newswire data.
+1 Introduction
+Automatic text summarization dates back to the
+1950s and 1960s (Luhn, 1958; Baxendale, 1958; Ed-
+mundson, 1969). Today, the proliferation of digital
+information makes research on summarization tech-
+nologies more important than ever before. In the last
+two decades, machine learning techniques have been
+employed in extractive summarization of single
+documents (Kupiec et al, 1995; Aone et al, 1999;
+Osborne, 2002) and multiple documents (Radev and
+McKeown, 1998; Carbonell and Goldstein, 1998;
+Radev et al, 2000). Most of this work aims only
+to extract relevant sentences from the original doc-
+uments and present them as the summary; this sim-
+plification of the problem yields scalable solutions.
+Some attention has been devoted by the NLP
+community to the related problem of sentence com-
+pression (Knight and Marcu, 2000): given a long
+sentence, how to maximally compress it into a gram-
+matical sentence that still preserves all the rele-
+vant information? While sentence compression is
+a promising framework with applications, for exam-
+ple, in headline generation (Dorr et al, 2003; Jin,
+2003), little work has been done to include it as a
+module in document summarization systems. Most
+existing approaches (with some exceptions, like the
+vine-growth model of Daume?, 2006) use a two-stage
+architecture, either by first extracting a certain num-
+ber of salient sentences and then feeding them into
+a sentence compressor, or by first compressing all
+sentences and extracting later. However, regardless
+of which operation is performed first?compression
+or extraction?two-step ?pipeline? approaches may
+fail to find overall-optimal solutions; often the sum-
+maries are not better that the ones produced by ex-
+tractive summarization. On the other hand, a pilot
+study carried out by Lin (2003) suggests that sum-
+marization systems that perform sentence compres-
+sion have the potential to beat pure extractive sys-
+tems if they model cross-sentence effects.
+In this work, we address this issue by merging the
+tasks of sentence extraction and sentence compres-
+sion into a global optimization problem. A careful
+design of the objective function encourages ?sparse
+solutions,? i.e., solutions that involve only a small
+number of sentences whose compressions are to be
+included in the summary. Our contributions are:
+? We cast joint sentence extraction and compression
+as an integer linear program (ILP);
+? We provide a new formulation of sentence com-
+pression using dependency parsing information
+that only requires a linear number of variables,
+and combine it with a bigram model;
+? We show how the full model can be trained in a
+max-margin framework. Since a dataset of sum-
+maries comprised of extracted, compressed sen-
+tences is unavailable, we present a procedure that
+trains the compression and extraction models sep-
+arately and tunes a parameter to interpolate the
+1
+two models.
+The compression model and the full system are
+compared with state-of-the-art baselines in standard
+newswire datasets. This paper is organized as fol-
+lows: ?2?3 provide an overview of our two building
+blocks, sentence extraction and sentence compres-
+sion. ?4 describes our method to perform one-step
+sentence compression and extraction. ?5 shows ex-
+periments in newswire data. Finally, ?6 concludes
+the paper and suggests future work.
+2 Extractive summarization
+Extractive summarization builds a summary by ex-
+tracting a few informative sentences from the docu-
+ments. Let D , {t1, . . . , tM} be a set of sentences,
+contained in a single or in multiple related docu-
+ments.1 The goal is to extract the best sequence of
+sentences ?ti1 , . . . , tiK ? that summarizes D whose
+total length does not exceed a fixed budget of J
+words. We describe some well-known approaches
+that wil serve as our experimental baselines.
+Extract the leading sentences (Lead). For
+single-document summarization, the simplest
+method consists of greedily extracting the leading
+sentences while they fit into the summary. A sen-
+tence is skipped if its inclusion exceeds the budget,
+and the next is examined. This performs extremely
+well in newswire articles, due to the journalistic
+convention of summarizing the article first.
+Rank by relevance (Rel). This method ranks sen-
+tences by a relevance score, and then extracts the top
+ones that can fit into the summary. The score is typ-
+ically a linear function of feature values:
+scorerel(ti) , ?>f(ti) = ?Dd=1 ?dfd(ti), (1)
+Here, each fd(ti) is a feature extracted from sen-
+tence ti, and ?d is the corresponding weight. In our
+experiments, relevance features include (i) the recip-
+rocal position in the document, (ii) a binary feature
+indicating whether the sentence is the first one, and
+(iii) the 1-gram and 2-gram cosine similarity with
+the headline and with the full document.
+1For simplicity, we describe a unified framework for single
+and multi-document summarization, although they may require
+specialized strategies. Here we experiment only with single-
+document summarization and assume t1, ..., tM are ordered.
+Maximal Marginal Relevance (MMR). For long
+documents or large collections, it becomes impor-
+tant to penalize the redundancy among the extracted
+sentences. Carbonell and Goldstein (1998) proposed
+greedily adding sentences to the summary S to max-
+imize, at each step, a score of the form
+? ? scorerel(ti) ? (1 ? ?) ? scorered(ti, S), (2)
+where scorerel(ti) is as in Eq. 1 and scorered(ti, S)
+accounts for the redundancy between ti and the cur-
+rent summary S. In our experiments, redundancy is
+the 1-gram cosine similarity between the sentence
+ti and the current summary S. The trade-off be-
+tween relevance and redundancy is controlled by
+? ? [0, 1], which is tuned on development data.
+McDonald (2007) proposed a non-greedy variant
+of MMR that takes into account the redundancy be-
+tween each pair of candidate sentences. This is cast
+as a global optimization problem:
+S? = argmax
+S
+? ??ti?S scorerel(ti) ?
+(1 ? ?) ??ti,tj?S scorered(ti, tj), (3)
+where scorerel(ti) , ?>relfrel(ti), scorered(ti, tj) ,
+?>redfred(ti, tj), and frel(ti) and fred(ti, tj) are feature
+vectors with corresponding learned weight vectors
+?rel and ?red. He has shown how the relevance-based
+method and the MMR framework (in the non-greedy
+form of Eq. 3) can be cast as an ILP. By introducing
+indicator variables ??i?i=1,...,M and ??ij?i,j=1,...,M
+with the meanings
+?i =
+{ 1 if ti is to be extracted
+0 otherwise
+?ij =
+{ 1 if ti and tj are both to be extracted
+0 otherwise
+(4)
+one can reformulate Eq. 3 as an ILP with O(M2)
+variables and constraints:
+max
+??i?,??ij?
+? ??Mi=1 ?iscorerel(ti) ? (5)
+(1 ? ?) ??Mi=1
+?M
+j=1 ?ijscorered(ti, tj),
+subject to binary constraints ?i, ?ij ? {0, 1}, the
+length constraint
+?M
+i=1 ?iNi ? J (where Ni is the
+number of words of the ith sentence), and the fol-
+lowing ?agreement constraints? for i, j = 1, . . . ,M
+2
+(that impose the logical relation ?ij = ?i ? ?j):
+?ij ? ?i, ?ij ? ?j , ?ij ? ?i + ?j ? 1 (6)
+Let us provide a compact representation of the pro-
+gram in Eq. 5 that will be used later. Define our vec-
+tor of parameters as ? , [??rel,?(1??)?red]. Pack-
+ing all the feature vectors (one for each sentence, and
+one for each pair of sentences) into a matrix F,
+F ,
+[ Frel 0
+0 Fred
+]
+, (7)
+with Frel , [frel(ti)]1?i?M and Fred ,
+[fred(ti, tj)]1?i<j?M , and packing all the variables
+?i and ?ij into a vector ?, the program in Eq. 5 can
+be compactly written as
+max
+?
+?>F?, (8)
+subject to binary and linear constraints on ?. This
+formulation requires O(M2) variables and con-
+straints. If we do not penalize sentence redundancy,
+the redundancy term may be dropped; in this simpler
+case, F = Frel, the vector ? only contains the vari-
+ables ??i?, and the program in Eq. 8 only requires
+O(M) variables and constraints. Our method (to be
+presented in ?4) will build on this latter formulation.
+3 Sentence Compression
+Despite its simplicity, extractive summarization has
+a few shortcomings: for example, if the original sen-
+tences are too long or embed several clauses, there
+is no way of preventing lengthy sentences from ap-
+pearing in the final summary. The sentence com-
+pression framework (Knight and Marcu, 2000) aims
+to select the best subsequence of words that still
+yields a short, informative and grammatical sen-
+tence. Such a sentence compressor is given a sen-
+tence t , ?w1, . . . , wN ? as input and outputs a sub-
+sequence of length L, c , ?wj1 , . . . , wjL?, with
+1 ? j1 < . . . < jL ? N . We may represent
+this output as a binary vector s of length N , where
+sj = 1 iff word wj is included in the compression.
+Note that there are O(2N ) possible subsequences.
+3.1 Related Work
+Past approaches to sentence compression include
+a noisy channel formulation (Knight and Marcu,
+2000; Daume? and Marcu, 2002), heuristic methods
+that parse the sentence and then trim constituents ac-
+cording to linguistic criteria (Dorr et al, 2003; Zajic
+et al, 2006), a pure discriminative model (McDon-
+ald, 2006), and an ILP formulation (Clarke and La-
+pata, 2008). We next give an overview of the two
+latter approaches.
+McDonald (2006) uses the outputs of two parsers
+(a phrase-based and a dependency parser) as fea-
+tures in a discriminative model that decomposes
+over pairs of consecutive words. Formally, given a
+sentence t = ?w1, . . . , wN ?, the score of a compres-
+sion c = ?wj1 , . . . , wjL? decomposes as:
+score(c; t) = ?Ll=2 ?>f(t, jl?1, jl) (9)
+where f(t, jl?1, jl) are feature vectors that depend
+on the original sentence t and consecutive positions
+jl?1 and jl, and ? is a learned weight vector. The
+factorization in Eq. 9 allows exact decoding with dy-
+namic programming.
+Clarke and Lapata (2008) cast the problem as an
+ILP. In their formulation, Eq. 9 may be expressed as:
+score(c; t) =
+N?
+i=1
+?i?>f(t, 0, i) +
+N?
+i=1
+?i?>f(t, i, n + 1) +
+N?1?
+i=1
+N?
+j=i+1
+?ij?>f(t, i, j), (10)
+where ?i, ?i, and ?ij are additional binary variables
+with the following meanings:
+? ?i = 1 iff word wi starts the compression;
+? ?i = 1 iff word wi ends the compression;
+? ?ij = 1 iff words wi and wj appear consecutively
+in the compression;
+and subject to the following agreement constraints:
+?N
+i=1 ?i = 1?N
+i=1 ?i = 1
+sj = ?j +?j?1i=1 ?ij
+si = ?i +?Nj=i+1 ?ij . (11)
+3
+This framework also allows the inclusion of con-
+straints to enforce grammaticality.
+To compress a sentence, one needs to maximize
+the score in Eq. 10 subject to the constraints in
+Eq. 11. Representing the variables through
+? , ??1, . . . , ?N , ?1, . . . , ?N , ?11, . . . , ?NN ?
+(12)
+and packing the feature vectors into a matrix F, we
+obtain the ILP
+max
+s,?
+?>F? (13)
+subject to linear and integer constraints on the vari-
+ables s and ?. This particular formulation requires
+O(N2) variables and constraints.
+3.2 Proposed Method
+We propose an alternative model for sentence com-
+pression that may be formulated as an ILP, as in
+Eq. 13, but with only O(N) variables and con-
+straints. This formulation is based on the output of a
+dependency parser.
+Directed arcs in a dependency tree link pairs of
+words, namely a head to its modifier. A dependency
+parse tree is characterized by a set of labeled arcs
+of the form (head, modifier, label); see Fig.1 for an
+example. Given a sentence t = ?w1, . . . , wN ?, we
+write i = pi(j) to denote that the ith word is the
+head (the ?parent?) of the jth word; if j is the root,
+we write pi(j) = 0. Let s be the binary vector de-
+Figure 1: A projective dependency graph.
+Figure 2: Non-projective dependency graph.
+those that assume each dependency decision is in-
+dependent modulo the global structural constraint
+that dependency graphs must be trees. Such mod-
+els are commonly referred to as edge-factored since
+their parameters factor relative to individual edges
+of the graph (Paskin, 2001; McDonald et al,
+2005a). Edge-factored models have many computa-
+tional benefits, most notably that inference for non-
+projective dependency graphs can be achieved in
+polynomial time (McDonald et al, 2005b). The pri-
+mary problem in treating each dependency as in-
+dependent is that it is not a realistic assumption.
+Non-local information, such as arity (or valency)
+and neighbouring dependencies, can be crucial to
+obtaining high parsing accuracies (Klein and Man-
+ning, 2002; McDonald and Pereira, 2006). How-
+ever, in the data-driven parsing setting this can be
+partially adverted by incorporating rich feature rep-
+resentations over the input (McDonald et al, 2005a).
+The goal of this work is to further our current
+understanding of the computational nature of non-
+projective parsing algorithms for both learning and
+inference within the data-driven setting. We start by
+investigating and extending the edge-factored model
+of McDonald et al (2005b). In particular, we ap-
+peal to the Matrix Tree Theorem for multi-digraphs
+to design polynomial-time algorithms for calculat-
+ing both the partition function and edge expecta-
+tions over all possible dependency graphs for a given
+sentence. To motivate these algorithms, we show
+that they can be used in many important learning
+and inference problems including min-risk decod-
+ing, training globally normalized log-linear mod-
+els, syntactic language modeling, and unsupervised
+learning via the EM algorithm ? none of which have
+previously been known to have exact non-projective
+implementations.
+We then switch focus to models that account for
+non-local information, in particular arity and neigh-
+bouring parse decisions. For systems that model ar-
+ity constraints we give a reduction from the Hamilto-
+nian graph problem suggesting that the parsing prob-
+lem is intractable in this case. For neighbouring
+parse decisions, we extend the work of McDonald
+and Pereira (2006) and show that modeling vertical
+neighbourhoods makes parsing intractable in addi-
+tion to modeling horizontal neighbourhoods. A con-
+sequence of these results is that it is unlikely that
+exact non-projective dependency parsing is tractable
+for any model assumptions weaker than those made
+by the edge-factored models.
+1.1 Related Work
+There has been extensive work on data-driven de-
+pendency parsing for both projective parsing (Eis-
+ner, 1996; Paskin, 2001; Yamada and Matsumoto,
+2003; Nivre and Scholz, 2004; McDonald et al,
+2005a) and non-projective parsing systems (Nivre
+and Nilsson, 2005; Hall and No?va?k, 2005; McDon-
+ald et al, 2005b). These approaches can often be
+classified into two broad categories. In the first cat-
+egory are those methods that employ approximate
+inference, typically through the use of linear time
+shift-reduce parsing algorithms (Yamada and Mat-
+sumoto, 2003; Nivre and Scholz, 2004; Nivre and
+Nilsson, 2005). In the second category are those
+that employ exhaustive inference algorithms, usu-
+ally by making strong independence assumptions, as
+is the case for edge-factored models (Paskin, 2001;
+McDonald et al, 2005a; McDonald et al, 2005b).
+Recently there have also been proposals for exhaus-
+tive methods that weaken the edge-factored assump-
+tion, including both approximate methods (McDon-
+ald and Pereira, 2006) and exact methods through in-
+teger linear programming (Riedel and Clarke, 2006)
+or branch-and-bound algorithms (Hirakawa, 2006).
+For grammar based models there has been limited
+work on empirical systems for non-projective pars-
+ing systems, notable exceptions include the work
+of Wang and Harper (2004). Theoretical studies of
+note include the work of Neuhaus and Bo?ker (1997)
+showing that the recognition problem for a mini-
+$
+Figure 1: A dependency parse for an English sentence;
+example from McDonald and Satta (2007).
+scribing a possible compression c for the sentence
+t. For each word j, we consider four possible cases,
+accounting for the inclusion or not of j and pi(j) in
+the compression. We introduce (mutually exclusive)
+binary variables ?j11, ?j10, ?j01, and ?j00 to indicate
+eac of t ese cases, i.e., for a, b ? {0, 1},
+?jab , sj = a ? spi(j) = b. (14)
+Consider feature vectors f11(t, j), f10(t, j), f01(t, j),
+and f00(t, j), that look at the surface sentence and at
+the status of the word j and its head pi(j); these fea-
+tures have corresponding weight vectors ?11, ?10,
+?01, and ?00. The score of c is written as:
+score(c; t) = ?Nj=1
+?
+a,b?{0,1} ?jab?>abfab(t, j)
+= ?a,b?{0,1} ?>abFab?ab
+= ?>F?, (15)
+where Fab , [fab(t, 1), . . . , fab(t,N)], ?ab ,
+(?jab)j=1,...,N , ? , (?11,?10,?01,?00), and F ,
+Diag(F11,F10,F01,F00) (a block-diagonal matrix).
+We have reached in Eq. 15 an ILP isomorphic to
+the one in Eq. 13, but only with O(N) variables.
+There are some agreement constraints between the
+variables ? and s that reflect the logical relations in
+Eq. 14; these may be written as linear inequalities
+(cf. Eq. 6), yielding O(N) constraints.
+Given this proposal and ?3.1, it is also straight-
+forward to extend this model to include bigram fea-
+tures as in Eq. 10; the combination of dependency
+relation features and bigram features yields a model
+that is more powerful than both models in Eq. 15 and
+Eq. 10. Such a model is expressible as an ILP with
+O(N2) variables and constraints, making use of the
+variables s, ?, ?, ? and ?. In ?5, we compare the
+performance of this model (called ?Bigram?) and the
+model in Eq. 15 (called ?NoBigram?).2
+4 Joint Compression and Extraction
+We ext describe our joint mod l for sentenc com-
+pression and extracti n. Let D , {t1, . . . , tM} be
+a set of sentences as in ?2, each expressed as a se-
+quence of words, ti , ?wi1, . . . , wiNi?. Following
+?3, we represent a compression of ti as a binary vec-
+tor si = ?si1, . . . , siNi?, where sij = 1 iff word wij
+2It should be noted that more efficient decoders are possible
+that do not require solving an ILP. In particular, inference in the
+NoBigram variant can performed in polynomial time with dy-
+namic programming algorithms that propagate messages along
+the dependency parse tree; for the Bigram variant, dynamic pro-
+gramming can till be employed with some additional storage.
+Our ILP formulation, however, is more suited to the final goal
+of performing document summarization (of which our sentence
+compression model will be a component); furthermore, it also
+allows the straightforward inclusion of global linguistic con-
+straints, which, as shown by Clarke and Lapata (2008), can
+greatly improve th grammaticality of the compressions.
+4
+is included in the compression. Now, define a sum-
+mary of D as a set of sentences obtained by extract-
+ing and compressing sentences from D. More pre-
+cisely, let ?1, . . . , ?M be binary variables, one for
+each sentence ti in D; define ?i = 1 iff a compres-
+sion of sentence ti is used in the summary. A sum-
+mary of D is then represented by the binary vari-
+ables ??1, . . . , ?M , s1, . . . , sM ?. Notice that these
+variables are redundant:
+?i = 0 ? ?j ? {1, . . . , Ni} sij = 0, (16)
+i.e., an empty compression means that the sentence
+is not to be extracted. In the sequel, it will become
+clear why this redundancy is convenient.
+Most approaches up to now are concerned with ei-
+ther extraction or compression, not both at the same
+time. We will combine the extraction scores in Eq. 8
+and the compression scores in Eq. 15 to obtain a sin-
+gle, global optimization problem;3 we rename the
+extraction features and parameters to Fe and ?e and
+the compression features and parameters to Fc and
+?c:
+max
+?,?,s
+?Te Fe?+
+?M
+i=1 ?Tc Fci?i, (17)
+subject to agreement constraints on the variables ?i
+and si (see Eqs. 11 and 14), and new agreement con-
+straints on the variables ? and s1, . . . , sM to enforce
+the relation in Eq. 16:
+sij ? ?i, ?i = 1, . . . ,M,?j = 1, . . . , Ni
+?i ?
+?Ni
+j=1 sij , ?i = 1, . . . ,M
+(18)
+The constraint that the length of the summary cannot
+exceed J words is encoded as:
+?M
+i=1
+?Ni
+j=1 sij ? J. (19)
+All variables are further restricted to be binary. We
+also want to avoid picking just a few words from
+many sentences, which typically leads to ungram-
+matical summaries. Hence it is desirable to obtain
+?sparse? solutions with only a few sentences ex-
+tracted and compressed (and most components of ?
+are zero) To do so, we add the constraint
+?Ni
+j=1 sij ? ?i?Ni, i = 1, . . . ,M, (20)
+3In what follows, we use the formulation in Eq. 8 with-
+out the redundancy terms; however these can be included in
+a straightforward way, naturally increasing the number of vari-
+ables/constraints.
+which states, for each sentence ti, that ti should be
+ignored or have at least ?Ni words extracted. We fix
+? = 0.8, enforcing compression rates below 80%.4
+To learn the model parameters ? = ??e,?c?, we
+can use a max-margin discriminative learning al-
+gorithm like MIRA (Crammer and Singer, 2003),
+which is quite effective and scalable. However, there
+is not (to our knowledge) a single dataset of ex-
+tracted and compressed sentences. Instead, as will
+be described in Sec. 5.1, there are separate datasets
+of extracted sentences, and datasets of compressed
+sentences. Therefore, instead of globally learning
+the model parameters, ? = ??e,?c?, we propose the
+following strategy to learn them separately:
+? Learn ??e using a corpus of extracted sentences,
+? Learn ??c using a corpus of compressed sentences,
+? Tune ? so that ? = ???e, ???c? has good perfor-
+mance on development data. (This is necessary
+since each set of weights is learned up to scaling.)
+5 Experiments
+5.1 Datasets, Evaluation and Environment
+For our experiments, two datasets were used:
+The DUC 2002 dataset. This is a collection of
+newswire articles, comprised of 59 document clus-
+ters. Each document within the collections (out of
+a total of 567 documents) has one or two manually
+created abstracts with approximately 100 words.5
+Clarke?s dataset for sentence compression. This
+is the dataset used by Clarke and Lapata (2008). It
+contains manually created compressions of 82 news-
+paper articles (1,433 sentences) from the British Na-
+tional Corpus and the American News Text corpus.6
+To evaluate the sentence compressor alone, we
+measured the compression rate and the precision,
+recall, and F1-measure (both macro and micro-
+averaged) with respect to the ?gold? compressed
+4There are alternative ways to achieve ?sparseness,? either
+in a soft way, by adding a term ??Pi ?i to the objective, or
+using a different hard constraint, like
+P
+i ?i ? K, to limit the
+number of sentences from which to pick words.
+5http://duc.nist.gov
+6http://homepages.inf.ed.ac.uk/s0460084/data
+5
+Compression Micro-Av. Macro-Av.
+Ratio P R F1 P R F1
+HedgeTrimmer 57.64% 0.7099 0.5925 0.6459 0.7195 0.6547 0.6367
+McDonald (2006) 71.40% 0.7444 0.7697 0.7568 0.7711 0.7852 0.7696
+NoBigram 71.20% 0.7399 0.7626 0.7510 0.7645 0.7730 0.7604
+Bigram 71.35% 0.7472 0.7720 0.7594 0.7737 0.7848 0.7710
+Table 1: Results for sentence compression in the Clarke?s test dataset (441 sentences) for our implementation of the
+baseline systems (HedgeTrimmer and the system described in McDonald, 2006), and the two variants of our model,
+NoBigram and Bigram. The compression ratio associated with the reference compressed sentences in this dataset is
+69.06%. In the rightmost column, the statistically indistinguishable best results are emboldened, based on a paired
+t-test applied to the sequence of F1 measures (p < 0.01).
+sentences, calculated on unigrams.7
+To evaluate the full system, we used Rouge-N
+(Lin and Hovy, 2002), a popular n-gram recall-
+based automatic evaluation measure. This score
+compares the summary produced by a system with
+one or more valid reference summaries.
+All our experiments were conducted on a PC with
+a Intel dual-core processor with 2.66 GHz and 2 Gb
+RAM memory. We used ILOG CPLEX, a commer-
+cial integer programming solver. The interface with
+CPLEX was coded in Java.
+5.2 Sentence Compression
+We split Clarke?s dataset into two partitions, one
+used for training (1,188 sentences) and the other for
+testing (441 sentences). This dataset includes one
+manual compression for each sentence, that we use
+as reference for evaluation purposes. Compression
+ratio, i.e., the fraction of words included in the com-
+pressed sentences, is 69.32% (micro-averaged over
+the training partition).
+For comparison, two baselines were imple-
+mented: a simple compressor based on Hedge Trim-
+mer, the headline generation system of Dorr et al
+(2003) and Zajic et al (2006),8 and the discrimina-
+7Notice that this evaluation score is not able to properly cap-
+ture the grammaticality of the compression; this is a known is-
+sue that typically is addressed by requiring human judgments.
+8Hedge Trimmer applies a deterministic compression proce-
+dure whose first step is to identify the lowest leftmost S node in
+the parse tree that contains a NP and a VP; this node is taken as
+the root of the compressed sentence (i.e., all words that are not
+spanned by this node are discarded). Further steps described
+by Dorr et al (2003) include removal of low content units, and
+an ?iterative shortening? loop that keeps removing constituents
+until a desired compression ratio is achieved. The best results
+were obtained without iterative shortening, which is explained
+by the fact that the selection of the lowest leftmost S node (first
+tive model described by McDonald (2006), which
+captures ?soft syntactic evidence? (we reproduced
+the same set of features). Both systems require
+a phrase-structure parser; we used Collins? parser
+(Collins, 1999);9 the latter system also derives fea-
+tures from a dependency parser; we used the MST-
+Parser (McDonald et al, 2005).10
+We implemented the two variants of our compres-
+sor described in ?3.2.
+NoBigram. This variant factors the compression
+score as a sum over individual scores, each depend-
+ing on the inclusion or not of each word and its head
+in the compression (see Eq. 15). An upper bound of
+70% was placed on the compression ratio. As stated
+in ?3.2, inference amounts to solving an ILP with
+O(N) variables and constraints, N being the sen-
+tence length. We also used MSTParser to obtain the
+dependency parse trees.
+Bigram. This variant includes an extra term stand-
+ing for a bigram score, which factors as a sum over
+pairs of consecutive words. As in McDonald (2006),
+we include features that depend on the ?in-between?
+words in the original sentence that are to be omitted
+in the compression.11 As stated in ?3.2, inference
+through this model can be done by solving an ILP
+with O(N2) variables and constraints.
+step of the algorithm) already provides significant compression,
+as illustrated in Table 1.
+9http://people.csail.mit.edu/mcollins/code.
+html
+10http://sourceforge.net/projects/mstparser
+11The major difference between this variant and model of
+McDonald (2006) is that the latter employs ?soft syntactic ev-
+idence? as input features, while we make the dependency rela-
+tions part of the output features. All the non-syntactic features
+are the same. Apart from this, notice that our variant does not
+employ a phrase-structure parser.
+6
+For both variants, we used MSTParser to obtain
+the dependency parse trees. The model parameters
+are learned in a pure discriminative way through a
+max-margin approach. We used the 1-best MIRA
+algorithm (Crammer and Singer, 2003; McDonald
+et al, 2005) for training; this is a fast online algo-
+rithm that requires solving the inference problem at
+each step. Although inference amounts to solving
+an ILP, which in the worst case scales exponentially
+with the size of the sentence, training the model is
+in practice very fast for the NoBigram model (a few
+minutes in the environment described in ?5.1) and
+fast enough for the Bigram model (a couple of hours
+using the same equipment). This is explained by the
+fact that sentences don?t usually exceed a few tens
+of words, and because of the structure of the ILPs,
+whose constraint matrices are very sparse.
+Table 1 depicts the micro- and macro-averaged
+precision, recall and F1-measure. We can see that
+both variants outperform the Hedge Trimmer base-
+line by a great margin, and are in line with the sys-
+tem of McDonald (2006); however, none of our vari-
+ants employ a phrase-structure parser. We also ob-
+serve that our simpler NoBigram variant, which uses
+a linear-sized ILP, achieves results similar to these
+two systems.
+5.3 Joint Compression and Extraction
+For the summarization task, we split the DUC 2002
+dataset into a training partition (427 documents) and
+a testing partition (140 documents). The training
+partition was further split into a training and a de-
+velopment set. We evaluated the performance of
+Lead, Rel, and MMR as baselines (all are described
+in ?2). Weights for Rel were learned via the SVM-
+Rank algorithm;12 to create a gold-standard ranking,
+we sorted the sentences by Rouge-2 score13 (with re-
+spect to the human created summaries). We include
+a Pipeline baseline as well, which ranks all sentences
+by relevance, then includes their compressions (us-
+ing the Bigram variant) while they fit into the sum-
+mary.
+We tested two variants of our joint model, com-
+bining the Rel extraction model with (i) the NoBi-
+12SVMRank is implemented in the SVMlight toolkit
+(Joachims, 1999), http://svmlight.joachims.org.
+13A similar system was implemented that optimizes the
+Rouge-1 score instead, but it led to inferior performance.
+Rouge-1 Rouge-2
+Lead 0.384 ? 0.080 0.177 ? 0.083
+Rel 0.389 ? 0.074 0.178 ? 0.080
+MMR ? = 0.25 0.392 ? 0.071 0.178 ? 0.077
+Pipeline 0.380 ? 0.073 0.173 ? 0.073
+Rel + NoBigr ? = 1.5 0.403 ? 0.080 0.180 ? 0.082
+Rel + Bigr ? = 4.0 0.403 ? 0.076 0.180 ? 0.076
+Table 2: Results for sentence extraction in the DUC2002
+dataset (140 documents). Bold indicates the best results
+with statistical significance, according to a paired t-test
+(p < 0.01); Rouge-2 scores of all systems except Pipeline
+are indistinguishable according to the same test, with p >
+0.05.
+gram compression model (?3.2) and (ii) the Bigram
+variant. Each variant was trained with the proce-
+dure described in ?4. To keep tractability, the in-
+ference ILP problem was relaxed (the binary con-
+straints were relaxed to unit interval constraints) and
+non-integer solution values were rounded to produce
+a valid summary, both for training and testing.14
+Whenever this procedure yielded a summary longer
+than 100 words, we truncated it to fit the word limit.
+Table 2 depicts the results of each of the above
+systems in terms of Rouge-1 and Rouge-2 scores.
+We can see that both variants of our system are able
+to achieve the best results in terms of Rouge-1 and
+Rouge-2 scores. The suboptimality of extracting and
+compressing in separate stages is clear from the ta-
+ble, as Pipeline performs worse than the pure ex-
+tractive systems. We also note that the configuration
+Rel + Bigram is not able to outperform Rel + No-
+Bigram, despite being computationally more expen-
+sive (about 25 minutes to process the whole test set,
+against the 7 minutes taken by the Rel + NoBigram
+variant). Fig. 2 exemplifies the summaries produced
+by our system. We see that both variants were able
+to include new pieces of information in the summary
+without sacrificing grammaticality.
+These results suggest that our system, being capa-
+ble of performing joint sentence extraction and com-
+pression to summarize a document, offers a power-
+ful alternative to pure extractive systems. Finally, we
+note that no labeled datasets currently exist on which
+our full model could have been trained with super-
+vision; therefore, although inference is performed
+14See Martins et al (2009) for a study concerning the impact
+of LP relaxations in the learning problem.
+7
+MMR baseline:
+Australian novelist Peter Carey was awarded the coveted Booker
+Prize for fiction Tuesday night for his love story, ?Oscar and Lu-
+cinda?.
+A panel of five judges unanimously announced the award of the
+$26,250 prize after an 80-minute deliberation during a banquet at
+London?s ancient Guildhall.
+Carey, who lives in Sydney with his wife and son, said in a brief
+speech that like the other five finalists he had been asked to attend
+with a short speech in his pocket in case he won.
+Rel + NoBigram:
+Australian novelist Peter Carey was awarded the coveted Booker
+Prize for fiction Tuesday night for his love story, ?Oscar and Lu-
+cinda?.
+A panel of five judges unanimously announced the award of the
+$26,250 prize after an 80-minute deliberation during a banquet at
+London?s ancient Guildhall.
+The judges made their selection from 102 books published in Britain
+in the past 12 months and which they read in their homes.
+Carey, who lives in Sydney with his wife and son, said in a brief
+speech that like the other five finalists he had been asked to attend
+with a short speech in his pocket in case he won.
+Rel + Bigram:
+Australian novelist Peter Carey was awarded the coveted Booker
+Prize for fiction Tuesday night for his love story, ?Oscar and Lu-
+cinda?.
+A panel of five judges unanimously announced the award of the
+$26,250 prize after an 80-minute deliberation during a banquet at
+London?s ancient Guildhall.
+He was unsuccessful in the prize competition in 1985 when his
+novel, ?Illywhacker,? was among the final six.
+Carey called the award a ?great honor? and he thanked the prize
+sponsors for ?provoking so much passionate discussion about liter-
+ature perhaps there will be more tomorrow?.
+Carey was the only non-Briton in the final six.
+Figure 2: Summaries produced by the strongest base-
+line (MMR) and the two variants of our system. Deleted
+words are marked as such.
+jointly, our training procedure had to learn sepa-
+rately the extraction and the compression models,
+and to tune a scalar parameter to trade off the two
+models. We conjecture that a better model could
+have been learned if a labeled dataset with extracted
+compressed sentences existed.
+6 Conclusion and Future Work
+We have presented a summarization system that per-
+forms sentence extraction and compression in a sin-
+gle step, by casting the problem as an ILP. The sum-
+mary optimizes an objective function that includes
+both extraction and compression scores. Our model
+encourages ?sparse? summaries that involve only a
+few sentences. Experiments in newswire data sug-
+gest that our system is a valid alternative to exist-
+ing extraction-based systems. However, it is worth
+noting that further evaluation (e.g., human judg-
+ments) needs to be carried out to assert the quality
+of our summaries, e.g., their grammaticality, some-
+thing that the Rouge scores cannot fully capture.
+Future work will address the possibility of in-
+cluding linguistic features and constraints to further
+improve the grammaticality of the produced sum-
+maries.
+Another straightforward extension is the inclusion
+of a redundancy term and a query relevance term
+in the objective function. For redundancy, a simi-
+lar idea of that of McDonald (2007) can be applied,
+yielding a ILP with O(M2 + N) variables and con-
+straints (M being the number of sentences and N the
+total number of words). However, such model will
+take into account the redundancy among the origi-
+nal sentences and not their compressions; to model
+the redundancy accross compressions, a possibil-
+ity is to consider a linear redundancy score (similar
+to cosine similarity, but without the normalization),
+which would result in an ILP with O(N +?i P 2i )
+variables and constraints, where Pi ? M is the num-
+ber of sentences in which word wi occurs; this is no
+worse than O(M2N).
+We also intend to model discourse, which, as
+shown by Daume? and Marcu (2002), plays an im-
+portant role in document summarization. Another
+future direction is to extend our ILP formulations
+to more sophisticated models that go beyond word
+deletion, like the ones proposed by Cohn and Lapata
+(2008).
+Acknowledgments
+The authors thank the anonymous reviewers for helpful
+comments, Yiming Yang for interesting discussions, and
+Dipanjan Das and Sourish Chaudhuri for providing their
+code. This research was supported by a grant from FCT
+through the CMU-Portugal Program and the Informa-
+tion and Communications Technologies Institute (ICTI)
+at CMU, and also by Priberam Informa?tica.
+8
+References
+C. Aone, M. E. Okurowski, J. Gorlinsky, and B. Larsen.
+1999. A trainable summarizer with knowledge ac-
+quired from robust nlp techniques. In Advances in Au-
+tomatic Text Summarization. MIT Press.
+P. B. Baxendale. 1958. Machine-made index for tech-
+nical literature?an experiment. IBM Journal of Re-
+search Development, 2(4):354?361.
+J. Carbonell and J. Goldstein. 1998. The use of MMR,
+diversity-based reranking for reordering documents
+and producing summaries. In Proc. of SIGIR.
+J. Clarke and M. Lapata. 2008. Global inference for
+sentence compression an integer linear programming
+approach. JAIR, 31:399?429.
+T. Cohn and M. Lapata. 2008. Sentence compression
+beyond word deletion. In Proc. COLING.
+M. Collins. 1999. Head-Driven Statistical Models for
+Natural Language Parsing. Ph.D. thesis, University
+of Pennsylvania.
+K. Crammer and Yoram Singer. 2003. Ultraconservative
+online algorithms for multiclass problems. J. Mach.
+Learn. Res., 3:951?991.
+H. Daume? and D. Marcu. 2002. A noisy-channel model
+for document compression. In Proc. of ACL.
+H. Daume?. 2006. Practical Structured Learning Tech-
+niques for Natural Language Processing. Ph.D. thesis,
+University of Southern California.
+B. Dorr, D. Zajic, and R. Schwartz. 2003. Hedge trim-
+mer: A parse-and-trim approach to headline gener-
+ation. In Proc. of HLT-NAACL Text Summarization
+Workshop and DUC.
+H. P. Edmundson. 1969. New methods in automatic ex-
+tracting. Journal of the ACM, 16(2):264?285.
+R. Jin. 2003. Statistical Approaches Toward Title Gener-
+ation. Ph.D. thesis, Carnegie Mellon University.
+T. Joachims. 1999. Making large-scale SVM learning
+practical. In Advances in Kernel Methods - Support
+Vector Learning. MIT Press.
+K. Knight and D. Marcu. 2000. Statistics-based
+summarization?step one: Sentence compression. In
+Proc. of AAAI/IAAI.
+J. Kupiec, J. Pedersen, and F. Chen. 1995. A trainable
+document summarizer. In Proc. of SIGIR.
+C.-Y. Lin and E. Hovy. 2002. Manual and automatic
+evaluation of summaries. In Proc. of the ACL Work-
+shop on Automatic Summarization.
+C.-Y. Lin. 2003. Improving summarization performance
+by sentence compression-a pilot study. In Proc. of the
+Int. Workshop on Inf. Ret. with Asian Languages.
+H. P. Luhn. 1958. The automatic creation of litera-
+ture abstracts. IBM Journal of Research Development,
+2(2):159?165.
+A. F. T. Martins, N. A. Smith, and E. P. Xing. 2009.
+Polyhedral outer approximations with application to
+natural language parsing. In Proc. of ICML.
+R. T. McDonald, F. Pereira, K. Ribarov, and J. Hajic?.
+2005. Non-projective dependency parsing using span-
+ning tree algorithms. In Proc. of HLT-EMNLP.
+R. McDonald. 2006. Discriminative sentence compres-
+sion with soft syntactic constraints. In Proc. of EACL.
+R. McDonald. 2007. A study of global inference algo-
+rithms in multi-document summarization. In Proc. of
+ECIR.
+M. Osborne. 2002. Using maximum entropy for sen-
+tence extraction. In Proc. of the ACL Workshop on
+Automatic Summarization.
+D. R. Radev and K. McKeown. 1998. Generating natural
+language summaries from multiple on-line sources.
+Computational Linguistics, 24(3):469?500.
+D. R. Radev, H. Jing, and M. Budzikowska. 2000.
+Centroid-based summarization of multiple documents:
+sentence extraction, utility-based evaluation, and user
+studies. In Proc. of the NAACL-ANLP Workshop on
+Automatic Summarization.
+D. Zajic, B. Dorr, J. Lin, and R. Schwartz. 2006.
+Sentence compression as a component of a multi-
+document summarization system. In Proc. of the ACL
+DUC Workshop.
+9

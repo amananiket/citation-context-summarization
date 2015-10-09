@@ -1,0 +1,388 @@
+Hierarchical Recognition of Propositional Arguments with Perceptrons
+Xavier Carreras and Llu??s Ma`rquez
+TALP Research Centre
+Technical University of Catalonia (UPC)
+{carreras,lluism}@lsi.upc.es
+Grzegorz Chrupa?a
+GRIAL Research Group
+University of Barcelona (UB)
+grzegorz@pithekos.net
+1 Introduction
+We describe a system for the CoNLL-2004 Shared Task
+on Semantic Role Labeling (Carreras and Ma`rquez,
+2004a). The system implements a two-layer learning ar-
+chitecture to recognize arguments in a sentence and pre-
+dict the role they play in the propositions. The explo-
+ration strategy visits possible arguments bottom-up, navi-
+gating through the clause hierarchy. The learning compo-
+nents in the architecture are implemented as Perceptrons,
+and are trained simultaneously online, adapting their be-
+havior to the global target of the system. The learn-
+ing algorithm follows the global strategy introduced in
+(Collins, 2002) and adapted in (Carreras and Ma`rquez,
+2004b) for partial parsing tasks.
+2 Semantic Role Labeling Strategy
+The strategy for recognizing propositional arguments in
+sentences is based on two main observations about argu-
+ment structure in the data. The first observation is the
+relation of the arguments of a proposition with the chunk
+and clause hierarchy: a proposition places its arguments
+in the clause directly containing the verb (local clause),
+or in one of the ancestor clauses. Given a clause, we de-
+fine the sequence of top-most syntactic elements as the
+words, chunks or clauses which are directly rooted at the
+clause. Then, arguments are formed as subsequences of
+top-most elements of a clause. Finally, for local clauses
+arguments are found strictly to the left or to the right of
+the target verb, whereas for ancestor clauses arguments
+are usually to the left of the verb. This observation holds
+for most of the arguments in the data. A general excep-
+tion are arguments of type V, which are found only in the
+local clause, starting at the position of the target verb.
+The second observation is that the arguments of all
+propositions of a sentence do not cross their boundaries,
+and that arguments of a particular proposition are usually
+found strictly within an argument of a higher level propo-
+sition. Thus, the problem can be thought of as finding a
+hierarchy of arguments in which arguments are embed-
+ded inside others, and each argument is related to a num-
+ber of propositions of a sentence in a particular role. If an
+argument is related to a certain verb, no other argument
+linking to the same verb can be found within it.
+The system presented in this paper translates these ob-
+servations into constraints which are enforced to hold in
+a solution, and guide the recognition strategy. A limita-
+tion of the system is that it makes no attempt to recognize
+arguments which are split in many phrases.
+In what follows, x is a sentence, and xi is the i-th word
+of the sentence. We assume a mechanism to access the
+input information of x (PoS tags, chunks and clauses),
+as well as the set of target verbs V , represented by their
+position. A solution y ? Y for a sentence x is a set of
+arguments of the form (s, e)kv , where (s, e) represents an
+argument spanning from word xs to word xe, playing a
+semantic role k ? K with a verb v ? V . Finally, [S,E]
+denotes a clause spanning from word xS to word sE .
+The SRL(x) function, predicting semantic roles of a
+sentence x, implements the following strategy:
+1. Initialize set of arguments, A, to empty.
+2. Define the level of each clause as its distance to the
+root clause.
+3. Explore clauses bottom-up, i.e. from deeper levels
+to the root clause. For a clause [S,E]:
+A := A ? arg search(x, [S,E])
+4. Return A
+2.1 Building Argument Hierarchies
+Here we describe the function arg search, which builds a
+set of arguments organized hierarchically, within a clause
+[S,E] of a sentence x. The function makes use of two
+learning-based components, defined here and described
+below. First, a filtering function F, which, given a can-
+didate argument, determines its plausible categories, or
+rejects it when no evidence for it being an argument
+is found. Second, a set of k-score functions, for each
+k ? K, which, given an argument, predict a score of plau-
+sibility for it being of role type k of a certain proposition.
+The function arg search searches for the argument hi-
+erarchy which optimizes a global score on the hierarchy.
+As in earlier works, we define the global score (?) as the
+summation of scores of each argument in the hierarchy.
+The function explores all possible arguments in the clause
+formed by contiguous top-most elements, and selects the
+subset which optimizes the global score function, forcing
+a hierarchy in which the arguments linked to the same
+verb do not embed.
+Using dynamic programming, the function can be
+computed in cubic time. It considers fragments of top-
+most elements, which are visited bottom-up, incremen-
+tally in length, until the whole clause is explored. While
+exploring, it maintains a two-dimensional matrix A of
+partial solutions: each position [s, e] contains the optimal
+argument hierarchy for the fragment from s to e. Finally,
+the solution is found at A[S,E]. For a fragment from s to
+e the algorithm is as follows:
+1. A := A[s, r] ? A[r+1, e] where
+r := arg maxs?r<e ?
+(
+A[s, r]
+)
++ ?
+(
+A[r+1, e]
+)
+2. For each prop v ? V :
+(a) K := F((s, e), v)
+(b) Compute k? such that
+k? := arg maxk?K k-score((s, e), v, x)
+Set ? to the score of category k?.
+(c) Set Av as the arguments in A linked to v.
+(d) If (?(Av) < ?
+)
+then A := A\Av ?{(s, e)k
+?
+v }
+3. A[s, e] := A
+Note that an argument is visited once, and that its score
+can be stored to efficiently compute the ? global score.
+2.2 Start-End Filtering
+The function F determines which categories in K are
+plausible for an argument (s, e) to relate to a verb v.
+This is done via start-end filters (FkS and FkE), one for
+each type in K1. They operate on words, independently
+of verbs, deciding whether a word is likely to start or end
+some argument of role type k.
+The selection of categories is conditional to the relative
+level of the verb and the clause, and to the relative posi-
+tion of the verb and the argument. The conditions are:
+? v is local to the clause, and (v=s) and FVE(xe):
+K := {V}
+? v is local, and (e<v ? v<s):
+K := {k ? K | FkS(xs) ? FkE(xe)}
+1Actually, we share start-end filters for A0-A5 arguments.
+? v is at deeper level, and (e<v):
+K := {k ? K | k 6?K(v) ? FkS(xs) ? FkE(xe)}
+where K(v) is the set of categories already assigned
+to the verb in deeper clauses.
+? Otherwise, K is set to empty.
+Note that setting K to empty has the effect of filter-
+ing out the argument for the proposition. Note also that
+Start-End classifications do not depend on the verb, thus
+they can be performed once per candidate word, before
+entering the exploration of clauses. Then, when visiting
+a clause, the Start-End filtering can be performed with
+stored predictions.
+3 Learning with Perceptrons
+In this section we describe the learning components of
+the system, namely start, end and score functions, and the
+Perceptron-based algorithm to train them together online.
+Each function is implemented using a linear separator,
+hw : Rn ? R, operating in a feature space defined by
+a feature extraction function, ? : X ? Rn, for some
+instance space X . The start-end functions (FkS and FkE)
+are formed by a prediction vector for each type, noted as
+wkS or w
+k
+E, and a shared representation function ?w which
+maps a word in context to a feature vector. A prediction
+is computed as FkS(x) = wkS ??w(x), and similarly for the
+FkE, and the sign is taken as the binary classification.
+The score functions compute real-valued scores for
+arguments (s, e)v . We implement these functions with
+a prediction vector wk for each type k ? K, and
+a shared representation function ?a which maps an
+argument-verb pair to a feature vector. The score pre-
+diction for a type k is then given by the expression:
+k-score((s, e), v, x) = wk ? ?a((s, e), v, x).
+3.1 Perceptron Learning Algorithm
+We describe a mistake-driven online algorithm to train
+prediction vectors together. The algorithm is essentially
+the same as the one introduced in (Collins, 2002). Let W
+be the set of prediction vectors:
+? Initialize: ?w?W w := 0
+? For each epoch t := 1 . . . T ,
+for each sentence-solution pair (x, y) in training:
+1. y? = SRLW (x)
+2. learning feedback(W,x, y, y?)
+? Return W
+3.2 Learning Feedback for Filtering-Ranking
+We now describe the learning feedback rule, introduced
+in earlier works (Carreras and Ma`rquez, 2004b). We dif-
+ferentiate two kinds of global errors in order to give feed-
+back to the functions being learned: missed arguments
+and over-predicted arguments. In each case, we identify
+the prediction vectors responsible for producing the in-
+correct argument and update them additively: vectors are
+moved towards instances predicted too low, and moved
+away from instances predicted too high.
+Let y? be the gold set of arguments for a sentence
+x, and y? those predicted by the SRL function. Let
+goldS(xi, k) and goldE(xi, k) be, respectively, the per-
+fect indicator functions for start and end boundaries of
+arguments of type k. That is, they return 1 if word xi
+starts/ends some k-argument in y? and -1 otherwise. The
+feedback is as follows:
+? Missed arguments: ?(s, e)kv ? y?\y?:
+1. Update misclassified boundary words:
+if (wkS ? ?w(xs) ? 0) then wkS = wkS + ?w(xs)
+if (wkE ??w(xe) ? 0) then wkE = wkE +?w(xe)
+2. Update score function, if applied:
+if (k ? F ((s, e), v) then
+wk = wk + ?a((s, e), v, x)
+? Over-predicted arguments: ?(s, e)kp ? y?\y?:
+1. Update score function:
+wk = wk ? ?a((s, e), v, x)
+2. Update words misclassified as S or E:
+if (goldS(xs, k)=?1) then wkS = wkS??w(xs)
+if (goldE(xe, k)=?1) then wkE =wkE??w(xe)
+3.3 Kernel Perceptrons with Averaged Predictions
+Our final architecture makes use of Voted Perceptrons
+(Freund and Schapire, 1999), which compute a predic-
+tion as an average of all vectors generated during train-
+ing. Roughly, each vector contributes to the average pro-
+portionally to the number of correct positive training pre-
+dictions the vector has made. Furthermore, a prediction
+vector can be expressed in dual form as a combination of
+training instances, which allows the use of kernel func-
+tions. We use standard polynomial kernels of degree 2.
+4 Features
+The features of the system are extracted from three types
+of elements: words, target verbs, and arguments. They
+are formed making use of PoS tags, chunks and clauses
+of the sentence. The functions ?w and ?a are defined
+in terms of a collection of feature extraction patterns,
+which are binarized in the functions: each extracted pat-
+tern forms a binary dimension indicating the existence of
+the pattern in a learning instance.
+Extraction on Words. The list of features extracted
+from a word xi is the following:
+? PoS tag.
+? Form, if the PoS tag does not match with the Perl
+regexp /?(CD|FW|J|LS|N|POS|SYM|V)/.
+? Chunk type, of the chunk containing the word.
+? Binary-valued flags: (a) Its chunk is one-word or
+multi-word; (b) Starts and/or ends, or is strictly
+within a chunk (3 flags); (c) Starts and/or ends
+clauses (2 flags); (d) Aligned with a target verb; and
+(e) First and/or last word of the sentence (2 flags).
+Given a word xi, the ?w function implements a ?3
+window, that is, it returns the features of the words xi+r,
+with ?3?r?+3, each with its relative position r.
+Extraction on Target Verbs. Given a target verb v, we
+extract the following features from the word xv:
+? Form, PoS tag, and target verb infinitive form.
+? Voice : passive, if xv has PoS tag VBN, and either its
+chunk is not VP or xv is preceded by a form of ?to
+be? or ?to get? within its chunk; otherwise active.
+? Chunk type.
+? Binary-valued flags: (a) Its chunk is multi-word or
+not; and (b) Starts and/or ends clauses (2 flags).
+Extraction on Arguments. The ?a function performs
+the following feature extraction for an argument (s, e)
+linked to a verb v:
+? Target verb features, of verb v.
+? Word features, of words s?1, s, e, and e+1, each
+anchored with its relative position.
+? Distance of v to s and to e: for both pairs, a flag
+indicating if distance is {0, 1,?1, >1, <1}.
+? PoS Sequence, of PoS tags from s to e: (a) n-grams
+of size 2, 3 and 4; and (b) the complete PoS pattern,
+if it is less than 5 tags long.
+? TOP sequence: tags of the top-most elements found
+strictly from s to e. The tag of a word is its PoS. The
+tag of a chunk is its type. The tag of a clause is its
+type (S) enriched as follows: if the PoS tag of the
+first word matches /?(IN|W|TO)/ the tag is en-
+riched with the form of that word (e.g. S-to); if
+that word is a verb, the tag is enriched with its PoS
+(e.g. S-VBG); otherwise, it is just S. The follow-
+ing features are extracted: (a) n-grams of sizes 2, 3
+and 4; (b) The complete pattern, if it is less than 5
+tags long; and (c) Anchored tags of the first, second,
+penultimate and last elements.
+? PATH sequence: tags of elements found between
+the argument and the verb. It is formed by a con-
+catenation of horizontal tags and vertical tags. The
+horizontal tags correspond to the TOP sequence of
+elements at the same level of the argument, from it to
+the phrase containing the verb, both excluded. The
+vertical part is the list of tags of the phrases which
+contain the verb, from the phrase at the level of the
+argument to the verb. The tags of the PATH se-
+quence are extracted as in the TOP sequence, with
+an additional mark indicating whether an element is
+horizontal to the left or to the right of the argument,
+or vertical. The following features are extracted: (a)
+n-grams of sizes 4 and 5; and (b) The complete pat-
+tern, if it is less than 5 tags long.
+? Bag of Words: we consider the top-most elements
+of the argument which are not clauses, and extract
+all nouns, adjectives and adverbs. We then form a
+separate bag for each category.
+? Lexicalization: we extract the form of the head of
+the first top-most element of the argument, via com-
+mon head word rules; if the first element is a PP
+chunk, we also extract the head of the first NP found.
+5 Experiments and Results
+We have build a system which implements the presented
+architecture for recognizing arguments and their semantic
+roles. The configuration of learning functions, related to
+the roles in the CoNLL-2004 data, is set as follows :
+? Five score functions for the A0?A4 types, and two
+shared filtering functions FANS and FANE .
+? For each of the 13 adjunct types (AM-*), a score
+function and a pair of filtering functions.
+? Three score functions for the R0?R2 types, and two
+filtering functions FRS and FRE shared among them.
+? For verbs, a score function and an end filter.
+We ran the learning algorithm on the training set (with
+predicted input syntax) with a polynomial kernel of de-
+gree 2, for up to 8 epochs. Table 1 presents the ob-
+tained results on the development set, either artificial or
+real. The second and third rows provide, respectively, the
+loss suffered because of errors in the filtering and scor-
+ing layer. The filtering layer performs reasonably well,
+since 89.44% recall can be achieved on the top of it.
+However, the scoring functions clearly moderate the per-
+formance, since working with perfect start-end functions
+only achieve an F1 at 75.60. Finally, table 2 presents final
+detailed results on the test set.
+Precision Recall F?=1
+g?FS, g?FE, g-score 99.92% 94.73% 97.26
+FS, FE, g?score 99.90% 89.44% 94.38
+g?FS, g?FE, score 85.12% 67.99% 75.60
+FS, FE, score 73.40% 63.70% 68.21
+Table 1: Overall results on the development set. Func-
+tions with prefix g are gold functions, providing bounds
+of our performance. The top row is the upper bound per-
+formance of our architecture. The bottom row is the real
+performance.
+Precision Recall F?=1
+Overall 71.81% 61.11% 66.03
+A0 81.83% 76.46% 79.05
+A1 68.73% 65.27% 66.96
+A2 59.41% 34.03% 43.28
+A3 58.18% 21.33% 31.22
+A4 72.97% 54.00% 62.07
+A5 0.00% 0.00% 0.00
+AM-ADV 54.50% 35.50% 43.00
+AM-CAU 58.33% 28.57% 38.36
+AM-DIR 64.71% 22.00% 32.84
+AM-DIS 64.06% 57.75% 60.74
+AM-EXT 100.00% 50.00% 66.67
+AM-LOC 35.62% 22.81% 27.81
+AM-MNR 50.89% 22.35% 31.06
+AM-MOD 97.57% 95.25% 96.40
+AM-NEG 90.23% 94.49% 92.31
+AM-PNC 36.11% 15.29% 21.49
+AM-PRD 0.00% 0.00% 0.00
+AM-TMP 61.86% 48.86% 54.60
+R-A0 78.85% 77.36% 78.10
+R-A1 64.29% 51.43% 57.14
+R-A2 100.00% 22.22% 36.36
+R-A3 0.00% 0.00% 0.00
+R-AM-LOC 0.00% 0.00% 0.00
+R-AM-MNR 0.00% 0.00% 0.00
+R-AM-PNC 0.00% 0.00% 0.00
+R-AM-TMP 0.00% 0.00% 0.00
+V 98.32% 98.24% 98.28
+Table 2: Results on the test set
+Acknowledgements
+This research is supported by the European Commission
+(Meaning, IST-2001-34460) and the Spanish Research Depart-
+ment (Aliado, TIC2002-04447-C02). Xavier Carreras is sup-
+ported by a grant from the Catalan Research Department.
+References
+Xavier Carreras and Llu?is Ma`rquez. 2004a. Introduc-
+tion to the CoNLL-2004 Shared Task: Semantic Role
+Labeling. In Proceedings of CoNLL-2004.
+Xavier Carreras and Llu?is Ma`rquez. 2004b. Online
+learning via global feedback for phrase recognition.
+In Advances in Neural Information Processing Systems
+16. MIT Press.
+M. Collins. 2002. Discriminative Training Methods
+for Hidden Markov Models: Theory and Experiments
+with Perceptron Algorithms. In Proceedings of the
+EMNLP?02.
+Y. Freund and R. E. Schapire. 1999. Large Margin Clas-
+sification Using the Perceptron Algorithm. Machine
+Learning, 37(3):277?296.

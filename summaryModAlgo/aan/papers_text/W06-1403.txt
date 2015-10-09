@@ -1,0 +1,769 @@
+Proceedings of the Fourth International Natural Language Generation Conference, pages 12?19,
+Sydney, July 2006. c?2006 Association for Computational Linguistics
+CCG Chart Realization from Disjunctive Inputs
+Michael White
+Department of Linguistics
+The Ohio State University
+Columbus, OH 43210 USA
+http://www.ling.ohio-state.edu/?mwhite/
+Abstract
+This paper presents a novel algorithm
+for efficiently generating paraphrases from
+disjunctive logical forms. The algorithm
+is couched in the framework of Combina-
+tory Categorial Grammar (CCG) and has
+been implemented as an extension to the
+OpenCCG surface realizer. The algorithm
+makes use of packed representations sim-
+ilar to those initially proposed by Shem-
+tov (1997), generalizing the approach in a
+more straightforward way than in the algo-
+rithm ultimately adopted therein.
+1 Introduction
+In recent years, the generate-and-select paradigm
+of natural language generation has attracted in-
+creasing attention, particularly for the task of sur-
+face realization. In this paradigm, symbolic meth-
+ods are used to generate a space of possible phras-
+ings, and statistical methods are used to select
+one or more outputs from this space. To spec-
+ify the desired paraphrase space, one may either
+provide an input logical form that underspecifies
+certain realization choices, or include explicit dis-
+junctions in the input LF (or both). Our experi-
+ence suggests that disjunctive LFs are an impor-
+tant capability, especially as one seeks to make
+grammars reusable across applications, and to em-
+ploy domain-specific, sentence-level paraphrases
+(Barzilay and Lee, 2003).
+Prominent examples of surface realizers in
+the generate-and-select paradigm include Nitro-
+gen/Halogen (Langkilde, 2000; Langkilde-Geary,
+2002) and Fergus (Bangalore and Rambow, 2000).
+More recently, generate-and-select realizers in the
+chart realization tradition (Kay, 1996) have ap-
+peared, including the OpenCCG (White, 2004)
+and LinGO (Carroll and Oepen, 2005) realizers.
+Chart realizers make it possible to use the same
+reversible grammar for both parsing and realiza-
+tion, and employ well-defined methods of seman-
+tic composition to construct semantic representa-
+tions that can properly represent the scope of log-
+ical operators.
+In the chart realization tradition, previous work
+has not generally supported disjunctive logical
+forms, with (Shemtov, 1997) as the only published
+exception (to the author?s knowledge). Arguably,
+part of the reason that disjunctive LFs have not
+yet been embraced more broadly by those work-
+ing on chart realization is that Shemtov?s solution,
+while ingenious, is dauntingly complex. Look-
+ing beyond chart realizers, both Nitrogen/Halogen
+and Fergus support some forms of disjunctive in-
+put; however, in comparison to Shemtov?s inputs,
+theirs are less expressive, in that they do not al-
+low disjunctions across different levels of the input
+structure.
+As an alternative to Shemtov?s method, this pa-
+per presents a chart realization algorithm for gen-
+erating paraphrases from disjunctive logical forms
+that is more straightforward to implement, to-
+gether with an initial case study of the algorithm?s
+efficiency. As discussed in Section 5, the algo-
+rithm makes use of packed representations similar
+to those initially proposed by Shemtov, generaliz-
+ing the approach in a way that avoids the prob-
+lems that led Shemtov to reject his preliminary
+method. The algorithm is couched in the frame-
+work of Steedman?s (2000) Combinatory Catego-
+rial Grammar (CCG) and has been implemented
+as an extension to the OpenCCG surface realizer.
+Though the algorithm is well suited to CCG, it is
+expected to be applicable to other constraint-based
+grammatical frameworks as well.
+12
+be<TENSE>pres,<MOOD>dcl e 
+<ARG> <PROP>
+based_on <DET>the,<NUM>sgdesign d p 
+<SOURCE> <ARTIFACT> collection<DET>the,<NUM>sg c 
+<HASPROP> <CREATOR>Funny_Day f v Villeroy_and_Boch
+ 
+(a) Semantic dependency graph for The design (is|?s)
+based on the Funny Day collection by Villeroy and
+Boch.
+be<TENSE>pres,<MOOD>dcl e 
+<ARG> <PROP>
+based_on <DET>the,<NUM>sgdesign d p 
+<SOURCE> <ARTIFACT> series<NUM>sg c 
+<HASPROP> <GENOWNER>Funny_Day f v Villeroy_and_Boch
+ 
+(b) Semantic dependency graph for The design (is|?s)
+based on Villeroy and Boch?s Funny Day series.
+be<TENSE>pres,<MOOD>dcl e 
+<ARG> <PROP>
+based_on <DET>the,<NUM>sgdesign d p 
+<SOURCE> <ARTIFACT> collection|series(<DET>the)?,<NUM>sg c 
+<HASPROP> <GENOWNER>Funny_Day f v Villeroy_and_Boch
+<CREATOR>
+ 
+(c) Disjunctive semantic dependency graph covering (a)-
+(b), i.e. The design (is|?s) based on (the Funny Day
+(collection|series) by Villeroy and Boch | Villeroy and
+Boch?s Funny Day (collection|series)).
+Figure 1: Example semantic dependency graphs
+from the COMIC dialogue system.
+@e(be ? ?TENSE?pres ? ?MOOD?dcl ?
+?ARG?(d ? design ? ?DET?the ? ?NUM?sg) ?
+?PROP?(p ? based on ?
+?ARTIFACT?d ?
+?SOURCE?(c ? collection ? ?DET?the ? ?NUM?sg ?
+?HASPROP?(f ? Funny Day) ?
+?CREATOR?(v ? V&B))))
+(a)
+...
+@e(be ? ?TENSE?pres ? ?MOOD?dcl ?
+?ARG?(d ? design ? ?DET?the ? ?NUM?sg) ?
+?PROP?(p ? based on ?
+?ARTIFACT?d ?
+?SOURCE?(c ? ?NUM?sg ? (?DET?the)? ?
+(collection ? series) ?
+?HASPROP?(f ? Funny Day) ?
+(?CREATOR?v ? ?GENOWNER?v ))))
+? @v(Villeroy and Boch)
+(c)
+Figure 2: HLDS for examples in Figure 1.
+2 Disjunctive Logical Forms
+As an illustration of disjunctive logical forms,
+consider the semantic dependency graphs in Fig-
+ure 1, which are taken from the COMIC1 mul-
+timodal dialogue system.2 Graphs such as these
+constitute the input to the OpenCCG realizer.
+Each node has a lexical predication (e.g. design)
+and a set of semantic features (e.g. ?NUM?sg);
+nodes are connected via dependency relations (e.g.
+?ARTIFACT?).
+Given the lexical categories in the COMIC
+grammar, the graphs in Figure 1(a) and (b) fully
+specify their respective realizations, with the ex-
+ception of the choice of the full or contracted
+form of the copula. To generalize over these al-
+ternatives, the disjunctive graph in (c) may be
+employed. This graph allows a free choice be-
+tween the domain synonyms collection and se-
+ries, as indicated by the vertical bar between
+their respective predications. The graph also al-
+lows a free choice between the ?CREATOR? and
+?GENOWNER? relations?lexicalized via by and
+the possessive, respectively?connecting the head
+c (collection or series) with the dependent v (for
+1http://www.hcrc.ed.ac.uk/comic/
+2To simplify the exposition, the features specifying infor-
+mation structure and deictic gestures have been omitted, as
+have the semantic sorts of the discourse referents.
+13
+@e(see ? ?ARG0?(m ? man) ? ?ARG1?(g ? girl) ?
+@o(on??ARG1?(h?hill))?@w(with??ARG1?(t? telescope))?
+((?MOD?o ? @h(?MOD?w)) ?
+(@g(?MOD?o) ? (@g(?MOD?w) ? @h(?MOD?w))) ?
+(?MOD?w ? (?MOD?o ? @g(?MOD?o)))))
+Figure 3: Disjunctive LF for 5-way ambiguity in
+A man saw a girl on the hill with a telescope.
+Villeroy and Boch); this choice is indicated by an
+arc between the two dependency relations. Finally,
+the determiner feature (?DET?the) on c is indicated
+as optional, via the question mark.
+It is worth pausing at this point to observe
+that in designing the COMIC grammar, the differ-
+ences between (a) and (b) could perhaps have been
+collapsed. However, such a move would make
+it more difficult to reuse the grammar in other
+applications?and indeed, the core of the gram-
+mar is shared with the FLIGHTS system (Moore et
+al., 2004)?as it would presuppose that these para-
+phrases should always available in the same con-
+texts. An example of a sentence-level paraphrase,
+whose context of applicability is more clearly lim-
+ited, appears in (1):
+(1) (This design | This one | This) (is|?s) (clas-
+sic | in the classic style) | Here we have
+a (classic design | design in the classic
+style).
+This example shows some of the phrasings that
+may be used in COMIC to describe the style of
+a design that has not been discussed previously.
+The example includes a top-level disjunction be-
+tween the use of a deictic NP this design | this one
+| this (with an accompanying pointing gesture) fol-
+lowed by the copula, or the use of the phrase here
+we have to introduce the design. While these al-
+ternatives can function as paraphrases in this con-
+text, it is difficult to see how one might specify
+them in a single underspecified (and application-
+neutral) logical form.
+Graphs such as those in Figure 1 are repre-
+sented internally using Hybrid Logic Dependency
+Semantics (HLDS), as in Figure 2. HLDS is a
+dependency-based approach to representing lin-
+guistic meaning developed by Baldridge and Krui-
+jff (2002). In HLDS, hybrid logic (Blackburn,
+2000) terms3 are used to describe dependency
+3Hybrid logic extends modal logic with nominals, a new
+sort of basic formula that explicitly names states/nodes. Like
+propositions, nominals are first-class citizens of the object
+graphs. These graphs have been suggested as rep-
+resentations for discourse structure, and have their
+own underlying semantics (White, 2006).
+In HLDS, as can be seen in Figure 2(a), each
+semantic head is associated with a nominal that
+identifies its discourse referent, and heads are con-
+nected to their dependents via dependency re-
+lations, which are modeled as modal relations.
+Modal relations are also used to represent seman-
+tic features. In (c), two new operators are in-
+troduced to represent periphrastic alternatives and
+optional parts of the meaning, namely ? and (?)?,
+for exclusive-or and optionality, respectively. To
+indicate that a nominal represents a reference to a
+node that is considered a shared part of multiple
+alternatives, the nominal is annotated with a box,
+as exemplified by v . As will be discussed in Sec-
+tion 3.1, this notion of shared references is needed
+during the logical form flattening stage of the al-
+gorithm in order to determine which elementary
+predications are part of each alternative.
+As mentioned earlier, disjunctive LFs may con-
+tain alternations that are not at the same level.
+To illustrate, Figure 3 shows the representation
+(minus semantic features) for the 5-way ambigu-
+ity in A man saw a girl on the hill with a tele-
+scope (Shemtov, 1997, p. 45); in the figure, the
+nominal o (for on) can be a dependent of e (for
+see) or g (for girl), for example. As Shemtov ex-
+plains, such packed representations can be useful
+in machine translation for generating ambiguity-
+preserving target language sentences. In a straight
+generation context, disjunctions that span levels
+enable one to compactly represent alternatives that
+differ in their head-dependent assumptions; for in-
+stance, to express contrast, one might employ the
+coordinate conjunction but as the sentence head,
+or the subordinate conjunction although as a de-
+pendent of the main clause head.
+3 The Algorithm
+As with the other chart realizers cited in the in-
+troduction, the OpenCCG realizer makes use of a
+chart and an agenda to perform a bottom-up dy-
+namic programming search for signs whose LFs
+language, and thus formulas can be formed using propo-
+sitions, nominals, and standard boolean operators. They
+may also employ the satisfaction operator, @. A formula
+@i(p??F?(j?q)) indicates that the formulas p and ?F?(j?q)
+hold at the state named by i, and that the state j, where q
+holds, is reachable via the modal relation F; equivalently, it
+states that node i is labeled by p, and that node j, labeled by
+q, is reachable from i via an arc labeled F.
+14
+completely cover the elementary predications in
+the input logical form. The search for complete
+realizations proceeds in one of two modes, any-
+time or two-stage packing/unpacking. This sec-
+tion focuses on how the two-stage mode has been
+extended to efficiently generate paraphrases from
+disjunctive logical forms.
+3.1 LF Flattening
+In a preprocessing stage, the input logical form
+is flattened to an array of elementary predications
+(EPs), one for each lexical predication, semantic
+feature or dependency relation. When the input
+LF contains no exclusive-or or optionality oper-
+ators, the list of EPs, when conjoined, yields a
+graph description that is equivalent to the origi-
+nal one. With disjunctive logical forms, however,
+more needs to be said. Our strategy is to keep track
+of the elementary predications that make up the al-
+ternatives and optional parts of the LF, as specified
+by the exclusive-or or optionality operators, and
+use these to enforce constraints on the elementary
+predications that may appear in any given realiza-
+tion. These constraints ensure that only combina-
+tions of EPs that describe a graph that is also de-
+scribed by the original LF are allowed.
+To illustrate, the results of flattening the LF in
+Figure 2(c) are given below:
+(2) 0: @e(be), 1: @e(?TENSE?pres),
+2: @e(?MOOD?dcl), 3: @e(?ARG?d),
+4: @d(design), 5: @d(?DET?the),
+6: @d(?NUM?sg),
+7: @e(?PROP?p), 8: @p(based on),
+9: @p(?ARTIFACT?d), 10: @p(?SOURCE?c),
+11: @c(?NUM?sg), 12: @c(?DET?the),
+13: @c(collection), 14: @c(series),
+15: @c(?HASPROP?f), 16: @f (Funny Day),
+17: @c(?CREATOR?v), 18: @c(?GENOWNER?v),
+19: @v(Villeroy and Boch)
+(3) alt0,0 = {13}; alt0,1 = {14}
+alt1,0 = {17, 19}; alt1,1 = {18, 19}
+opt0 = {12}
+In (2), the EPs are shown together with their array
+positions. Since the EPs are tracked positionally, it
+is possible to use bit vectors to represent the alter-
+natives and optional parts of the LF. In (3), the first
+line shows the bit vectors4 for the choice between
+collection (EP 13) and series (EP 14), as alterna-
+tives 0 and 1 in alternative group 0. On the sec-
+4Only the positive bits are shown, via their indices.
+ond line, the bit vectors for the ?CREATOR? (EP
+17) and ?GENOWNER? (EP 18) alternatives ap-
+pear; note that both of these options also involve
+the shared EP 19. The bit vector for the optional
+determiner (EP 12) is shown on the third line.
+The constraint associated with each group of al-
+ternatives is that in order to be valid, a collection
+of EPs must not intersect with the non-overlapping
+parts of more than one alternative. For example,
+for the second group of alternatives in (3), a valid
+collection could include EPs 17 and 19, or EPs 18
+and 19, but it could not include EPs 17 and 18 to-
+gether.
+Flattening an LF to obtain the array of EPs,
+as in (2), just requires a relatively straightforward
+traversal of the HLDS formula. Obtaining the al-
+ternatives and optional parts of the LF is a bit
+more involved. To do so, during the traversal,
+the exclusive-or and optionality operators are han-
+dled by introducing a new alternative group or op-
+tional part, and then keeping track of which ele-
+mentary predications fall under each alternative or
+under the optional part. Subsequently, the alterna-
+tives and optional parts are recursively propagated
+through any nominals marked as shared, collecting
+any further EPs that turn up along the way.5 For
+example, with the second alternative group (sec-
+ond line) of (3), the initial traversal creates EPs
+17 and 18 under alts alt1,0 and alt1,1, respectively.
+Since EPs 17 and 18 both include a nominal de-
+pendent v marked as shared in Figure 2(c), both
+alternatives are propagated through this reference,
+and thus EP 19 ends up as part of both alt1,0 and
+alt1,1. Determining which EPs have shared mem-
+bership in multiple alternatives is essential for ac-
+curately tracking an edge?s coverage of the input
+LF, a topic which will be considered next.
+3.2 Edges
+In the OpenCCG realizer, an edge is a data struc-
+ture that wraps a CCG sign, which itself consists
+of a word sequence paired with a category (syn-
+tactic category plus logical form). An edge has
+bit vectors to record its coverage of the input LF
+and its indices, i.e. syntactically available nomi-
+nals. In packing mode, a representative edge also
+maintains a list of alternative edges whose signs
+have equivalent categories (but different word se-
+quences), so that a representative edge may effec-
+5Though space precludes discussion, it is worth noting
+that the same propagation of membership applies to the LF
+chunks described in (White, 2006).
+15
+tively stand in for the others during chart construc-
+tion.
+To handle disjunctive inputs, an edge addition-
+ally maintains a list of active (i.e., partially com-
+pleted) LF alternatives. It also makes use of a
+revised notion of input coverage and a revised
+equivalence relation. As in Shemtov?s (1997, Sec-
+tion 3.3.2) preliminary algorithm, an edge is con-
+sidered to cover an entire disjunction (alternative
+group) if it covers all the EPs of one of its alter-
+natives. With optional parts of an LF, an edge that
+does not cover any EPs in the optional part can be
+extended to a new edge (using the same sign) that
+is additionally considered to cover all the EPs in
+the optional part. In this way, an edge can be de-
+fined to be complete with respect to the input LF
+if it covers all its EPs. For example, an edge for
+the sentence in Figure 1(b) would be considered
+complete, since (i) it would cover all the EPs in
+(2) except for 12, 13 and 17; (ii) 12 is optional;
+(iii) 14 completes alt0,1, and thus counts as cover-
+ing 13, the other EP in the group; and (iv) 18 and
+19 complete alt1,1, and thus count as covering EP
+17.
+As Shemtov points out, this extended notion
+of input coverage provides an appropriate way to
+form edge equivalence classes, as it can gather
+edges together that realize different alternatives in
+the same group. Thus, in OpenCCG, edge equiva-
+lence classes have been modified to include edges
+with the same syntactic category and coverage bit
+vector, but different word sequences and/or logical
+forms (as the latter varies according to which al-
+ternative is realized). The appropriate equivalence
+checks are efficiently carried out using a hash map
+with a custom hash function and equals method.
+3.3 Lexical Instantiation
+Once the input LF has been flattened, and the alter-
+natives and optional parts have been identified, the
+next step is to access and instantiate lexical items.
+For each elementary predication, all lexical items
+indexed by the EP?s lexical predicate or relation
+are retrieved from the lexicon.6 Each such lexi-
+cal item is then instantiated against the input EPs,
+starting with the one that triggered its retrieval,
+and incrementally extending successful instantia-
+tions until all the lexical item?s EPs have been in-
+stantiated (otherwise failing). The lexical instanti-
+6See (White, 2004; White, 2006) for discussion of how
+semantically null lexical items and unary type changing rules
+are handled.
+ation routine returns all instantiations that satisfy
+the alternative exclusion constraints. Associated
+with each instantiation is a bit vector that encodes
+the coverage of the input EPs. From each bit vec-
+tor, the active (partially completed) LF alternatives
+are determined, and the bit vector is updated to in-
+clude the EPs in any completed disjunctions. Fi-
+nally, edges are created for the instantiated lexical
+items, which include the active alternatives and the
+updated coverage vector.
+Continuing with example (2)-(3), the selected
+lexical edges in (4) below illustrate how lexical in-
+stantiation interacts with disjunctions:
+(4) a. {11,13,14} collection ` nc :
+@c(collection) ? @c(?NUM?sg)
+b. {11,13,14} series ` nc :
+@c(series) ? @c(?NUM?sg)
+c. {17} alt1,0 by ` nc\nc/npv :
+@c(?CREATOR?v)
+d. {18} alt1,1 ?s ` npc/nc\npv :
+@c(?GENOWNER?v)
+e. {19} alt1,0; alt1,1 Villeroy and Boch ` npv
+: @v (V&B)
+The nouns in (a) and (b) complete alt0,0 and alt0,1,
+respectively, and thus they each count as cover-
+ing EPs 11, 13 and 14. In (c) and (d), by and ?s
+partially cover alt1,0 and alt1,1, respectively, and
+thus these alternatives are active for their respec-
+tive edges. In (e), V&B partially covers both alt1,0
+and alt1,1, and thus both alternatives are active.
+3.4 Derivation
+Following lexical instantiation, the lexical edges
+are added to the agenda, as is usual practice with
+chart algorithms, and the main loop is initiated.
+During each iteration of the main loop, an edge
+is moved from the agenda to the chart. If the edge
+is in the same equivalence class as an edge already
+in the chart, it is added as an alternative to the ex-
+isting representative edge. Otherwise, it is com-
+bined with all applicable edges in the chart (via the
+grammar?s combinatory rules), as well as with the
+grammar?s unary rules, where any newly created
+edges are added to the agenda. The loop termi-
+nates when no edges remain on the agenda.
+Before edge combinations are attempted, a
+number of constraints are checked, as detailed in
+(White, 2006). In particular, the edges? coverage
+bit vectors are required to not intersect, which en-
+sures that they cover disjoint parts of the input LF.
+Since the coverage vectors are updated to cover all
+the EPs in a disjunction when one of the alterna-
+tives is completed, this check also ensures that the
+16
+1. {8-10} based on ` sp\npd/npc
+2. {12} the ` npc/nc
+3. {15, 16} Funny Day ` nc/nc
+4. {11, 13, 14} collection ` nc
+{11, 13, 14} series ` nc
+5. {17} alt1,0 by ` nc\nc/npv
+6. {18} alt1,1 ?s ` npc/nc\npv
+7. {19} alt1,0; alt1,1 Villeroy and Boch ` npv
+8. {11, 13-16} FD [collection] ` nc (3 4 >)
+9. {17-19} by V&B ` nc\nc (5 7 >)
+10. {17-19} V&B ?s ` npc/nc (7 6 <)
+11. {11, 13-19} FD [coll.] by V&B ` nc (8 9 <)
+12. {11, 13-19} V&B ?s FD [coll.] ` npc (10 8 >)
+13. {11-19} the FD [coll.] by V&B ` npc (2 11 >)
+{11-19} V&B ?s FD [coll.] ` npc (12 optC)
+14. {8-19} b. on [the FD [coll.] . . . ] ` sp\npd (1 13 >)
+Figure 4: Part of realization chart for Figure 1(c).
+exclusion constraints for the disjunction continue
+to be enforced. Thus, for example, no attempt will
+be made to combine the edges for collection and
+series in (4a) and (4b), since they both express EP
+11 and since they contribute to different alterna-
+tives in group 0.
+To enforce the constraints associated with active
+alternatives, a compatibility check is made to en-
+sure that if the input edges have active alternatives
+in the same group, the intersection of these alter-
+natives is non-empty. To illustrate, consider the
+edges for by and the possessive ?s in (4c) and (4d).
+Since these edges have different alternatives active
+within group 1, the compatibility check fails, and
+thus their combination is not attempted. By con-
+trast, the edge for Villeroy and Boch in (4e) will
+pass the compatibility check with both (4c) and
+(4d), as it shares an active alternative in common
+with each of these. When two edges succeed in
+combining, a new edge is constructed from the re-
+sulting sign by taking the union of the coverage bit
+vectors, determining the active alternatives, and
+updating the coverage vector to include the EPs
+in any completed disjunctions.
+When the grammar?s unary rules are applied to
+an edge, an operation is also invoked for creat-
+ing an edge (for the same sign) with one or more
+optional parts marked as completed. This oper-
+ation is invoked when it would complete the in-
+put LF, complete an alternative, or complete an LF
+chunk.7 A constraint on its application is that the
+optional parts must be wholly missing from the in-
+put edge; additionally, in the case of completing an
+alternative or LF chunk, the optional parts must be
+part of the alternative or chunk in question.
+Figure 4 demonstrates how the lexical edges in
+(4) are combined in the chart.8 These lexical edges
+appear on lines 4-7. Note that the edge for series
+is added as an alternative edge to the one for col-
+lection, which acts as a representative for both; to
+highlight its role as a representative, collection is
+shown in square brackets from line 8 onwards. At
+the end of each line, the derivation of each (non-
+lexical) edge is shown in parentheses, in terms of
+its input edges and combinatory rule. On line 13,
+observe that the NP using the possessive is added
+as an alternative to the one using the by-phrase;
+the possessive version becomes part of the same
+equivalence class when the optional determiner is
+marked as covered, via the optional part comple-
+tion operation.
+3.5 Unpacking
+Once chart construction has finished, the complete
+realizations are recursively unpacked bottom-up in
+a way that generalizes the approach of (Langkilde,
+2000). Unpacking proceeds by multiplying out the
+alternative edges stored with the representative in-
+put edges; filtering out any duplicate edges result-
+ing from spurious ambiguities; scoring the new
+edges with the scoring method configured via the
+API; and pruning the results with the configured
+pruning strategy. Note that since there is no need
+for checking grammatical or other constraints dur-
+ing the unpacking stage, new edges can be quickly
+and cheaply constructed using structure sharing.
+To briefly illustrate the process, consider how
+the Funny Day collection edge in line 8 of Fig-
+ure 4 is unpacked. While the Funny Day input
+edge has no alternative edges, the collection input
+edge has the series edge as an alternative, and thus
+a new Funny Day series edge will be created and
+scored; as long as the pruning strategy keeps more
+than the single-best option, this edge will be added
+as an alternative, and both combinations will be
+propagated upwards through the edges in lines 11
+7LF chunks serve to avoid propagating semantically in-
+complete phrases; see (White, 2006) for discussion.
+8To save space, the figure only shows part of the normal
+form derivation, and the logical forms for the categories have
+been suppressed.
+17
+10-best two-stage 1-best anytime
+time edges time edges
+disjunctive 1.1 602 0.5 281
+sequential 5.6 3550 4.1 2854
+Table 1: Comparison of average run times (in sec-
+onds) and edges created vs. sequential realization
+and 12.
+4 Case Study
+To examine the potential of the algorithm to effi-
+ciently generate paraphrases, this section presents
+a case study of its run times versus sequential real-
+ization of the equivalent top-level LF alternatives
+in disjunctive normal form. The study used the
+COMIC grammar, a small but not trivial grammar
+that suffices for the purposes of the system. In
+this grammar, there are relatively few categories
+per lexeme on average, but the boundary tone cat-
+egories engender a great deal of non-determinism.
+With other grammars, run times can be expected
+to vary.
+In anticipation of the present work, Foster and
+White (2004) generated disjunctive logical forms
+during sentence planning, then (as a stopgap mea-
+sure) multiplied out the disjunctions and sequen-
+tially realized the top-level alternatives until an
+overall time limit was reached. Taking the pre-
+vious logical forms as a starting point, 104 sen-
+tences from the evaluation in (Foster and White,
+2005) were selected, and their LFs were manu-
+ally augmented to cover a greater range of para-
+phrases allowed by the grammar.9 To obtain the
+corresponding top-level LF alternatives, 100-best
+realization was performed, and the unique LFs
+appearing in the top 100 realizations were gath-
+ered; on average, there were 29 such unique LFs.
+We then compared the present algorithm?s per-
+formance against sequential realization in produc-
+ing 10-best outputs and single-best outputs. In
+the 10-best case, we used the two-stage pack-
+ing/unpacking mode; for the single-best case, we
+used the anytime mode with 3-best pruning. With
+both cases, the run times include scoring with a
+trigram language model, and were measured on a
+2.8GHz Linux PC. Realization quality was not as-
+sessed as part of the study, though manual inspec-
+tion indicated that it was very high.
+Table 1 shows the results of the comparison.
+9Extending the COMIC sentence planner to produce these
+augmented LFs is left for future work.
+The average run times of the present algorithm,
+with disjunctive LFs as input, appear on the first
+line, along with the average number of edges cre-
+ated; on the second line are the average aggregate
+run times and num. edges created of sequentially
+realizing the top-level alternatives (not including
+the time taken to produce these alternatives). As
+can be seen, realization from disjunctive inputs
+yields a 5-fold and 8-fold speedup over the se-
+quential approach in the two cases, with corre-
+sponding reductions in the number of edges cre-
+ated. Additionally, the run times appear to be ad-
+equate for use in interactive dialogue systems (es-
+pecially in the anytime, single-best case).
+5 Comparison to Shemtov (1997)
+The present approach differs from Shemtov?s in
+two main ways. First, since Shemtov developed
+his approach with the task of ambiguity preserv-
+ing translation in mind, he framed the problem as
+one of generating from ambiguous semantic rep-
+resentations, such as one might find in a parse
+chart with unresolved ambiguities. Consequently,
+he devised a method for converting the meanings
+in a packed parse chart into an encoding where
+each fact (here, EP) appears exactly once, together
+with an indication of the meaning alternatives it
+belongs to, expressed as propositional formulas.
+While this contexted facts encoding may be suit-
+able for MT, it is not very convenient as an input
+representation for systems which generate from
+non-linguistic data, as the formulas representing
+the contexts only make sense in reference to a
+parse chart. By contrast, the present approach
+takes as input disjunctive logical forms that should
+be reasonably intuitive to construct in dialogue
+systems or other NLG applications, since they are
+straightforwardly related to their non-disjunctive
+counterparts.
+The second way in which the approach differs
+concerns the relative simplicity of the algorithms
+ultimately adopted. As part of his preliminary al-
+gorithm (Shemtov, 1997, Section 3.3.2), Shemtov
+proposed the extended use of coverage bit vectors
+that we embraced in Section 3.2. He then de-
+veloped a refined version to handle disjunctions
+with intersecting predicates. However, he con-
+cluded that this refined version was arc-consistent
+but not path-consistent (p. 65, fn. 10), given that it
+checked combinations of contexted facts pairwise,
+without keeping track of which alternations such
+18
+combinations were committed to. By contrast, the
+present approach does not suffer from this defect,
+because it checks the alternative exclusion con-
+straints on all of a lexical edge?s EPs at once (us-
+ing bit vectors for both edge coverage and alter-
+native membership), and also ensures that the ac-
+tive alternatives are compatible before combining
+edges during derivations. Shemtov does not ap-
+pear to have considered a solution along the lines
+proposed here; instead, he went on to develop a
+sound but considerably more complex algorithm
+(his Section 3.4), where an edge?s coverage bit
+vector is replaced with a contexted coverage array
+(an array of boolean conditions). With these ar-
+rays, it is no longer easy to group edges into equiv-
+alence classes, and thus during chart construc-
+tion Shemtov is forced to group together edges
+which are not derivationally equivalent. Conse-
+quently, to prevent overgeneration, his algorithm
+has to solve during the enumeration phase a sys-
+tem of constraints (potentially exponential in size)
+formed from the conditions in the contexted cov-
+erage arrays?a process which is far from straight-
+forward.
+6 Conclusions
+This paper has presented a new chart realization
+algorithm for efficiently generating surface real-
+izations from disjunctive logical forms, and has
+argued that the approach represents an improve-
+ment over that of (Shemtov, 1997) in terms of both
+usability and simplicity. The algorithm has been
+implemented as an extension to the OpenCCG hy-
+brid symbolic/statistical realizer, and has recently
+been employed to generate n-best realization lists
+for reranking according to their predicted synthe-
+sis quality (Nakatsu and White, 2006), as well as
+to generate dialogues exhibiting individuality and
+alignment(Brockmann et al, 2005; Isard et al,
+2005). An initial case study has shown that the
+algorithm works many times faster than sequential
+realization, with run times suitable for use in dia-
+logue systems; a more comprehensive study of the
+algorithm?s efficiency is planned for future work.
+Acknowledgements
+The author thanks Mary Ellen Foster, Amy Isard,
+Johanna Moore, Mark Steedman and the anony-
+mous reviewers for helpful feedback and discus-
+sion, and the University of Edinburgh?s Institute
+for Communicating and Collaborative Systems for
+partially supporting this work.
+References
+Jason Baldridge and Geert-Jan Kruijff. 2002. Coupling CCG
+and Hybrid Logic Dependency Semantics. In Proc. ACL-
+02.
+Srinivas Bangalore and Owen Rambow. 2000. Exploiting a
+probabilistic hierarchical model for generation. In Proc.
+COLING-00.
+Regina Barzilay and Lillian Lee. 2003. Learning to
+paraphrase: An unsupervised approach using multiple-
+sequence alignment. In Proc. of NAACL-HLT.
+Patrick Blackburn. 2000. Representation, reasoning, and re-
+lational structures: a hybrid logic manifesto. Logic Jour-
+nal of the IGPL, 8(3):339?625.
+Carsten Brockmann, Amy Isard, Jon Oberlander, and
+Michael White. 2005. Modelling alignment for affec-
+tive dialogue. In Proc. UM-05 Workshop on Adapting the
+Interaction Style to Affective Factors.
+John Carroll and Stefan Oepen. 2005. High efficiency real-
+ization for a wide-coverage unification grammar. In Proc.
+IJCNLP-05.
+Mary Ellen Foster and Michael White. 2004. Techniques for
+Text Planning with XSLT. In Proc. 4th NLPXML Work-
+shop.
+Mary Ellen Foster and Michael White. 2005. Assessing the
+impact of adaptive generation in the COMIC multimodal
+dialogue system. In Proc. IJCAI-05 Workshop on Knowl-
+edge and Representation in Practical Dialogue Systems.
+Amy Isard, Carsten Brockmann, and Jon Oberlander. 2005.
+Individuality and alignment in generated dialogues. In
+Proc. INLG-06. To appear.
+Martin Kay. 1996. Chart generation. In Proc. ACL-96.
+Irene Langkilde-Geary. 2002. An empirical verification of
+coverage and correctness for a general-purpose sentence
+generator. In Proc. INLG-02.
+Irene Langkilde. 2000. Forest-based statistical sentence gen-
+eration. In Proc. NAACL-00.
+Johanna Moore, Mary Ellen Foster, Oliver Lemon, and
+Michael White. 2004. Generating tailored, comparative
+descriptions in spoken dialogue. In Proc. FLAIRS-04.
+Crystal Nakatsu and Michael White. 2006. Learning to say it
+well: Reranking realizations by predicted synthesis qual-
+ity. In Proc. of COLING-ACL-06. To appear.
+Hadar Shemtov. 1997. Ambiguity Management in Natural
+Language Generation. Ph.D. thesis, Stanford University.
+Mark Steedman. 2000. The Syntactic Process. MIT Press.
+Michael White. 2004. Reining in CCG Chart Realization. In
+Proc. INLG-04.
+Michael White. 2006. Efficient Realization of Coordinate
+Structures in Combinatory Categorial Grammar. Research
+on Language & Computation, on-line first, March.
+19

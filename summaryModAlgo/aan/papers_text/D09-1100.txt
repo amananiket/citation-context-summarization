@@ -1,0 +1,1362 @@
+Proceedings of the 2009 Conference on Empirical Methods in Natural Language Processing, pages 958?967,
+Singapore, 6-7 August 2009.
+c
+?2009 ACL and AFNLP
+Reading to Learn: Constructing Features from Semantic Abstracts
+Jacob Eisenstein
+?
+James Clarke
+?
+Dan Goldwasser
+?
+Dan Roth
+??
+?
+Beckman Institute for Advanced Science and Technology,
+?
+Department of Computer Science
+University of Illinois
+Urbana, IL 61801
+{jacobe,clarkeje,goldwas1,danr}@illinois.edu
+Abstract
+Machine learning offers a range of tools
+for training systems from data, but these
+methods are only as good as the underly-
+ing representation. This paper proposes to
+acquire representations for machine learn-
+ing by reading text written to accommo-
+date human learning. We propose a novel
+form of semantic analysis called read-
+ing to learn, where the goal is to obtain
+a high-level semantic abstract of multi-
+ple documents in a representation that fa-
+cilitates learning. We obtain this abstract
+through a generative model that requires
+no labeled data, instead leveraging repe-
+tition across multiple documents. The se-
+mantic abstract is converted into a trans-
+formed feature space for learning, result-
+ing in improved generalization on a rela-
+tional learning task.
+1 Introduction
+Machine learning offers a range of powerful tools
+for training systems to act in complex environ-
+ments, but these methods depend on a well-chosen
+representation for features. For learning to suc-
+ceed the representation often must be crafted with
+knowledge about the application domain. This
+poses a bottleneck, requiring expertise in both ma-
+chine learning and the application domain. How-
+ever, domain experts often express their knowl-
+edge through text; one direct expression is through
+text designed to aid human learning. In this paper
+we exploit text written by domain experts in or-
+der to build a more expressive representation for
+learning. We term this approach reading to learn.
+The following scenario demonstrates the moti-
+vation for reading to learn. Imagine an agent given
+a task within its world/environment. The agent has
+no prior knowledge of the task but can perceive the
+world through low-level sensors. Learning directly
+from the sensors may be difficult, as interesting
+tasks typically require a complex combination of
+sensors. Our goal is to acquire domain knowledge
+through the semantic analysis of text, so as to pro-
+duce higher-level relations through combinations
+of sensors.
+As a concrete example consider the problem of
+learning how to make legal moves in Freecell soli-
+taire. Relevant sensors may indicate if an object
+is a card or a freecell, whether a card is a certain
+value, and whether two values are in sequence.
+Although it is possible to express the rules with
+a combination of sensors, learning this combina-
+tion is difficult. Text can facilitate learning by pro-
+viding relations at the appropriate level of gen-
+eralization. For example, the sentence: ?You can
+place a card on an empty freecell,? suggests not
+only which sensors are useful together but also
+how these sensors should be linked. Assuming the
+sensors are represented as predicates, one possi-
+ble relation this sentence suggests is: r(x, y) =
+card(x) ? freecell(y) ? empty(y). Armed
+with this new relation the agent?s learning task
+may be simpler. Throughout the paper we refer to
+low-level sensory input as sensor or predicate, and
+to a higher level concept as a logical formula or re-
+lation.
+Our approach to semantic analysis does not re-
+quire a complete semantic representation of the
+text. We merely wish to acquire a semantic ab-
+stract of a document or document collection, and
+use the discovered relations to facilitate data-
+driven learning. This will allow us to directly eval-
+uate the contribution of the extracted relations for
+learning.
+We develop an approach to recover semantic ab-
+stracts that uses minimal supervision: we assume
+only a very small set of lexical glosses, which map
+from words to sensors. This marks a substantial
+departure from previous work on semantic pars-
+ing, which requires either annotations of the mean-
+ings of each individual sentence (Zettlemoyer and
+Collins, 2005; Liang et al, 2009), or alignments
+of sentences to grounded representations of the
+958
+world (Chen and Mooney, 2008). For the purpose
+of learning, this approach may be inapplicable, as
+such text is often written at a high level of abstrac-
+tion that permits no grounded representation.
+There are two properties of our setting that
+make unsupervised learning feasible. First, it is
+not necessary to extract a semantic representation
+of each individual sentence, but rather a summary
+of the semantics of the document collection. Er-
+rors in the semantic abstract are not fatal, as long
+it guides the learning component towards a more
+useful representation. Second, we can exploit rep-
+etition across documents, which should generally
+express the same underlying meaning. Logical for-
+mulae that are well-supported by multiple docu-
+ments are especially likely to be useful.
+The rest of this paper describes our approach
+for recovering semantic abstracts and outlines how
+we apply and evaluate this approach on the Free-
+cell domain. The paper contributes the following
+key ideas: (1) Interpreting abstract ?instructional?
+text, written at a level that does not correspond
+to concrete sensory inputs in the world, so that
+no grounded representation is possible, (2) read-
+ing to learn, a new setting in which extracted se-
+mantic representations are evaluated by whether
+they facilitate learning; (3) abstractive semantic
+summarization, aimed at capturing broad seman-
+tic properties of a multi-document dataset, rather
+than a semantic parse of individual sentences; (4) a
+novel, minimally-supervised generative model for
+semantic analysis which leverages both lexical and
+syntactic properties of text.
+2 Approach Overview
+We describe our approach to text analysis as mul-
+tidocument semantic abstraction, with the goal of
+discovering a compact set of logical formulae to
+explain the text in a document collection. To this
+end, we develop a novel generative model in which
+natural language sentences (e.g., ?You can always
+place cards in empty freecells?) are stochastically
+generated from logical formulae (e.g., card(x)?
+freecell(y) ? empty(y)). We formally define
+a generative process that reflects our intuitions
+about the relationship between formulae and sen-
+tences (Section 3), and perform sampling-based
+inference to recover the formulae most likely to
+have generated the observed data (Section 4). The
+top N such formulae can then be added as addi-
+tional predicates for relational learning.
+Our semantic representation consists of con-
+junctions of literals, each of which includes a sin-
+gle predicate (e.g., empty) and one or more vari-
+ables (e.g., x). Predicates describe atomic seman-
+tic concepts, while variables construct networks
+of relationships between them. While the impor-
+tance of the predicates is obvious, the variable
+assignments also exert a crucial influence on the
+semantics of the conjunction: modifying a sin-
+gle variable in the formula above from empty(y)
+to empty(x) yields a formula that is trivially
+false for all groundings (since cards can never be
+empty).
+Thus, our generative model must account for the
+influence of both predicates and variables on the
+sentences in the documents. A natural choice is to
+use the predicates to influence the lexical items,
+while letting the variables determine the syntac-
+tic structure. For example, the formula card(x)?
+freecell(y) ? empty(y) contains three pred-
+icates and two variables. The predicates influence
+the lexical items in a direct way: we expect that
+sentences generated from this formula will include
+a member of the gloss set for each predicate ?
+the sentence ?Put the cards on the empty free-
+cells? should be more likely than ?Columns are
+constructed by playing cards in alternating colors.?
+The impact of the variables on the generative
+process is more subtle. The sharing of the variable
+y suggests a relationship between the predicates
+freecell and empty. This should be realized
+in the syntactic structure of the sentence. Model-
+ing syntax using a dependency tree, we expect that
+the glosses for predicates that share terms will ap-
+pear in compact sub-trees, while predicates that do
+not share terms should be more distant. One pos-
+sible surface realization of this logical formula is
+the sentence, ?Put the card on the empty freecell,?
+whose dependency parse is shown in the left tree
+of Figure 1. The glosses empty and freecell are im-
+mediately adjacent, while card is more remote.
+We develop two metrics that quantify the com-
+pactness of a set of variable assignments with
+respect to a dependency tree: excess terms, and
+shared terms. The number of excess terms in a
+subtree is the number of unique terms assigned
+to words in the subtree, minus the maximum arity
+of any predicate in the subtree. Shared terms arise
+whenever a node has multiple subtrees which each
+contain the same variable. We will use the alterna-
+tive alignments in Figure 1 to provide a more de-
+tailed explanation. In each tree, the variables are
+written in the nodes belonging to the associated
+lexical items; variables are written over arrows to
+indicate membership in some node in the subtree.
+Excess Terms Alignment A of Fig-
+ure 1, corresponding to the formula
+959
+Put
+card on
+freecell
+the empty
+the
+X
+X
+X
+XXX
+X XX
+XX
+X
+X
+X
+Y
+XXY
+X XY
+XY
+Y
+X
+Y
+Y
+XYY
+X YY
+YY
+Y
+X
+Y
+Z
+XYZ
+X YZ
+YZ
+Z
+Dependency tree Alignment A Alignment B Alignment C Alignment D
+Figure 1: A dependency parse and four different variable assignments. Each literal is aligned to a word (a
+node in the graph), and the associated variables are written in the box. Variables belonging to descendant
+nodes are written over the arrows.
+card(x)?freecell(x)?empty(x), has zero
+excess terms in every subtree; there is a total of one
+variable, and all the predicates are unary. In Align-
+ment B, card(x) ? freecell(x) ? empty(y),
+there are excess terms at the root, and in the top
+two subtrees on the right-hand side. Alignment C
+contains an excess term at only the root node.
+Even though it contains the same number of
+unique variables as Alignment B, it is not penal-
+ized as harshly because the alignment of variables
+better corresponds to the syntactic structure.
+Alignment D contains the greatest number of
+excess terms: two at the root of the tree, and one
+in each of the top two subtrees on the right side.
+Shared Terms According to the excess term
+metric, the best choice is simply to introduce as
+few variables as possible. For this reason, we also
+penalize shared terms which occur when a node
+has subtree children that share a variable. In Fig-
+ure 1, Alignments A and B each contain a shared
+term at the top node; Alignments C and D contain
+no shared terms.
+Overall, we note that Alignment B is penalized
+on both metrics, as it contains both excess terms
+and shared terms; the syntactic structure of the
+sentence makes such a variable assignment rela-
+tively improbable.
+card(x) & freecell(y) & empty(y)
+f(y)e(y)c(x)
+f(y)e(y)c(x)
+Put the card on the empty freecell
+(a)
+(b)
+(c)
+(d)
+(e)
+Figure 2: A graphical depiction of the generative
+process by which sentences are produced from for-
+mulae
+3 Generative Model
+These intuitions are formalized in a generative
+account of how sentences are stochastically pro-
+duced from a set of logical formulae. This gener-
+ative story guides an inference procedure for re-
+covering logical formulae that are likely to have
+generated any observed set of texts, which is de-
+scribed in Section 4.
+The outline of the generative process is depicted
+in Figure 2. For each sentence, we begin in step (a)
+by drawing a formula f from a Dirichlet pro-
+cess (Ferguson, 1973). The Dirichlet process de-
+960
+fines a non-parametric mixture model, and has the
+effect of adaptively selecting the appropriate num-
+ber of formulae to explain the observed sentences
+in the corpus.
+1
+We then draw the sentence length
+from some distribution over positive integers; as
+the sentence length is always observed, we need
+not define the distribution (step (b)). In step (c), a
+dependency tree is drawn from a uniform distribu-
+tion over spanning trees with a number of nodes
+equal to the length of the sentence. In step (d) we
+draw an alignment of the literals in f to nodes in
+the dependency tree, written a
+t
+(f). The distribu-
+tion over alignments is described in Section 3.1.
+Finally, the aligned literals are used to generate the
+words at each slot in the dependency tree. A more
+formal definition of this process is as follows:
+? Draw ?, the expected number of literals per
+formula, from a Gamma distribution G(u, v).
+? Draw an infinite set of formulae f . For each
+formula f
+i
+,
+? Draw the formula length #|f
+i
+| from a
+Poisson distribution, n
+i
+? Poisson(?).
+? Draw n
+i
+literals from a uniform distri-
+bution.
+? Draw pi, an infinite multinomial distribution
+over formulae: pi ? GEM(pi
+0
+), where GEM
+refers to the stick-breaking prior (Sethura-
+man, 1994) and pi
+0
+= 1 is the concentra-
+tion parameter. By attaching the multinomial
+pi to the infinite set of formulae f , we cre-
+ate a Dirichlet process. This is conventionally
+writtenDP (pi
+0
+, G
+0
+), where the base distribu-
+tionG
+0
+encodes only the distribution over the
+number of literals, Poisson(?).
+? For each of D documents, draw the number
+of sentences T ? Poisson. For each of the T
+sentences in the document,
+? Draw a formula f ? DP (pi
+0
+, G
+0
+) from
+the Dirichlet Process described above.
+? Draw a sentence length #|s| ? Poisson.
+? Draw a dependency graph t (a spanning
+tree of size #|s|) from a uniform distri-
+bution.
+? Draw an alignment a
+t
+(f), an injective
+mapping from literals in f to nodes in
+the dependency structure t. The distribu-
+tion over alignments is described in Sec-
+tion 3.1.
+1
+There are many recent applications of Dirichlet pro-
+cesses in natural language processing, e.g. Goldwater et al
+(2006).
+? Draw the sentence s from the formula
+f and the alignment a(f). For each
+word token w
+i
+? s is drawn from
+p(w
+i
+|a
+t
+(f, i)), where a
+t
+(f, i) indicates
+the (possibly empty) literal assigned
+to slot i in the alignment a
+t
+(f) (Sec-
+tion 3.2).
+3.1 Distribution over Alignments
+The distribution over alignments reflects our intu-
+ition that when literals share variables, they will
+be aligned to word slots that are nearby in the de-
+pendency structure; literals that do not share vari-
+ables should be more distant. This is formalized by
+applying the concepts of excess terms and shared
+terms defined in Section 2. After computing the
+number of excess and shared terms in each sub-
+tree t
+i
+, we can compute a local score (LS ) for that
+subtree:
+LS (a
+t
+(f); t
+i
+) = ? ?NShared(a
+t
+(f), t
+i
+)
++ ? ?NExcess(a
+t
+(f), t
+i
+) ? height(t
+i
+).
+This scoring function can be applied recursively to
+each subtree in t; the overall score of the tree is the
+recursive sum,
+score(a
+t
+(f); t) = LS (a
+t
+(f); t)+
+n
+?
+i
+score(a
+t
+(f); t
+i
+),
+(1)
+where t
+i
+indicates the i
+th
+subtree of t. We hypoth-
+esize a generative process that produces all possi-
+ble alignments, scores them using score(a
+t
+(f); t),
+and selects an alignment with probability,
+p(a
+t
+(f)) ? exp{?score(a
+t
+(f); t)}. (2)
+In our experiments, we define the parameters ? =
+1, ? = 1.
+3.2 Generation of Lexical Items
+Once the logical formula is aligned to the parse
+structure, the generation of the lexical items in
+the sentence is straightforward. For word slots to
+which no literals are aligned, the lexical item is
+drawn from a language model ?, estimated from
+the entire document collection. For slots to which
+at least one literal is aligned, we construct a lan-
+guage model ? in which the probability mass is
+divided equally among all glosses of aligned pred-
+icates. The language model ? is used as a backoff,
+so that there is a strong bias in favor of generating
+glosses, but some probability mass is reserved for
+the other lexical items.
+961
+4 Inference
+This section describes a sampling-based inference
+procedure for obtaining a set of formulae f that
+explain the observed text s and dependency struc-
+tures t. We perform Gibbs sampling over the
+formulae assigned to each sentence. Using the
+Chinese Restaurant Process interpretation of the
+Dirichlet Process (Aldous, 1985), we marginalize
+pi, the infinite multinomial over all possible for-
+mulae: at each sampling step we select either an
+existing formula, or stochastically generate a new
+formula. After each full round of Gibbs sampling,
+a set of Metropolis-Hastings moves are applied to
+explore modifications of the formulae. This proce-
+dure converges on a stationary Markov chain cen-
+tered on a set of formulae that cohere well with the
+lexical and syntactic properties of the text.
+4.1 Assigning Sentences to Formulae
+For each sentence s
+i
+and dependency tree t
+i
+, a hid-
+den variable y
+i
+indicates the index of the formula
+that generates the text. We can resample y
+i
+using
+Gibbs sampling. In the non-parametric setting, y
+i
+ranges over all non-negative integers; the Chinese
+Restaurant Process formulation marginalizes the
+infinite-dimensional parameter pi, yielding a prior
+based on the counts for each ?active? formula (to
+which at least one other sentence is assigned), and
+a pseudo-count representing all non-active formu-
+lae. Given K formulae, the prior on selecting for-
+mula j is:
+p(y
+i
+= j|y
+?i
+, pi
+0
+) ?
+{
+n
+?i
+(j) j < K
+pi
+0
+j = K,
+(3)
+where y
+?i
+refers to the assignments of all y other
+than y
+i
+and n
+?i
+refers to the counts over these as-
+signments. Each j < K identifies an existing for-
+mula in f , to which at least one other sentence is
+assigned. When j = K, this means a new formula
+f
+?
+must be generated.
+To perform Gibbs sampling, we draw from the
+posterior distribution over y
+i
+,
+p(y
+i
+|s
+i
+, t
+i
+f , f
+?
+,y
+?i
+, pi
+0
+) ?
+p(y
+i
+|y
+?i
+, pi
+0
+)p(s
+i
+, t
+i
+|y
+i
+, f , f
+?
+),
+where the first term is the prior defined in Equa-
+tion 3 and the latter term is the likelihood of gener-
+ating the parsed sentence ?s
+i
+, t
+i
+? from the formula
+indexed by y
+i
+.
+To compute the probability of a parsed sentence
+given a formula, we sum over alignments,
+p(s, t|f) =
+?
+a
+t
+(f)
+p(s, t,a
+t
+(f)|f)
+=
+?
+a
+t
+(f)
+p(s|a
+t
+(f))p(t,a
+t
+(f)|f)
+=
+?
+a
+t
+(f)
+p(s|a
+t
+(f))p(a
+t
+(f)|t, f)p(t|f),
+(4)
+applying the chain rule and independence assump-
+tions from the generative model. The result is a
+product of three terms: the likelihood of the lexi-
+cal items given the aligned predicates (defined in
+Section 3.2; the likelihood of the alignment given
+the dependency tree and formula (defined in equa-
+tion 2), and the probability of the dependency tree
+given the formula, which is uniform.
+Equation 4 takes a sum across alignments, but
+most of the probability mass of p(s|a
+t
+(f)) will
+be concentrated on alignments in which predicates
+cover words that gloss them. Thus, we can apply
+an approximation,
+p(s, t|f) ?
+N
+?
+a
+t
+(f)
+p(s|a
+t
+(f))p(a
+t
+(f)|t, f)p(t|f),
+(5)
+in which we draw N samples in which predicates
+are aligned to their glosses whenever possible.
+Similarly, Equation 2 quantifies the likelihood
+of an alignment only to a constant of proportional-
+ity; again, a sum over possible alignments is nec-
+essary. We do not expect the prior on alignments
+to be strongly peaked like the sentence likelihood,
+so we approximate the normalization term by sam-
+pling M alignments at random and extrapolating:
+p(a
+t
+(f)|t, f) ? q(a
+t
+(f); t)
+=
+q(a
+t
+(f); t)
+?
+a
+?
+t
+(f)
+q(a
+?
+t
+(f); t)
+?
+#|a
+?
+t
+(f)|
+M
+q(a
+t
+(f); t)
+?
+M
+a
+?
+t
+(f)
+q(a
+?
+t
+(f); t)
+,
+where q(a
+t
+(f); t) = exp{?score(a
+t
+(f); t)}, de-
+fined in Equation 2. In our experiments, we set N
+to at most 10, and M = 20. Drawing larger num-
+bers of samples had no discernible effect on sys-
+tem output.
+962
+4.1.1 Generating new formulae
+Chinese Restaurant Process sampling requires the
+generation of new candidate formulae at each re-
+sampling stage. To generate a new formula, we
+first sample the number of literals. As described
+in the generative story (Section 3), the number
+of literals is drawn from a Poisson distribution
+with parameter ?. We treat ? as unknown and
+marginalize, using the Gamma hyperprior G(u, v).
+Due to Poisson-Gamma conjugacy, this marginal-
+ization can be performed analytically, yielding
+a Negative-Binomial distribution with parameters
+?u+
+?
+i
+#|f
+i
+|, (1+K+v)
+?1
+?, where
+?
+i
+#|f
+i
+| is
+the sum of the number of literals in each formula,
+and K is the number of formulae which generate
+at least one sentence. In this sense, the hyperpriors
+u and v act as pseudo counts. We set u = 3, v = 1,
+reflecting a weak prior expectation of three literals
+per predicate.
+After drawing the size of the formula, the predi-
+cates are selected from a uniform random distribu-
+tion. Finally, the terms are assigned: at each slot,
+we reuse a previous term with probability 0.5, un-
+less none is available; otherwise a new term is gen-
+erated.
+4.2 Proposing changes to formulae
+The assignment resampling procedure has the
+ability to generate new formulae, thus exploring
+the space of relational features. However, to ex-
+plore this space more rapidly, we introduce four
+Metropolis-Hastings moves that modify existing
+formulae (Gilks, 1995): adding a literal, deleting
+a literal, substituting a literal, and rearranging the
+terms of the formula. For each proposed move, we
+recompute the joint likelihood of the formula and
+all aligned sentences. The move is stochastically
+accepted based on the ratio of the joint likelihoods
+of the new and old configurations, multiplied by a
+Hastings correction.
+The joint likelihood with respect to formula f
+is computed as p(s, t, f) = p(f)
+?
+i
+p(s
+i
+, t
+i
+|f).
+The prior on f considers only the number of liter-
+als, using a Negative-Binomial distribution as de-
+scribed in section 4.1.1. The likelihood p(s
+i
+, t
+i
+|f)
+is given in equation 4. The Hastings correction is
+p?(f
+?
+? f)/p?(f ? f
+?
+), with p?(f ? f
+?
+) indicat-
+ing the probability of proposing a move from f
+to f
+?
+,and p?(f
+?
+? f) indicating the probability of
+proposing the reverse move. The Hastings correc-
+tions depend on the arity of the predicates being
+added and removed; the derivation is straightfor-
+ward but tedious. We plan to release a technical
+report with complete details.
+4.3 Summary of inference
+The final inference procedure iterates between
+Gibbs sampling of assignments of formulae to
+sentences, and manipulating the formulae through
+Metropolis-Hastings moves. A full iteration com-
+prises proposing a move to each formula, and then
+using Gibbs sampling to reconsider all assign-
+ments. If a formula no longer has any sentences
+assigned to it, then it is dropped from the active
+set, and can no longer be selected in Gibbs sam-
+pling ? this is standard in the Chinese Restaurant
+Process.
+Five separate Markov chains are maintained in
+parallel. To allow the sampling procedure to con-
+verge to a stationary distribution, each chain be-
+gins with 100 iterations of ?burn-in? sampling,
+without storing the output. At this point, we per-
+form another 100 iterations, storing the state at the
+end of each iteration.
+2
+All formulae are ranked ac-
+cording to the cumulative number of sentences to
+which they are assigned (across all five Markov
+chains), aggregating the counts for multiple in-
+stances of identical formulae. This yields a ranked
+list of formulae which will be used in our frame-
+work as features for relational learning.
+5 Evaluation
+Our experimental setup is designed to evaluate the
+quality of the semantic abstraction performed by
+our model. The logical formulae obtained by our
+system are applied as features for relational learn-
+ing of the rules of the game of Freecell solitaire.
+We investigate whether these features enable bet-
+ter generalization given varying number of train-
+ing examples of Freecell game states. We also
+quantify the specific role of syntax, lexical choice,
+and feature expressivity in learning performance.
+This section describes the details of this evalua-
+tion.
+5.1 Relational Learning
+We perform relational learning using Inductive
+Logic Programming (ILP), which constructs gen-
+eralized rules by assembling smaller logical for-
+mulae to explain observed propositional exam-
+ples (Muggleton, 1995). The lowest level formu-
+lae consist of basic sensors that describe the en-
+vironment. ILP?s expressivity enables it to build
+complex conjunctions of these building blocks,
+but at the cost of tractability. Our evaluation asks
+whether the logical formulae abstracted from text
+2
+Sampling for more iterations was not found to affect per-
+formance on development data, and the model likelihood ap-
+peared stationary after 100 iterations.
+963
+Predicate Glosses
+card(x) card
+tableau(x) column, tableau
+freecell(x) freecell, cell
+homecell(x) foundation, cell, homecell
+value(x,y) ace, king, rank, 8, 3, 7, lowest,
+highest
+successor(x,y) higher, sequence, sequential
+color(x,y) black, red, color
+suit(x,y) suit, club, diamond, spade,
+heart
+on(x,y) onto
+top(x,y) bottom, available, top
+empty(x) empty
+Table 1: Predicates in the Freecell world model,
+with natural language glosses obtained from the
+development set text.
+can transform the representation to facilitate learn-
+ing. We compare against both the sensor-level rep-
+resentation as well as richer representations that do
+not benefit from the full power of our model?s se-
+mantic analysis.
+The ALEPH
+3
+ILP system, which is primarily
+based on PROGOL (Muggleton, 1995), was used
+to induce the rules of game. The search parame-
+ters remained constant for all experiments.
+5.2 Resources
+There are four types of resources required to work
+in the reading-to-learn setting: a world model, in-
+structional text, a small set of glosses that map
+from text to elements of the world model, and la-
+beled examples of correct and incorrect actions
+in the world. In our experiments, we consider
+the domain of Freecell solitaire, a popular card
+game (Morehead and Mott-Smith, 1983) in which
+cards are moved between various types of loca-
+tions, depending on their suit and rank. We now
+describe the resources for the Freecell domain in
+more detail.
+WorldModel Freecell solitaire can be described
+formally using first order logic; we consider a
+slightly modified version of the representation
+from the Planning Domain Definition Language
+(PDDL), which is used in automatic game-playing
+competitions. Specifically, there are 87 constants:
+52 cards, 16 locations, 13 values, four suits, and
+two colors. These constants are combined with a
+fixed set of 11 predicates, listed in Table 1.
+Instructional Text Our approach relies on text
+that describes how to operate in the Freecell soli-
+taire domain. A total of five instruction sets were
+3
+Freely available from http://www.comlab.ox.
+ac.uk/activities/machinelearning/Aleph/
+obtained from the Internet. Due to the popular-
+ity of the Microsoft implementation of Freecell,
+instructions often contain information specific to
+playing Freecell on a computer. We manually re-
+moved sentences which did not focus on the card
+aspects of Freecell (e.g., how to set up the board
+and information regarding where to click to move
+cards). In order to use our semantic abstraction
+model, the instructions were part-of-speech tagged
+with the Stanford POS Tagger (Toutanova and
+Manning, 2000) and dependency parses were ob-
+tained using Malt (Nivre, 2006).
+Glosses Our reading to learn setting requires a
+small set of glosses, which are surface forms com-
+monly used to represent predicates from the world
+model. We envision an application scenario in
+which a designer manually specifies a few glosses
+for each predicate. However, for the purposes of
+evaluation, it would be unprincipled for the exper-
+imenters to handcraft the ideal set of glosses. In-
+stead, we gathered a development set of text and
+annotated the lexical mentions of the world model
+predicates in text. This annotation is used to ob-
+tain glosses to apply to the evaluation text. This
+approximates a scenario in which the designer has
+a reasonable idea of how the domain will be de-
+scribed in text, but no prior knowledge of the spe-
+cific details of the text instructions. Our exper-
+iments used glosses that occurred two or more
+times in the instructions: this yields a total of 32
+glosses for 11 predicates, as shown in Table 1.
+Evaluation game data Ultimately, the seman-
+tic abstraction obtained from the text is applied
+to learning on labeled examples of correct and
+incorrect actions in the world model. For evalu-
+ation, we automatically generated a set of move
+scenarios: game states with one positive example
+(a legal move) and one negative example (an ille-
+gal move). To avoid bias in the data we generate
+an equal number of move scenarios from each of
+three types: moves to the freecells, homecells, and
+tableaux. For our experiments we vary the number
+of move scenarios in the training set; the develop-
+ment and test sets consist of 900 and 1500 move
+scenarios respectively.
+5.3 Evaluation Settings
+We compare four different feature sets, which
+will be provided to the ALEPH ILP learner. All
+feature sets include the sensor-level predicates
+shown in Table 1. The FULL-MODEL feature
+set alo includes the top logical formulae ob-
+tained in our model?s semantic abstract (see Sec-
+964
+tion 4.3). The NO-SYNTAX feature set is obtained
+from a variant of our model in which the in-
+fluence of syntax is removed by setting parame-
+ters ?, ? = 0. The SENSORS-ONLY feature set
+uses only the sensor-level predicates. Finally, the
+RELATIONAL-RANDOM feature set is constructed
+by replacing each feature in the FULL-MODEL set
+with a randomly generated relational feature of
+identical expressivity (each predicate is replaced
+by a randomly chosen alternative with identical
+arity; terms are also assigned randomly). This en-
+sures that any performance gains obtained by our
+model were not due merely to the greater expres-
+sivity of its relational features. The number of fea-
+tures included in each scenario is tuned on a de-
+velopment set of test examples.
+The performance metric assesses the ability
+of the ILP learner to classify proposed Freecell
+moves as legal or illegal. As the evaluation set
+contains an equal number of positive and negative
+examples, accuracy is the appropriate metric. The
+training scenarios are randomly generated; we re-
+peat each run 50 times and average our results. For
+the RELATIONAL-RANDOM feature set ? in which
+predicates and terms are chosen randomly ? we
+also regenerate the formulae per run.
+6 Results
+Table 2 shows a comparison of the results
+using the setup described above. Our FULL-
+MODEL achieves the best performance at ev-
+ery training set size, consistently outperforming
+the SENSORS-ONLY representation by an abso-
+lute difference of three to four percent. This
+demonstrates the semantic abstract obtained by
+our model does indeed facilitate machine learning
+in this domain.
+RELATIONAL-RANDOM provides a baseline of
+relational features with equal expressivity to those
+chosen by our model, but with the predicates and
+terms selected randomly. We consistently outper-
+form this baseline, demonstrate that the improve-
+ment obtained over the sensors only representation
+is not due merely to the added expressivity of our
+features.
+The third row compares against NO-SYNTAX,
+a crippled version of our model that incorpo-
+rates lexical features but not the syntactic struc-
+ture. The results are stronger than the SENSORS-
+ONLY and RELATIONAL-RANDOM baselines, but
+still weaker than our full system. This demon-
+strates the syntactic features incorporated by our
+model result in better semantic representations of
+the underlying text.
+Features Number of training scenarios
+15 30 60 120
+SENSORS-ONLY 79.12 88.07 92.77 93.73
+RELATIONAL-RANDOM 82.72 89.14 93.08 94.17
+NO-SYNTAX 80.98 89.79 94.11 97.04
+FULL-MODEL 82.89 91.00 95.23 97.45
+Table 2: Results as number of training examples
+varied. Each value represents the accuracy of the
+induced rules obtained with the given feature set.
+card(x
+1
+) ? tableau(x
+2
+)
+card(x
+1
+) ? freecell(x
+2
+)
+homecell(x
+1
+) ? value(x
+2
+,x
+3
+)
+empty(x
+1
+) ? freecell(x
+1
+)
+card(x
+1
+) ? top(x
+1
+,x
+2
+)
+card(x
+1
+) ? homecell(x
+2
+)
+freecell(x
+1
+) ? homecell(x
+2
+)
+card(x
+1
+) ? tableau(x
+1
+)
+card(x
+1
+) ? top(x
+2
+,x
+1
+)
+homecell(x
+1
+)
+card(x
+1
+) ? homecell(x
+1
+)
+color(x
+1
+,x
+2
+) ? value(x
+3
+,x
+4
+)
+suit(x
+1
+,x
+2
+) ? value(x
+3
+,x
+4
+)
+value(x
+1
+,x
+2
+) ? value(x
+3
+,x
+4
+)
+homecell(x
+1
+) ? successor(x
+2
+,x
+3
+)
+Figure 3: The top 15 features recovered by the se-
+mantic abstraction of our full model.
+Figure 3 shows the top 15 formulae recovered
+by the full model running on the evaluation text.
+Features such as empty(x
+1
+) ? freecell(x
+1
+)
+are useful because they reuse variables to ensure
+that objects have key properties ? in this case, en-
+suring that a freecell is empty. Other features, such
+as homecell(x
+1
+) ? value(x
+2
+, x
+3
+), help to fo-
+cus the search on useful conjunctions of predicates
+(in Freecell, the legality of playing a card on a
+homecell depends on the value of the card). Note
+that three of these 15 formulae are trivially use-
+less, in that they are always false: e.g., card(x
+1
+)
+? tableau(x
+1
+). This illustrates the importance
+of term assignment in obtaining useful features
+for learning. In the NO-SYNTAX system, which
+ignores the relationship between term assignment
+and syntactic structure, eight of the top 15 formu-
+lae were trivially useless due to term incompatibil-
+ity.
+7 Related Work
+This paper draws on recent literature on extract-
+ing logical forms from surface text (Zettlemoyer
+and Collins, 2005; Ge and Mooney, 2005; Downey
+et al, 2005; Liang et al, 2009), interpreting lan-
+guage in the context of a domain (Chen and
+Mooney, 2008), and using an actionable domain
+to guide text interpretation (Branavan et al, 2009).
+We differentiate our research in several dimen-
+sions:
+965
+Language Interpretation Instructional text de-
+scribes generalized statements about entities in
+the domain and the way they interact, thus the
+text does not correspond directly to concrete sen-
+sory inputs in the world (i.e., a specific world
+state). Our interpretation captures these general-
+izations as first-order logic statements that can be
+evaluated given a specific state. This contrasts to
+previous work which interprets ?directions? and
+thus assumes a direct correspondence between text
+and world state (Branavan et al, 2009; Chen and
+Mooney, 2008).
+Supervision Our work avoids supervision in the
+form of labeled examples, using only a minimal
+set of natural language glosses per predicate. Pre-
+vious work also considered the supervision signal
+obtained by interpreting natural language in the
+context of a formal domain. Branavan et al (2009)
+use feedback from a world model as a supervi-
+sion signal. Chen and Mooney (2008) use tempo-
+ral alignment of text and grounded descriptions of
+the world state. In these approaches, concrete do-
+main entities are grounded in language interpreta-
+tion, and therefore require only a propositional se-
+mantic representation. Previous approaches for in-
+terpreting generalized natural language statements
+are trained from labeled examples (Zettlemoyer
+and Collins, 2005; Lu et al, 2008).
+Level of analysis We aim for an abstractive
+semantic summary across multiple documents,
+whereas other approaches attempt to produce log-
+ical forms for individual sentences (Zettlemoyer
+and Collins, 2005; Ge and Mooney, 2005). We
+avoid the requirement that each sentence have a
+meaningful interpretation within the domain, al-
+lowing us to handle relatively unstructured text.
+Evaluation We do not evaluate the representa-
+tions obtained by our model; rather we assess
+whether these representations improve learning
+performance. This is similar to work on Geo-
+Query (Wong and Mooney, 2007; Ge and Mooney,
+2005), and also to recent work on following step-
+by-step directions (Branavan et al, 2009). While
+these evaluations are performed on the basis of in-
+dividual sentences, actions, or system responses,
+we evaluate the holistic semantic analysis obtained
+by our system.
+Model We treat surface text as generated from a
+latent semantic description. Lu et al (2008) ap-
+ply a generative model, but require a complete
+derivation from semantics to the lexical represen-
+tation, while we favor a more flexible semantic
+analysis that can be learned without annotation
+and applied to noisy text. More similar is the work
+of Liang et al (2009), which models the gener-
+ation of semantically-relevant fields using lexical
+and discourse features. Our approach differs by
+accounting for syntax, which enables a more ex-
+pressive semantic representation that includes un-
+grounded variables.
+Relational learning The output of our semantic
+analysis is applied to learning in a structured rela-
+tional space, using ILP. A key difficulty with ILP
+is that the increased expressivity dramatically ex-
+pands the hypothesis space, and it is widely agreed
+that some learning bias is required for ILP to be
+tractable (N?edellec et al, 1996; Cumby and Roth,
+2003). Our work can be viewed as a new method
+for acquiring such bias from text; moreover, our
+approach is not specialized for ILP and may be
+used to transform the feature space in other forms
+of relational learning as well (Roth and Yih, 2001;
+Cumby and Roth, 2003; Richardson and Domin-
+gos, 2006).
+8 Conclusion
+This paper demonstrates a new setting for seman-
+tic analysis, which we term reading to learn. We
+handle text which describes the world in gen-
+eral terms rather than refereing to concrete enti-
+ties in the domain. We obtain a semantic abstract
+of multiple documents, using a novel, minimally-
+supervised generative model that accounts for both
+syntax and lexical choice. The semantic abstract
+is represented as a set of predicate logic formu-
+lae, which are applied as higher-order features for
+learning. We demonstrate that these features im-
+prove learning performance, and that both the lex-
+ical and syntactic aspects of our model yield sub-
+stantial contributions.
+In the current setup, we produce an ?overgener-
+ated? semantic representation comprised of useful
+features for learning but also some false positives.
+Learning in our system can be seen as the process
+of pruning this representation by selecting useful
+formulae based on interaction with the training
+data. In the future we hope to explore ways to in-
+terleave semantic analysis with exploration of the
+learning domain, by using the environment as a
+supervision signal for linguistic analysis.
+Acknowledgments We thank Gerald DeJong,
+Julia Hockenmaier, Alex Klementiev and the
+anonymous reviewers for their helpful feedback.
+This work is supported by DARPA funding under
+the Bootstrap Learning Program and the Beckman
+Institute Postdoctoral Fellowship.
+966
+References
+Aldous, David J. 1985. Exchangeability and re-
+lated topics. Lecture Notes in Math 1117:1?198.
+Branavan, S. R. K., Harr Chen, Luke Zettle-
+moyer, and Regina Barzilay. 2009. Reinforce-
+ment learning for mapping instructions to ac-
+tions. In Proceedings of the Joint Conference
+of the Association for Computational Linguis-
+tics and International Joint Conference on Nat-
+ural Language Processing Processing (ACL-
+IJCNLP 2009). Singapore.
+Chen, David L. and Raymond J. Mooney. 2008.
+Learning to sportscast: A test of grounded lan-
+guage acquisition. In Proceedings of 25th In-
+ternational Conference on Machine Learning
+(ICML 2008). Helsinki, Finland, pages 128?
+135.
+Cumby, Chad and Dan Roth. 2003. On kernel
+methods for relational learning. In Proceed-
+ings of the Twentieth International Conference
+(ICML 2003). Washington, DC, pages 107?114.
+Downey, Doug, Oren Etzioni, and Stephen Soder-
+land. 2005. A probabilistic model of redun-
+dancy in information extraction. In Proceedings
+of the International Joint Conference on Arti-
+ficial Intelligence (IJCAI 2005). pages 1034?
+1041.
+Ferguson, Thomas S. 1973. A bayesian analysis
+of some nonparametric problems. The Annals
+of Statistics 1(2):209?230.
+Ge, Ruifang and Raymond J. Mooney. 2005. A
+statistical semantic parser that integrates syn-
+tax and semantics. In Proceedings of the
+Ninth Conference on Computational Natural
+Language Learning (CoNLL-2005). Ann Arbor,
+MI, pages 128?135.
+Gilks, Walter R. 1995. Markov Chain Monte
+Carlo in Practice. Chapman & Hall/CRC.
+Goldwater, Sharon, Thomas L. Griffiths, and Mark
+Johnson. 2006. Contextual dependencies in un-
+supervised word segmentation. In Proceedings
+of the 21st International Conference on Compu-
+tational Linguistics and 44th Annual Meeting of
+the Association for Computational Linguistics
+(COLING-ACL 2006). Sydney, Australia, pages
+673?680.
+Liang, Percy, Michael Jordan, and Dan Klein.
+2009. Learning semantic correspondences with
+less supervision. In Proceedings of the Joint
+Conference of the Association for Computa-
+tional Linguistics and International Joint Con-
+ference on Natural Language Processing Pro-
+cessing (ACL-IJCNLP 2009). Singapore.
+Lu, Wei, Hwee Tou Ng, Wee Sun Lee, and Luke S.
+Zettlemoyer. 2008. A generative model for
+parsing natural language to meaning representa-
+tions. In Proceedings of Empirical Methods in
+Natural Language Processing (EMNLP 2008).
+Honolulu, Hawaii, pages 783?792.
+Morehead, Albert H. and Geoffrey Mott-Smith.
+1983. The Complete Book of Solitaire and Pa-
+tience Games. Bantam.
+Muggleton, Stephen. 1995. Inverse entailment and
+progol. New Generation Computing Journal
+13:245?286.
+N?edellec, C., C. Rouveirol, H. Ad?e, F. Bergadano,
+and B. Tausend. 1996. Declarative bias in ILP.
+In L. De Raedt, editor, Advances in Inductive
+Logic Programming, IOS Press, pages 82?103.
+Nivre, Joakim. 2006. Inductive dependency pars-
+ing. Springer.
+Richardson, Matthew and Pedro Domingos. 2006.
+Markov logic networks. Machine Learning
+62:107?136.
+Roth, Dan and Wen-tau Yih. 2001. Relational
+learning via propositional algorithms: An infor-
+mation extraction case study. In Proceedings of
+the International Joint Conference on Artificial
+Intelligence (IJCAI 2001). pages 1257?1263.
+Sethuraman, Jayaram. 1994. A constructive def-
+inition of dirichlet priors. Statistica Sinica
+4(2):639?650.
+Toutanova, Kristina and Christopher D. Manning.
+2000. Enriching the knowledge sources used
+in a maximum entropy part-of-speech tagger.
+In Proceedings of the Joint SIGDAT Confer-
+ence on Empirical Methods in Natural Lan-
+guage Processing and Very Large Corpora
+(EMNLP/VLC-2000). pages 63?70.
+Wong, Yuk Wah and Raymond J. Mooney. 2007.
+Learning synchronous grammars for semantic
+parsing with lambda calculus. In Proceedings of
+the 45th Annual Meeting of the Association for
+Computational Linguistics (ACL 2007). Prague,
+Czech Republic, pages 128?135.
+Zettlemoyer, Luke S. and Michael Collins. 2005.
+Learning to map sentences to logical form:
+Structured classification with probabilistic cat-
+egorial grammars. In Proceedings of the 21st
+Conference on Uncertainty in Artificial Intelli-
+gence (UAI 2005). pages 658?666.
+967

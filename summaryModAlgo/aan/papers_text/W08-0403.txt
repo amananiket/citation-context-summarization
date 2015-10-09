@@ -1,0 +1,758 @@
+Proceedings of the Second ACL Workshop on Syntax and Structure in Statistical Translation (SSST-2), pages 19?27,
+ACL-08: HLT, Columbus, Ohio, USA, June 2008. c?2008 Association for Computational Linguistics
+Prior Derivation Models For Formally Syntax-based Translation Using
+Linguistically Syntactic Parsing and Tree Kernels
+Bowen Zhou
+IBM T. J. Watson Research Center
+Yorktown Heights, NY
+zhou@us.ibm.com
+Bing Xiang
+IBM T. J. Watson Research Center
+Yorktown Heights, NY
+bxiang@us.ibm.com
+Xiaodan Zhu
+Dept. of Computer Science
+University of Toronto
+xzhu@cs.toronto.edu
+Yuqing Gao
+IBM T. J. Watson Research Center
+Yorktown Heights, NY
+yuqing@us.ibm.com
+Abstract
+This paper presents an improved formally
+syntax-based SMT model, which is enriched
+by linguistically syntactic knowledge obtained
+from statistical constituent parsers. We pro-
+pose a linguistically-motivated prior deriva-
+tion model to score hypothesis derivations on
+top of the baseline model during the trans-
+lation decoding. Moreover, we devise a
+fast training algorithm to achieve such im-
+proved models based on tree kernel meth-
+ods. Experiments on an English-to-Chinese
+task demonstrate that our proposed models
+outperformed the baseline formally syntax-
+based models, while both of them achieved
+significant improvements over a state-of-the-
+art phrase-based SMT system.
+1 Introduction
+In recent years, syntax-based translation models
+(Chiang, 2007; Galley et al, 2004; Liu et al, 2006)
+have shown promising progress in improving trans-
+lation quality. There are two major elements ac-
+counting for such an improvement: namely the in-
+corporation of phrasal translation structures adopted
+from widely applied phrase-based models (Och
+and Ney, 2004) to handle local fluency, and the
+engagement of synchronous context-free grammars
+(SCFG), which enhances the generative capacity of
+the underlying model that is limited by finite-state
+machinery.
+Approaches to syntax-based translation models
+using SCFG can be further categorized into two
+classes, based on their dependency on annotated cor-
+pus. Following Chiang (Chiang, 2007), we note the
+following distinction between these two classes:
+? Linguistically syntax-based: models that utilize
+structures defined over linguistic theory and
+annotations (e.g., Penn Treebank), and SCFG
+rules are derived from parallel corpus that is
+guided by explicitly parsing on at least one side
+of the parallel corpus. Examples among others
+are (Yamada and Knight, 2001) and (Galley et
+al., 2004).
+? Formally syntax-based: models are based on
+hierarchical structures of natural language but
+synchronous grammars are automatically ex-
+tracted from parallel corpus without any usage
+of linguistic knowledge or annotations. Exam-
+ples include Wu?s (Wu, 1997) ITG and Chi-
+ang?s hierarchical models (Chiang, 2007).
+While these two often resemble in appearance,
+from practical viewpoints, there are some distinc-
+tions in training and decoding procedures differen-
+tiating formally syntax-based models from linguis-
+tically syntax-based models. First, the former has
+no dependency on available linguistic theory and
+annotations for targeting language pairs, and thus
+the training and rule extraction are more efficient.
+Secondly, the decoding complexity of the former is
+lower 1, especially when integrating a n-gram based
+1The complexity is dominated by synchronous parsing and
+boundary words keeping. Thus binary SCFG employed in for-
+mally syntax-based systems help to maintain efficient CKY de-
+coding. Recent work by (Zhang et al, 2006) shows a practi-
+cally efficient approach that binarizes linguistically SCFG rules
+when possible.
+19
+language model, which is a key element to ensure
+translation output quality.
+On the other hand, available linguistic theory
+and annotations could provide invaluable benefits in
+grammar induction and scoring, as shown by recent
+progress on such models (Galley et al, 2006). In
+contrast, formally syntax-based grammars often lack
+explicit linguistic constraints.
+In this paper, we propose a scheme to enrich for-
+mally syntax-based models with linguistically syn-
+tactic knowledge. In other words, we maintain our
+grammar to be based on formal syntax on surface,
+but incorporate linguistic knowledge into our mod-
+els to leverage syntax theory and annotations.
+Our goal is two-fold. First, how to score SCFG
+rules whose general abstraction forms are unseen in
+the training data is an important question to answer.
+In hierarchical models, Chiang (Chiang, 2007) uti-
+lizes heuristics where certain assumptions are made
+on rule distributions to obtain relative frequency
+counts. We intend to explore if additional linguisti-
+cally parsing information would be beneficial to im-
+prove the scoring of formally syntactic SCFG gram-
+mars. Secondly, we note that SCFG-based models
+often come with an excessive memory consumption
+as its rule size is an order of magnitude larger com-
+pared to phrase-based models, which challenges its
+practical deployment for online real-time translation
+tasks. Furthermore, formal syntax rules are often re-
+dundant as they are automatically extracted without
+linguistic supervision. Therefore, we are motivated
+to study approaches to further score and rank formal
+syntax rules based on syntax-inspired methods, and
+eventually to prune unnecessary rules without loss
+of performance in general.
+In our study, we propose a linguistically-
+motivated method to train prior derivation models
+for formally syntax-based translation. In this frame-
+work, prior derivation models can be viewed as a
+smoothing of rule translation models, addressing
+the weakness of the baseline model estimation that
+relies on relative counts obtained from heuristics.
+First, we apply automatic parsers to obtain syntax
+annotations on the English side of the parallel cor-
+pus. Next, we extract tree fragments associated with
+phrase pairs, and measure similarity between such
+tree fragments using kernel methods (Collins and
+Duffy, 2002; Moschitti, 2006). Finally, we score
+and rank rules based on their minimal cluster sim-
+ilarity of their nonterminals, which is used to com-
+pute the prior distribution of hypothesis derivations
+during decoding for improved translation.
+The remainder of the paper is organized as fol-
+lows. We start with a brief review of some related
+work in Sec. 2. In Sec. 3, we describe our formally
+syntax-based models and decoder implementation,
+that is established as our baseline system. Sec. 4
+presents the approach to score formal SCFG rules
+using kernel methods. Experimental results are pro-
+vided in Sec. 5. Finally, Sec. 6 summarized our con-
+tributions with discussions and future work.
+2 Related Work
+Syntax-based translation models engaged with
+SCFG have been actively investigated in the liter-
+ature (Wu, 1997; Yamada and Knight, 2001; Gildea,
+2003; Galley et al, 2004; Satta and Peserico, 2005).
+Recent work by (Chiang, 2007; Galley et al,
+2006) shows promising improvements compared to
+phrase-based models for large-scale tasks. How-
+ever, few previous work directly applied linguisti-
+cally syntactic information into a formally syntax-
+based models, which is explored in this paper.
+Kernel methods leverage the fact that the only op-
+eration in a procedure is the evaluation of inner dot
+products between pairs of observations, where the
+inner product is thus replaced with a Mercer kernel
+that provides an efficient way to carry out computa-
+tion when original feature dimension is large or even
+infinite. Collins and Duffy (Collins and Duffy, 2002)
+suggested to employ convolution kernels to measure
+similarity between two trees in terms of their sub-
+structures, and more recently, Moschitti (Moschitti,
+2006) described in details a fast implementation of
+tree kernels. To our knowledge, this paper is one of
+the few efforts of applying kernel methods for im-
+proved translation.
+3 Formally Syntax-based Models
+An SCFG is a synchronous rewriting system gen-
+erating source and target side string pairs simulta-
+neously based on context-free grammar. Each syn-
+chronous production (i.e., rule) rewrites a nonter-
+minal into a pair of strings, ? and ?, with both
+terminals and nonterminals in both languages, sub-
+20
+ject to the constraint that there is a one-to-one cor-
+respondence between nonterminal occurrences on
+the source and target side. In particular, formally
+syntax-based models explore hierarchical structures
+of natural language and utilize only a unified nonter-
+minal symbol X in the grammar,
+X ? ??, ?,??, (1)
+where ? is the one-to-one correspondence between
+X?s in ? and ?, which is indicated by under-
+scripted co-indices on both sides. For example,
+some English-to-Chinese production rules can be
+represented as follows:
+X ? ?X1enjoy readingX2, (2)
+X1xihuan(enjoy) yuedu(reading)X2?
+X ? ?X1enjoy readingX2,
+X1xihuan(enjoy)X2yuedu(reading)?
+The set of rules, denoted as R, are automatically ex-
+tracted from sentence-aligned parallel corpus (Chi-
+ang, 2007). First, bidirectional word-level align-
+ment is carried out on the parallel corpus running
+GIZA++ (Och and Ney, 2000). Based on the result-
+ing Viterbi alignments Ae2f and Af2e, the union,
+AU = Ae2f ? Af2e, is taken as the symmetrizedword-level alignment. Next, bilingual phrase pairs
+consistent with word alignments are extracted from
+AU (Och and Ney, 2004). Specifically, any pairof consecutive sequences of words below a maxi-
+mum length M is considered to be a phrase pair
+if its component words are aligned only within the
+phrase pair and not to any words outside. The re-
+sulting bilingual phrase pair inventory is denoted as
+BP . Each phrase pair PP ? BP is represented as
+a production rule X ? ?f ji , elk?, which we refer toas phrasal rules. The SCFG rule set encloses all
+phrase pairs, i.e., BP ? R. Next, we loop through
+each phrase pair PP and generalize the sub-phrase
+pair contained in PP, denoted as SPe and SPf sub-ject to SP = (SPf , SPe) ? BP , with co-indexednonterminal symbols. We thereby obtain a new rule.
+We limit the number of nonterminals in each rule
+no more than two, thus ensuring the rank of SCFG is
+two. To reduce rule size and spurious ambiguity, we
+apply constraints described in (Chiang, 2007). In
+addition, we require that the sub-phrases being ab-
+stracted by correspondent nonterminals have to be
+aligned together in the original phrase pair, which
+significantly reduces the number of rules. We will
+hereafter refer to rules with nonterminal symbols as
+abstract rules to distinguish them from phrasal rules.
+Finally, an implicit glue rule is embedded with de-
+coder to allow for translations that can be achieved
+by sequentially linking sub-translations generated
+chunk-by-chunk:
+X ? ?X1X2, X1X2?. (3)
+That is, X is also our sentence start symbol.
+During such a rule extraction procedure, we note
+that there is a many-to-many mapping between
+phrase pairs (contiguous word sequences without
+nonterminals) and derived rules (a mixed combina-
+tion of word and nonterminal sequences). In other
+words, one original phrase pair can induce a num-
+ber of different rules, and the same rule can also be
+derived from a number of different phrase pairs.
+3.1 Models
+All rules in R are paired with statistical parame-
+ters (i.e., weighted SCFG), which combines with
+other features to form our models using a log-linear
+framework. Translation using SCFG for an input
+sentence f is casted as to find the optimal derivation
+on source and target side (as the grammar is syn-
+chronous, the derivations on source and target sides
+are identical). By ?optimal?, it indicates that the
+derivation D maximizes following log-linear mod-
+els over all possible derivations:
+P (D) ? PLM (e)?LM?
+?
+i
+?
+X?<?,?>?D ?i(X ?< ?, ? >)?i , (4)
+where the set of ?i(X ?< ?, ? >) are featuresdefined over given production rule, and PLM (e) isthe language model score on hypothesized output,
+the ?i is the feature weight.Our baseline model follows Chiang?s hierarchical
+model (Chiang, 2007) in conjunction with additional
+features:
+? conditional probabilities in both directions:
+P (?|?) and P (?|?);
+? lexical weights (Koehn et al, 2003) in both di-
+rections: Pw(?|?) and Pw(?|?);
+21
+? word counts |e|;
+? rule counts |D|;
+? target n-gram language model PLM (e);
+? glue rule penalty to learn preference of non-
+terminal rewriting over serial combination
+through Eq. 3;
+Moreover, we propose an additional feature, namely
+the abstraction penalty, to account for the accumu-
+lated number of nonterminals applied in D:
+? abstraction penalty exp(?Na), where Na =
+?
+X?<?,?>?D n(?)
+where n(?) is the number of nonterminals in ?. This
+feature aims to learn the preference among phrasal
+rules, and abstract rules with one or two nontermi-
+nals. This makes our syntax-based model includes a
+total of nine features.
+The training procedure described in (Chiang,
+2007) employs heuristics to hypothesize a distri-
+bution of possible rules. A count one is assigned
+to every phrase pair occurrence, which is equally
+distributed among rules that are derived from this
+phrase pair. Hypothesizing this distribution as our
+observations on rule occurrence, relative-frequency
+estimation is used to obtain P (?|?) and P (?|?).
+We note that, however, these parameters are of-
+ten poorly estimated due to the usage of inaccurate
+heuristics, which is the major problem that we alle-
+viate in Sec. 4.
+3.2 Decoder
+The objective of our syntax-based decoder is to
+search for the optimal derivation tree D from a for-
+est of trees that can represent the input sentence. The
+target side is mapped accordingly at each nontermi-
+nal node in the tree, and a traverse of these nodes
+obtains the target translation. Fig. 1 shows an ex-
+ample for chart parsing that produces the translation
+from the best parse.
+Our decoder implements a modified CKY parser
+in C++ with integrated n-gram language model scor-
+ing. During search, chart cells are filled in a bottom-
+up fashion until a tree rooted from nonterminal is
+generated that covers the entire input sentence. The
+dynamic programming item we bookkeep is denoted
+Figure 1: A chart parsing-based decoding on SCFG pro-
+duces translation from the best parse: f1f2f3f4f5 ?
+e5e6e3e4e1e2.
+as [X, i, j; eb], indicating a sub-tree rooted with Xthat has covered input from position i to j generat-
+ing target translation with boundary words eb. Tospeed up the decoding, a pruning scheme similar to
+the cube pruning (Chiang, 2007) is performed dur-
+ing search.
+4 Prior Derivation Models
+As mentioned above, decoding searches for the op-
+timal tree on source side to cover the input sentence
+with respect to given models, as shown in Eq. 4.
+Among these feature functions, ?i measures howlikely the source and hypothesized target sub-trees
+rooted from same X are paired together through
+symmetric conditional probabilities (e.g., P (?|?)
+and P (?|?)), and the target language model mea-
+sures the fluency on target string. It should be noted
+that, however, the baseline models do not discrim-
+inate between different parses on source side when
+the target side is unknown.
+Therefore, if we could obtain some prior distribu-
+tions for the source side derivations, we can rewrite
+Eq. 4 as:
+P (D) ? PLM (e)?LM ?
+?
+X?<?,?>?D
+(?i ?i(X ?< ?, ? >)?i)L(X ?< ?, ? >)?L ,(5)
+where L(?) is a feature function defined over a pro-
+duction but only depending on one side of the rules
+22
+and asterisk denotes arbitrary symbol sequences on
+the other side consistent with our grammars 2. The
+production of L(?) over all rules observed in a
+derivation D measures the prior distribution of D.
+In the baseline model, as a special case, we can see
+that L(?) is a constant function.
+The motivation is straightforward since some
+derivations should be preferred over others. One
+may make an analogy between our prior derivation
+distributions to non-uniform source side segmenta-
+tion models in phrase-based systems. However, it
+should be noted that prior derivation models influ-
+ence not only on phrase choices as what segmenta-
+tion models do, but also on ordering options due to
+the nonterminal usage in syntax-based models.
+In principle, some quantitative schemes are
+needed to evaluate the monolingual derivation prior
+probability. Our scheme links the source side deriva-
+tion prior probability with the expected ambiguity
+on target side generation when mapping the source
+side to target side given the derivation. That is, a
+given source side derivation is favored if it intro-
+duces less ambiguity on target generation compared
+to others.
+Let us revisit the rules in Eq. 2. We notice that
+the same source side maps into different target or-
+ders depending on the syntactic role (e.g., NP or PP)
+of X2 in the rule. Furthermore, the following areexample rules trained from real data (see Sec. 5):
+X ? ?X1passX2, X1gei (give)X2? (6)
+X ? ?X1passX2, X1jingguo (traverse)X2? (7)
+X ? ?X1passX2, X1piao (ticket)X2? (8)
+Above three rules cover pretty well for different us-
+ages of pass in English and its correspondence in
+Chinese. Typically, applying the rule to inputs such
+as ?my pass expired? obtains reasonable translations
+with baseline models. However, it will fail on inputs
+like ?my pass to the zoo? as none of th rules provides
+a correct translation of X1X2piao (ticket) when X2is a prepositional phrase.
+Such linguistic phenomena, among others, indi-
+cates that the higher variation of syntax structures
+2In general, we can plug in either L(X ?< ?, ? >) or
+L(X ?< ?, ? >) here. For illustration purposes, we assume
+that the model is on the source side.
+the nonterminal embodies, the more translation op-
+tions on target side needed to account for various
+syntactic roles on source side. This suggests that
+our prior derivation models should prefer nonter-
+minals that cover more syntactically homogeneous
+constituents. Such a model is thus proposed in
+Sec. 4.1.
+The prior derivation model can also be viewed
+as a smoothing on rule translation probabilities esti-
+mated using heuristics, as we mentioned in Sec. 3.1.
+When there are more translation options, we deem
+that there are more ambiguity for this rule. In cases
+where some dominating translation option is overes-
+timated from hypothesized distributions, all transla-
+tion options of this rule are discounted as they are
+less favored by prior derivation models.
+4.1 Model Syntactic Variations
+Each abstract rule is generalized from a set of origi-
+nal relevant phrase pairs by grouping an appropriate
+set of sub-phrases into a nonterminal symbol, with
+each sub-phrase linked to a tree list. Therefore, the
+joined tree lists form a forest for this nonterminal
+symbol in the rule. For every abstract rule, we de-
+fine the rule forest to be the set of tree fragments of
+all sub-phrases abstracted within this rule.
+We parse the English side of parallel corpus to ob-
+tain a syntactic tree for each English sentence. For
+each phrase extracted from this sentence, we de-
+fine the tree fragment for this phrase as the mini-
+mal set of internal tree whose leaves span exactly
+over this phrase. As a common practice, we pre-
+serve all phrase pairs in BP including those who
+are not consistent with parser sub-trees. Therefore,
+there will be many phrases that cross over syntactic
+sub-trees, which subsequently produced tree frag-
+ments lacking a root. We label those as ?incom-
+plete? tree fragments, and introduce a parent node of
+?INC? on top of them to form a single-rooted sub-
+tree. For example, Fig. 2 shows the tree fragments
+for phrases of ?reading books? and ?enjoy reading?,
+where the latter is an ?incomplete? tree fragment.
+Moreover, for sentences failed on parsing, we la-
+bel all phrases extracted from those sentences with a
+root of ?EMPTY?.
+Subset trees of tree fragments are defined as any
+sub-graph that contains more than one nodes, with
+the restriction that entire rule productions must be
+23
+(a) S
+
+
+HH
+H
+NP
+PRP
+I
+VP
+
+
+HH
+H
+VBP
+enjoy
+NP
+ HHNN
+reading
+NNS
+books
+(b) NP
+ HHNN
+reading
+NNS
+books
+(c) INC
+ HHVBP
+enjoy
+NN
+reading
+Figure 2: Syntax parsing tree (a) and tree fragments for
+phrases ?reading books? (b) and ?enjoy reading? (c).
+NP
+ HHNN
+reading
+NNS
+books
+NP
+ HHNN
+reading
+NNS
+NP
+ HHNN NNS
+books
+NP
+ HHNN NNS
+NN
+reading
+NNS
+books
+Figure 3: Subset trees of the NP covering ?reading
+books?.
+included (Collins and Duffy, 2002). Fig. 3 enumer-
+ates a list of subset trees for fragment (b) in Fig. 2.
+To measure syntactic homogeneity, we define the
+fragment similarity K(T1, T2) as the number ofcommon subset trees between two tree fragments T1and T2. Conceptually, if we enumerate all possiblesubset trees 1, . . . ,M , we can represent each tree
+fragment T as a vector h(T ) = (c1, . . . , cM ) witheach element as the count of occurrences of each
+subset tree in T . Thus, the similarity can be ex-
+pressed by the inner products of these two vectors.
+Note that M will be a huge number for our problem,
+and thus we need kernel methods presented below to
+make computation tractable.
+4.2 Kernel Methods
+Collins and Duffy (Collins and Duffy, 2002) intro-
+duced a method employing convolution kernels to
+measure similarity between two trees in terms of
+their sub-structures. If we define an indicator func-
+tion Ii(n) to be 1 if subset tree i is rooted at node nand 0 otherwise, we have:
+K(T1, T2) =
+?
+n1?N1
+?
+n2?N2
+C(n1, n2) (9)
+where C(n1, n2) = ?i Ii(n1)Ii(n2) and N1, N2are the set of nodes in the tree fragment T1 and T2respectively. It is noted that C(n1, n2) can be com-puted recursively (Collins and Duffy, 2002):
+1. C(n1, n2) = 0 if the productions at n1 and n2are different;
+2. C(n1, n2) = 1 if the productions at n1 and n2are the same and both are pre-terminals;
+3. Otherwise,
+C(n1, n2) = ?
+nc(n1)
+?
+j=1
+(1 + C(chjn1 , ch
+j
+n2)) (10)
+where chjn1 is the jth child of node n1, nc(n1) isthe number of children at n1 and 0 < ? ? 1 is adecay factor to discount the effects of deeper tree
+structures.
+In principle, the computational complexity of
+Eq. 10 is O(|N1| ? |N2|). However, as noted by(Collins and Duffy, 2002), the worst case is quite un-
+common to natural language syntactic trees. More
+recently, Moschitti (Moschitti, 2006) introduced in
+details a fast implementation of tree kernels, where a
+node pair set is first constructed for those associated
+with same production rules. Our work follows Mos-
+chitti?s implementation, which runs in linear time on
+average. We compute the normalized similarity as
+K ?(T1, T2) = K(T1,T2)?K(T1,T1)?
+?
+K(T2,T2)
+to ensure simi-
+larity is normalized between 0 and 1.
+4.3 Prior Derivation Cost
+First we define the purity of a nonterminal forest
+(with respect to a given rule) Pur(X) as the aver-
+age similarity of all tree fragments in the cluster:
+Pur(X) = 2N(N ? 1)
+?
+j
+?
+i<j
+K ?(Ti, Tj), (11)
+where N is number of tree fragments in the forest of
+X . We now can define the derivation cost L(X ?<
+24
+?, ? >) for a rule production as:
+L(X ?< ?, ? >) =
+? log(( min
+X1,X2??
+(Pur(X1), Pur(X2)))k), (12)
+where k ? 1 is the degree of smoothness. Note that
+the prior derivation cost is set as L(?) = 0 by defini-
+tion for phrasal rules.
+Eq. 11 is quadratic complexity with N , however,
+we note that rules with a large N will typically score
+poorly on prior derivation models, and thus we can
+avoid the computation for those by assigning them
+a large cost. With the fast kernel computation, the
+training procedure involved with the prior derivation
+models for the task presented in Sec. 5 is about 5
+times slower on a single machine, compared with
+the training of the baseline system. However, we
+note that our training procedure can be computed in
+parallel, and therefore the training speed is not a bot-
+tleneck when multiple CPUs are available.
+5 Experiments
+We perform our experiments on an English-to-
+Chinese translation task in travel domain. Our train-
+ing set contains 482017 parallel sentences (with
+4.4M words on the English side), which are col-
+lected from transcription and human translation of
+conversations. The vocabulary size is 37K for En-
+glish and 44K for Chinese after segmentation.
+Our evaluation data is a held out data set of 2755
+sentences pairs. We extracted every one out of two
+sentence pairs into the dev-set, and left the remain-
+der as the test-set. We thereby obtained a dev-set of
+1378 sentence pairs, and a test-set with 1377 sen-
+tence pairs. In both cases, there are about 15K run-
+ning words on English side. All Chinese sentences
+in training, dev and test sets are all automatically
+segmented into words. Minimum-error-rate training
+(Och, 2003) are conducted on dev-set to optimize
+feature weights maximizing the BLEU score up to 4-
+grams, and the obtained feature weights are blindly
+applied on the test-set. To compare performances
+excluding tokenization effects, all BLEU scores are
+optimized (on dev-set) and reported (on test-set) at
+Chinese character-level.
+From training data, we extracted an initial phrase
+pair set with 3.7M entries for phrases up to 8 words
+on Chinese side. We trained a 4-gram language
+model for Chinese at word level, which is shared by
+all translation systems reported in this paper, using
+the Chinese side of the parallel corpus that contains
+around 2M segmented words.
+We compare the proposed models with two base-
+lines: a state-of-the-art phrase-based system and a
+formal syntax-based system as described in Sec. 3.
+The phrase-based system employs the 3.7M phrase
+pairs to build the translation model, and it con-
+tains a total set of 8 features, most of which are
+identical to our baseline formal syntax-based model.
+The difference only lies on that the glue and ab-
+straction penalty are not applicable for phrase-based
+system. Instead, a lexicalized reordering model is
+trained from the word-aligned parallel corpus for
+the phrase-based system. More details about our
+multiple-graph based phrasal SMT can be found in
+(Zhou et al, 2006; Zhou et al, 2008). For the base-
+line syntax-based system, we generated a total of
+15M rules and used 9 features.
+We chose the Stanford parser (Klein and Man-
+ning, 2002) as the English parser in our experiments
+due to its high accuracy and relatively faster speed.
+It was trained on the Wall Street Journal section of
+the Penn Treebank. During the parsing, the input
+English sentences were tokenized first, in a style
+consistent with the data in the Penn Treebank.
+We sent 482017 English sentences to the parser.
+There were 1221 long sentences failed, less than
+0.3% of the whole set. After the word alignment
+and phrase extraction on the parallel corpus, we ob-
+tained 2.2M unique English phrases. Among them
+there are about 34K phrases having an empty tree
+in their corresponding tree lists, due to the failure
+in parsing. The number of unique tree fragments
+for English phrases is 2.5M. Out of them there are
+750K marked as incomplete. As mentioned previ-
+ously, each rule covers a set of phrases, with each
+phrase linked to a tree list. The total number of rules
+with unique English side is around 8M.
+The distribution of the number of rules over the
+number of corresponding trees is shown in Table 1.
+We observe that the majority of rules in our model
+has less than 150 tree fragments. Therefore, consid-
+ering the quadratic complexity in Eq. 11, we pun-
+ish the rules with more than 150 unique tree frag-
+ments with some floor cluster purity to speed up
+25
+Table 1: Distribution of rules over trees
+Number of trees Number of rules
+(0, 10] 3636766
+(10, 20] 1556806
+(20, 30] 989848
+(30, 40] 916606
+(40, 50] 488469
+(50, 60] 270484
+(60, 70] 198438
+(70, 80] 86921
+(80, 90] 58280
+(90, 100] 29147
+(100, 150] 437231
+> 150 81060
+the training. Not surprisingly, the rules with a large
+number of tree fragments are typically those with
+few stop words as terminals. For instance, the rule
+X ?< X1aX2, ? > comes with more than 100Ktrees for the X1.
+Table 2: English-to-Chinese BLEU score result on test-
+set (character-based)
+Models BLEU(4-gram)
+Phrase-based 42.11
+Formally Syntax-based 43.75
+Formally Syntax-based
+with prior derivation 44.51
+Translation results are presented in Table 2
+with character-based BLEU scores using 2 refer-
+ences. Our baseline formally syntax-based mod-
+els achieved the BLEU score of 43.75, an abso-
+lute improvement of 1.6 point improvement over
+phrase-based models. The improvement is statisti-
+cally significant with p < 0.01 using the sign-test
+described by (Collins et al, 2005). Applying the
+prior derivation model into the syntax-based system,
+BLEU score is further improved to 44.51, obtained
+an another absolute improvement of 0.8 point, which
+is also significantly better than our baseline syntax-
+based models (p < 0.05).
+6 Discussion and Summary
+We introduced a prior derivation model to enhance
+formally syntax-based SCFG for translation. Our
+approach links a prior rule distribution with the syn-
+tactic variations of abstracted sub-phrases, which
+is modeled by distance measuring of linguistically
+syntax parsing tree fragments using kernel meth-
+ods. The proposed model has improved translation
+performance over both phrase-based and formally
+syntax-based models. Moreover, such a prior dis-
+tribution can also be used to rank and prune SCFG
+rules to reduce memory usage for online translation
+systems based on syntax-based models.
+Although the experiments in this paper are con-
+ducted for prior derivation models on source side
+in an English-to-Chinese task, we are interested in
+applying this to foreign-to-English models as well.
+As what we pointed out in Sec. 4, target side prior
+derivation model fits with our framework as well.
+7 Acknowledgement
+The authors would like to thank Stanley F. Chen and
+the anonymous reviewers for their helpful comments
+on this paper.
+References
+David Chiang. 2007. Hierarchical phrase-based transla-
+tion. Comput. Linguist., 33(2):201?228.
+Michael Collins and Nigel Duffy. 2002. Convolution
+kernels for natural language. In Advances in Neural
+Information Processing Systems 14.
+Michael Collins, Philipp Koehn, and Ivona Kuc?erova?.
+2005. Clause restructuring for statistical machine
+translation. In Proc. of ACL, pages 531?540.
+Michel Galley, Mark Hopkins, Kevin Knight, and Daniel
+Marcu. 2004. What?s in a translation rule? In Proc.
+of HLT/NAACL-04, Boston, USA, May.
+Michel Galley, Jonathan Graehl, Kevin Knight, Daniel
+Marcu, Steve DeNeefe, Wei Wang, and Ignacio
+Thayer. 2006. Scalable inference and training of
+context-rich syntactic translation models. In Proc. of
+ACL, pages 961?968.
+Daniel Gildea. 2003. Loosely tree-based alignment for
+machine translation. In Proc. of ACL, pages 80?87.
+Dan Klein and Christopher D. Manning. 2002. Fast exact
+inference with a factored model for natural language
+parsing. In NIPS, pages 3?10.
+Philipp Koehn, Franz Och, and Daniel Marcu. 2003.
+Statistical phrase-based translation. In Proc.
+NAACL/HLT.
+Yang Liu, Qun Liu, and Shouxun Lin. 2006. Tree-to-
+string alignment template for statistical machine trans-
+lation. In Proc. of ACL, pages 609?616.
+26
+Alessandro Moschitti. 2006. Making tree kernels practi-
+cal for natural language learning. In Proc. of EACL.
+F. J. Och and H. Ney. 2000. Improved statistical align-
+ment models. In Proc. of ACL, pages 440?447, Hong
+Kong, China, October.
+Franz Josef Och and Hermann Ney. 2004. The align-
+ment template approach to statistical machine transla-
+tion. Comput. Linguist., 30(4):417?449.
+Franz Josef Och. 2003. Minimum error rate training in
+statistical machine translation. In Proc. of ACL, pages
+160?167.
+Giorgio Satta and Enoch Peserico. 2005. Some computa-
+tional complexity results for synchronous context-free
+grammars. In Proc. of HLT/EMNLP, pages 803?810.
+Dekai Wu. 1997. Stochastic inversion transduction
+grammars and bilingual parsing of parallel corpora.
+Comput. Linguist., 23(3):377?403.
+Kenji Yamada and Kevin Knight. 2001. A syntax-based
+statistical translation model. In Proc. of ACL, pages
+523?530.
+Hao Zhang, Liang Huang, Daniel Gildea, and Kevin
+Knight. 2006. Synchronous binarization for machine
+translation. In Proc. of HLT/NAACL, pages 256?263.
+Bowen Zhou, Stan F. Chen, and Yuqing Gao. 2006. Fol-
+som: A fast and memory-efficient phrase-based ap-
+proach to statistical machine translation. In IEEE/ACL
+Workshop on Spoken Language Technology.
+Bowen Zhou, Rong Zhang, and Yuqing Gao. 2008. Lex-
+icalized reordering in multiple-graph based statistical
+machine translation. In Proc. ICASSP.
+27

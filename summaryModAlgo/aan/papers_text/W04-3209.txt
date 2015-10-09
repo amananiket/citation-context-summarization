@@ -1,0 +1,997 @@
+Comparing and Combining Generative and Posterior Probability Models:
+Some Advances in Sentence Boundary Detection in Speech
+Yang Liu
+ICSI and Purdue University
+yangl@icsi.berkeley.edu
+Andreas Stolcke Elizabeth Shriberg
+SRI and ICSI
+stolcke,ees@speech.sri.com
+Mary Harper
+Purdue University
+harper@ecn.purdue.edu
+Abstract
+We compare and contrast two different models for
+detecting sentence-like units in continuous speech.
+The first approach uses hidden Markov sequence
+models based on N-grams and maximum likeli-
+hood estimation, and employs model interpolation
+to combine different representations of the data.
+The second approach models the posterior proba-
+bilities of the target classes; it is discriminative and
+integrates multiple knowledge sources in the max-
+imum entropy (maxent) framework. Both models
+combine lexical, syntactic, and prosodic informa-
+tion. We develop a technique for integrating pre-
+trained probability models into the maxent frame-
+work, and show that this approach can improve
+on an HMM-based state-of-the-art system for the
+sentence-boundary detection task. An even more
+substantial improvement is obtained by combining
+the posterior probabilities of the two systems.
+1 Introduction
+Sentence boundary detection is a problem that has
+received limited attention in the text-based com-
+putational linguistics community (Schmid, 2000;
+Palmer and Hearst, 1994; Reynar and Ratnaparkhi,
+1997), but which has recently acquired renewed im-
+portance through an effort by the DARPA EARS
+program (DARPA Information Processing Technol-
+ogy Office, 2003) to improve automatic speech tran-
+scription technology. Since standard speech recog-
+nizers output an unstructured stream of words, im-
+proving transcription means not only that word ac-
+curacy must be improved, but also that commonly
+used structural features such as sentence boundaries
+need to be recognized. The task is thus fundamen-
+tally based on both acoustic and textual (via auto-
+matic word recognition) information. From a com-
+putational linguistics point of view, sentence units
+are crucial and assumed in most of the further pro-
+cessing steps that one would want to apply to such
+output: tagging and parsing, information extraction,
+and summarization, among others.
+Sentence segmentation from speech is a difficult
+problem. The best systems benchmarked in a re-
+cent government-administered evaluation yield er-
+ror rates between 30% and 50%, depending on the
+genre of speech processed (measured as the num-
+ber of missed and inserted sentence boundaries as
+a percentage of true sentence boundaries). Because
+of the difficulty of the task, which leaves plenty of
+room for improvement, its relevance to real-world
+applications, and the range of potential knowledge
+sources to be modeled (acoustics and text-based,
+lower- and higher-level), this is an interesting chal-
+lenge problem for statistical and computational ap-
+proaches.
+All of the systems participating in the recent
+DARPA RT-03F Metadata Extraction evaluation
+(National Institute of Standards and Technology,
+2003) were based on a hidden Markov model frame-
+work, in which word/tag sequences are modeled by
+N-gram language models (LMs). Additional fea-
+tures (mostly reflecting speech prosody) are mod-
+eled as observation likelihoods attached to the N-
+gram states of the HMM (Shriberg et al, 2000). The
+HMM is a generative modeling approach, since it
+describes a stochastic process with hidden variables
+(the locations of sentence boundaries) that produces
+the observable data. The segmentation is inferred
+by comparing the likelihoods of different boundary
+hypotheses.
+While the HMM approach is computationally ef-
+ficient and (as described later) provides a convenient
+way for modularizing the knowledge sources, it has
+two main drawbacks: First, the standard training
+methods for HMMs maximize the joint probability
+of observed and hidden events, as opposed to the
+posterior probability of the correct hidden variable
+assignment given the observations. The latter is a
+criterion more closely related to classification error.
+Second, the N-gram LM underlying the HMM tran-
+sition model makes it difficult to use features that
+are highly correlated (such as word and POS labels)
+without greatly increasing the number of model pa-
+rameters; this in turn would make robust estimation
+channelword string
+prosody
+idea
+syntax, semantics,
+word selection,
+puntuation
+impose prosody
+signal
+prosodic feature
+extraction
+prosodic
+features
+textual feature
+speech
+recognizer
+word string
+word, POS,
+classes
+fusion of
+knowledge
+souces
+sentence boundary
+hypothesis
+Figure 1: Diagram of the sentence segmentation task.
+difficult.
+In this paper, we describe our effort to overcome
+these shortcomings by 1) replacing the generative
+model with one that estimates the posterior proba-
+bilities directly, and 2) using the maximum entropy
+(maxent) framework to estimate conditional distri-
+butions, giving us a more principled way to com-
+bine a large number of overlapping features. Both
+techniques have been used previously for traditional
+NLP tasks, but they are not straightforward to ap-
+ply in our case because of the diverse nature of the
+knowledge sources used in sentence segmentation.
+We describe the techniques we developed to work
+around these difficulties, and compare classification
+accuracy of the old and new approach on different
+genres of speech. We also investigate how word
+recognition error affects that comparison. Finally,
+we show that a simple combination of the two ap-
+proaches turns out to be highly effective in improv-
+ing the best previous results obtained on a bench-
+mark task.
+2 The Sentence Segmentation Task
+The sentence boundary detection problem is de-
+picted in Figure 1 in the source-channel framework.
+The speaker intends to say something, chooses the
+word string, and imposes prosodic cues (duration,
+emphasis, intonation, etc). This signal goes through
+the speech production channel to generate an acous-
+tic signal. A speech recognizer determines the most
+likely word string given this signal. To detect pos-
+sible sentence boundaries in the recognized word
+string, prosodic features are extracted from the sig-
+nal, and combined with textual cues obtained from
+the word string. At issue in this paper is the final
+box in the diagram: how to model and combine the
+available knowledge sources to find the most accu-
+rate hypotheses.
+Note that this problem differs from the sen-
+tence boundary detection problem for written text in
+the natural language processing literature (Schmid,
+2000; Palmer and Hearst, 1994; Reynar and Rat-
+naparkhi, 1997). Here we are dealing with spo-
+ken language, therefore there is no punctuation in-
+formation, the words are not capitalized, and the
+transcripts from the recognition output are errorful.
+This lack of textual cues is partly compensated by
+prosodic information (timing, pitch, and energy pat-
+terns) conveyed by speech. Also note that in spon-
+taneous conversational speech ?sentence? is not al-
+ways a straightforward notion. For our purposes we
+use the definition of a ?sentence-like unit?, or SU,
+as defined by the LDC for labeling and evaluation
+purposes (Strassel, 2003).
+The training data has SU boundaries marked by
+annotators, based on both the recorded speech and
+its transcription. In testing, a system has to recover
+both the words and the locations of sentence bound-
+aries, denoted by (W;E) = w
+1
+e
+1
+w
+2
+: : : w
+i
+e
+i
+: : : w
+n
+where W represents the strings of word tokens and
+E the inter-word boundary events (sentence bound-
+ary or no boundary).
+The system output is scored by first finding a min-
+imum edit distance alignment between the hypothe-
+sized word string and the reference, and then com-
+paring the aligned event labels. The SU error rate is
+defined as the total number of deleted or inserted SU
+boundary events, divided by the number of true SU
+boundaries.1 For diagnostic purposes a secondary
+evaluation condition allows use of the correct word
+transcripts. This condition allows us to study the
+segmentation task without the confounding effect of
+speech recognition errors, using perfect lexical in-
+formation.
+3 Features and Knowledge Sources
+Words and sentence boundaries are mutually con-
+strained via syntactic structure. Therefore, the word
+identities themselves (from automatic recognition
+or human transcripts) constitute a primary knowl-
+edge source for the sentence segmentation task. We
+also make use of various automatic taggers that map
+the word sequence to other representations. The
+TnT tagger (Brants, 2000) is used to obtain part-of-
+speech (POS) tags. A TBL chunker trained on Wall
+Street Journal corpus (Ngai and Florian, 2001) maps
+each word to an associated chunk tag, encoding
+chunk type and relative word position (beginning of
+an NP, inside a VP, etc.). The tagged versions of
+the word stream are provided to allow generaliza-
+tions based on syntactic structure and to smooth out
+possibly undertrained word-based probability esti-
+1This is the same as simple per-event classification accu-
+racy, except that the denominator counts only the ?marked?
+events, thereby yielding error rates that are much higher than
+if one uses all potential boundary locations.
+mates. For the same reasons we also generate word
+class labels that are automatically induced from bi-
+gram word distributions (Brown et al, 1992).
+To model the prosodic structure of sentence
+boundaries, we extract several hundred features
+around each word boundary. These are based on the
+acoustic alignments produced by a speech recog-
+nizer (or forced alignments of the true words when
+given). The features capture duration, pitch, and
+energy patterns associated with the word bound-
+aries. Informative features include the pause du-
+ration at the boundary, the difference in pitch be-
+fore and after the boundary, and so on. A cru-
+cial aspect of many of these features is that they
+are highly correlated (e.g., by being derived from
+the same raw measurements via different normaliza-
+tions), real-valued (not discrete), and possibly unde-
+fined (e.g., unvoiced speech regions have no pitch).
+These properties make prosodic features difficult to
+model directly in either of the approaches we are ex-
+amining in the paper. Hence, we have resorted to a
+modular approach: the information from prosodic
+features is modeled separately by a decision tree
+classifier that outputs posterior probability estimates
+P (e
+i
+jf
+i
+), where e
+i
+is the boundary event after w
+i
+,
+and f
+i
+is the prosodic feature vector associated with
+the word boundary. Conveniently, this approach
+also permits us to include some non-prosodic fea-
+tures that are highly relevant for the task, but not
+otherwise represented, such as whether a speaker
+(turn) change occurred at the location in question.2
+A practical issue that greatly influences model de-
+sign is that not all information sources are avail-
+able uniformly for all training data. For example,
+prosodic modeling assumes acoustic data; whereas,
+word-based models can be trained on text-only data,
+which is usually available in much larger quantities.
+This poses a problem for approaches that model all
+relevant information jointly and is another strong
+motivation for modular approaches.
+4 The Models
+4.1 Hidden Markov Model for Segmentation
+Our baseline model, and the one that forms the ba-
+sis of much of the prior work on acoustic sentence
+segmentation (Shriberg et al, 2000; Gotoh and Re-
+nals, 2000; Christensen, 2001; Kim and Woodland,
+2001), is a hidden Markov model. The states of
+the model correspond to words w
+i
+and following
+2Here we are glossing over some details on prosodic mod-
+eling that are orthogonal to the discussion in this paper. For
+example, instead of simple decision trees we actually use en-
+semble bagging to reduce the variance of the classifier (Liu et
+al., 2004).
+Wi Ei
+Fi
+Oi
+Wi+1 Ei+1
+Oi+1
+Wi Fi+1Wi+1
+Figure 2: The graphical model for the SU detection
+problem. Only one word+event is depicted in each state,
+but in a model based on N-grams the previous N   1
+tokens would condition the transition to the next state.
+event labels e
+i
+. The observations associated with
+the states are the words, as well as other (mainly
+prosodic) features f
+i
+. Figure 2 shows a graphi-
+cal model representation of the variables involved.
+Note that the words appear in both the states and the
+observations, such that the word stream constrains
+the possible hidden states to matching words; the
+ambiguity in the task stems entirely from the choice
+of events.
+4.1.1 Classification
+Standard algorithms are available to extract the most
+probable state (and thus event) sequence given a set
+of observations. The error metric is based on clas-
+sification of individual word boundaries. Therefore,
+rather than finding the highest probability sequence
+of events, we identify the events with highest poste-
+rior individually at each boundary i:
+e^
+i
+= arg max
+e
+i
+P (e
+i
+jW;F ) (1)
+where W and F are the words and features for
+the entire test sequence, respectively. The individ-
+ual event posteriors are obtained by applying the
+forward-backward algorithm for HMMs (Rabiner
+and Juang, 1986).
+4.1.2 Model Estimation
+Training of the HMM is supervised since event-
+labeled data is available. There are two sets of pa-
+rameters to estimate. The state transition proba-
+bilities are estimated using a hidden event N-gram
+LM (Stolcke and Shriberg, 1996). The LM is
+obtained with standard N-gram estimation meth-
+ods from data that contains the word+event tags in
+sequence: w
+1
+; e
+1
+; w
+2
+; : : : e
+n 1
+; w
+n
+. The resulting
+LM can then compute the required HMM transition
+probabilities as3
+P (w
+i
+e
+i
+jw
+1
+e
+1
+: : : w
+i 1
+e
+i 1
+) =
+P (w
+i
+jw
+1
+e
+1
+: : : w
+i 1
+e
+i 1
+) 
+P (e
+i
+jw
+1
+e
+1
+: : : w
+i 1
+e
+i 1
+w
+i
+)
+The N-gram estimator maximizes the joint
+word+event sequence likelihood P (W;E) on the
+training data (modulo smoothing), and does not
+guarantee that the correct event posteriors needed
+for classification according to Equation (1) are
+maximized.
+The second set of HMM parameters are the ob-
+servation likelihoods P (f
+i
+je
+i
+; w
+i
+). Instead of train-
+ing a likelihood model we make use of the prosodic
+classifiers described in Section 3. We have at our
+disposal decision trees that estimate P (e
+i
+jf
+i
+). If
+we further assume that prosodic features are inde-
+pendent of words given the event type (a reasonable
+simplification if features are chosen appropriately),
+observation likelihoods may be obtained by
+P (f
+i
+jw
+i
+; e
+i
+) =
+P (e
+i
+jf
+i
+)
+P (e
+i
+)
+P (f
+i
+) (2)
+Since P (f
+i
+) is constant we can ignore it when car-
+rying out the maximization (1).
+4.1.3 Knowledge Combination
+The HMM structure makes strong independence as-
+sumptions: (1) that features depend only on the cur-
+rent state (and in practice, as we saw, only on the
+event label) and (2) that each word+event label de-
+pends only on the last N   1 tokens. In return, we
+get a computationally efficient structure that allows
+information from the entire sequence W;F to in-
+form the posterior probabilities needed for classifi-
+cation, via the forward-backward algorithm.
+More problematic in practice is the integration
+of multiple word-level features, such as POS tags
+and chunker output. Theoretically, all tags could
+simply be included in the hidden state representa-
+tion to allow joint modeling of words, tags, and
+events. However, this would drastically increase the
+size of the state space, making robust model estima-
+tion with standard N-gram techniques difficult. A
+method that works well in practice is linear inter-
+polation, whereby the conditional probability esti-
+mates of various models are simply averaged, thus
+reducing variance. In our case, we obtain good re-
+sults by interpolating a word-N-gram model with
+3To utilize word+event contexts of length greater than one
+we have to employ HMMs of order 2 or greater, or equivalently,
+make the entire word+event N-gram be the state.
+one based on automatically induced word classes
+(Brown et al, 1992).
+Similarly, we can interpolate LMs trained from
+different corpora. This is usually more effective
+than pooling the training data because it allows con-
+trol over the contributions of the different sources.
+For example, we have a small corpus of training data
+labeled precisely to the LDC?s SU specifications,
+but a much larger (130M word) corpus of standard
+broadcast new transcripts with punctuation, from
+which an approximate version of SUs could be in-
+ferred. The larger corpus should get a larger weight
+on account of its size, but a lower weight given the
+mismatch of the SU labels. By tuning the interpola-
+tion weight of the two LMs empirically (using held-
+out data) the right compromise was found.
+4.2 Maxent Posterior Probability Model
+As observed, HMM training does not maximize the
+posterior probabilities of the correct labels. This
+mismatch between training and use of the model
+as a classifier would not arise if the model directly
+estimated the posterior boundary label probabilities
+P (e
+i
+jW;F ). A second problem with HMMs is that
+the underlying N-gram sequence model does not
+cope well with multiple representations (features) of
+the word sequence (words, POS, etc.) short of build-
+ing a joint model of all variables. This type of sit-
+uation is well-suited to a maximum entropy formu-
+lation (Berger et al, 1996), which allows condition-
+ing features to apply simultaneously, and therefore
+gives greater freedom in choosing representations.
+Another desirable characteristic of maxent models
+is that they do not split the data recursively to condi-
+tion their probability estimates, which makes them
+more robust than decision trees when training data
+is limited.
+4.2.1 Model Formulation and Training
+We built a posterior probability model for sentence
+boundary classification in the maxent framework.
+Such a model takes the familiar exponential form4
+P (ejW;F ) =
+1
+Z
+
+(W;F )
+e
+P
+k
+
+k
+g
+k
+(e;W;F ) (3)
+where Z
+
+(W;F ) is the normalization term:
+Z
+
+(W;F ) =
+X
+e
+0
+e
+P
+k
+
+k
+g
+k
+(e
+0
+;W;F ) (4)
+The functions g
+k
+(e;W;F ) are indicator functions
+corresponding to (complex) features defined over
+4We omit the index i from e here since the ?current? event
+is meant in all cases.
+events, words, and prosodic features. For example,
+one such feature function might be:
+g(e;W;F ) =
+
+1 : if w
+i
+= uhhuh and e = SU
+0 : otherwise
+The maxent model is estimated by finding the pa-
+rameters 
+k
+such that the expected values of the var-
+ious feature functions E
+P
+[g
+k
+(e
+0
+;W; F )] match the
+empirical averages in the training data. It can be
+shown that the resulting model has maximal entropy
+among all the distributions satisfying these expec-
+tation constraints. At the same time, the parame-
+ters so chosen maximize the conditional likelihood
+Q
+i
+P (e
+i
+jW;F ) over the training data, subject to the
+constraints of the exponential form given by Equa-
+tion (3).5 The conditional likelihood is closely re-
+lated to the individual event posteriors used for clas-
+sification, meaning that this type of model explicitly
+optimizes discrimination of correct from incorrect
+labels.
+4.2.2 Choice of Features
+Even though the mathematical formulation gives us
+the freedom to use features that are overlapping or
+otherwise dependent, we still have to choose a sub-
+set that is informative and parsimonious, so as to
+give good generalization and robust parameter es-
+timates. Various feature selection algorithms for
+maxent models have been proposed, e.g., (Berger et
+al., 1996). However, since computational efficiency
+was not an issue in our experiments, we included all
+features that corresponded to information available
+to our baseline approach, as listed below. We did
+eliminate features that were triggered only once in
+the training set to improve robustness and to avoid
+overconstraining the model.
+ Word N-grams. We use combinations
+of preceding and following words to en-
+code the word context of the event, e.g.,
+<w
+i
+>, <w
+i+1
+>, <w
+i
+; w
+i+1
+>, <w
+i 1
+; w
+i
+>,
+<w
+i 2
+; w
+i 1
+; w
+i
+>, and <w
+i
+; w
+i+1
+; w
+i+2
+>,
+where w
+i
+refers to the word before the bound-
+ary of interest.
+ POS N-grams. POS tags are the same as used
+for the HMM approach. The features capturing
+POS context are similar to those based on word
+tokens.
+ Chunker tags. These are used similarly to POS
+and word features, except we use tags encoding
+5In our experiments we used the L-BFGS parameter estima-
+tion method, with Gaussian-prior smoothing (Chen and Rosen-
+feld, 1999) to avoid overfitting.
+chunk type (NP, VP, etc.) and word position
+within the chunk (beginning versus inside).6
+ Word classes. These are similar to N-gram pat-
+terns but over automatically induced classes.
+ Turn flags. Since speaker change often marks
+an SU boundary, we use this binary feature.
+Note that in the HMM approach this feature
+had to be grouped with the prosodic features
+and handled by the decision tree. In the max-
+ent approach we can use it separately.
+ Prosody. As we described earlier, decision tree
+classifiers are used to generate the posterior
+probabilities p(e
+i
+jf
+i
+). Since the maxent classi-
+fier is most conveniently used with binary fea-
+tures, we encode the prosodic posteriors into
+several binary features via thresholding. Equa-
+tion (3) shows that the presence of each fea-
+ture in a maxent model has a monotonic effect
+on the final probability (raising or lowering it
+by a constant factor ekgk). This suggests en-
+coding the decision tree posteriors in a cumu-
+lative fashion through a series of binary fea-
+tures, for example, p > 0:1, p > 0:3, p > 0:5,
+p > 0:7, p > 0:9. This representation is also
+more robust to mismatch between the posterior
+probability in training and test set, since small
+changes in the posterior value affect at most
+one feature.
+Note that the maxent framework does allow the
+use of real-valued feature functions, but pre-
+liminary experiments have shown no gain com-
+pared to the binary features constructed as de-
+scribed above. Still, this is a topic for future
+research.
+ Auxiliary LM. As mentioned earlier, additional
+text-only language model training data is of-
+ten available. In the HMM model we incor-
+porated auxiliary LMs by interpolation, which
+is not possible here since there is no LM per
+se, but rather N-gram features. However, we
+can use the same trick as we used for prosodic
+features. A word-only HMM is used to esti-
+mate posterior event probabilities according to
+the auxiliary LM, and these posteriors are then
+thresholded to yield binary features.
+ Combined features. To date we have not fully
+investigated compound features that combine
+different knowledge sources and are able to
+model the interaction between them explicitly.
+6Chunker features were only used for broadcast news
+data, due to the poor chunking performance on conversational
+speech.
+We only included a limited set of such features,
+for example, a combination of the decision tree
+hypothesis and POS contexts.
+4.3 Differences Between HMM and Maxent
+We have already discussed the differences between
+the two approaches regarding the training objective
+function (joint likelihood versus conditional likeli-
+hood) and with respect to the handling of depen-
+dent word features (model interpolation versus in-
+tegrated modeling via maxent). On both counts the
+maxent classifier should be superior to the HMM.
+However, the maxent approach also has some the-
+oretical disadvantages compared to the HMM by
+design. One obvious shortcoming is that some in-
+formation gets lost in the thresholding that converts
+posterior probabilities from the prosodic model and
+the auxiliary LM into binary features.
+A more qualitative limitation of the maxent
+model is that it only uses local evidence (the sur-
+rounding word context and the local prosodic fea-
+tures). In that respect, the maxent model resem-
+bles the conditional probability model at the in-
+dividual HMM states. The HMM as a whole,
+however, through the forward-backward procedure,
+propagates evidence from all parts of the observa-
+tion sequence to any given decision point. Variants
+such as the conditional Markov model (CMM) com-
+bine sequence modeling with posterior probability
+(e.g., maxent) modeling, but it has been shown that
+CMM?s are still structurally inferior to HMMs be-
+cause they only propagate evidence forward in time,
+not backwards (Klein and Manning, 2002).
+5 Results and Discussion
+5.1 Experimental Setup
+Experiments comparing the two modeling ap-
+proaches were conducted on two corpora: broad-
+cast news (BN) and conversational telephone speech
+(CTS). BN and CTS differ in genre and speaking
+style. These differences are reflected in the fre-
+quency of SU boundaries: about 14% of inter-word
+boundaries are SUs in CTS, compared to roughly
+8% in BN.
+The corpora are annotated by LDC according to
+the guidelines of (Strassel, 2003). Training and test
+data are those used in the DARPA Rich Transcrip-
+tion Fall 2003 evaluation.7 For CTS, there is about
+40 hours of conversational data from the Switch-
+board corpus for training and 6 hours (72 conversa-
+tions) for testing. The BN data has about 20 hours
+7We used both the development set and the evaluation set
+as the test set in this paper, in order to have a larger test set to
+make the results more meaningful.
+HMM Maxent Combined
+BN REF 48.72 48.61 46.79
+STT 55.37 56.51 54.35
+CTS REF 31.51 30.66 29.30
+STT 42.97 43.02 41.88
+Table 1: SU detection results (error rate in %) using
+maxent and HMM individually and in combination on
+BN and CTS.
+of broadcast news shows in the training set and 3
+hours (6 shows) in the test set. The SU detection
+task is evaluated on both the reference transcriptions
+(REF) and speech recognition outputs (STT). The
+speech recognition output is obtained from the SRI
+recognizer (Stolcke et al, 2003).
+System performance is evaluated using the offi-
+cial NIST evaluation tools,8 which implement the
+metric described earlier. In our experiments, we
+compare how the two approaches perform individ-
+ually and in combination. The combined classifier
+is obtained by simply averaging the posterior esti-
+mates from the two models, and then picking the
+event type with the highest probability at each posi-
+tion.
+We also investigate other experimental factors,
+such as the impact of the speech recognition errors,
+the impact of genre, and the contribution of text ver-
+sus prosodic information in each model.
+5.2 Experimental Results
+Table 1 shows SU detection results for BN and
+CTS, using both reference transcriptions and speech
+recognition output, using the HMM and the max-
+ent approach individually and in combination. The
+maxent approach slightly outperforms the HMM ap-
+proach when evaluating on the reference transcripts,
+and the combination of the two approaches achieves
+the best performance for all tasks (significant at
+p < 0:05 using the sign test on the reference tran-
+scription condition, mixed results on using recogni-
+tion output).
+5.2.1 BN vs. CTS
+The detection error rate on CTS is lower than on
+BN. This may be due to the metric used for per-
+formance. Detection error rate is measured as the
+percentage of errors per reference SU. The number
+of SUs in CTS is much larger than for BN, making
+the relative error rate lower for the conversational
+speech task. Notice also from Table 1 that maxent
+yields more gain on CTS than on BN (for the refer-
+ence transcription condition on both corpora). One
+possible reason for this is that we have more train-
+8http://www.nist.gov/speech/tests/rt/rt2003/fall/
+Del Ins Total
+BN HMM 28.48 20.24 48.72
+Maxent 32.06 16.54 48.61
+CTS HMM 17.19 14.32 31.51
+Maxent 19.97 10.69 30.66
+Table 2: Error rates for the two approaches on reference
+transcriptions. Performance is shown in deletion, inser-
+tion, and total error rate (%).
+BN CTS
+HMM Textual 67.48 38.92
+Textual + prosody 48.72 31.51
+Maxent Textual 63.56 36.32
+Textual + prosody 48.61 30.66
+Table 3: SU detection error rate (%) using different
+knowledge sources, for BN and CTS, evaluated on the
+reference transcription.
+ing data and thus less of a sparse data problem for
+CTS.
+5.2.2 Error Type Analysis
+Table 2 shows error rates for the HMM and the max-
+ent approaches in the reference condition. Due to
+the reduced dependence on the prosody model, the
+errors made in the maxent approach are different
+from the HMM approach. There are more deletion
+errors and fewer insertion errors, since the prosody
+model tends to overgenerate SU hypotheses. The
+different error patterns suggest that we can effec-
+tively combine the system output from the two ap-
+proaches. As shown in the Table 1, the combination
+of maxent and HMM consistently yields the best
+performance.
+5.2.3 Contribution of Knowledge Sources
+Table 3 shows SU detection results for the two ap-
+proaches, using textual information only, as well as
+in combination with the prosody model (which are
+the same results as shown in Table 1). We only re-
+port the results on the reference transcription con-
+dition, in order to not confound the comparison by
+word recognition errors.
+The superior results for text-only classification
+are consistent with the maxent model?s ability to
+combine overlapping word-level features in a prin-
+cipled way. However, the HMM largely catches
+up once prosodic information is added. This can
+be attributed to the loss-less integration of prosodic
+posteriors in the HMM, as well as the fact that in
+the HMM, each boundary decision is affected by
+prosodic information throughout the data; whereas,
+the maxent model only uses the prosodic features at
+the boundary to be classified.
+5.2.4 Effect of Recognition Errors
+We observe in Table 1 that there is a large increase in
+error rate when evaluating on the speech recognition
+output. This happens in part because word informa-
+tion is inaccurate in the recognition output, thus im-
+pacting the LMs and lexical features. The prosody
+model is also affected, since the alignment of incor-
+rect words to the speech is imperfect, thereby affect-
+ing the prosodic feature extraction. However, the
+prosody model is more robust to recognition errors
+than the LMs, due to its lesser dependence on word
+identity. The degradation on CTS is larger than on
+BN. This can easily be explained by the difference
+in word error rates, 22.9% on CTS and 12.1% on
+BN.
+The maxent system degrades more than then
+HMM system when errorful recognition output is
+used. In light of the previous section, this makes
+sense: most of the improvement of the maxent
+model comes from better lexical feature modeling.
+But these are exactly the features that are most de-
+teriorated by faulty recognition output.
+6 Conclusions and Future Work
+We have described two different approaches for
+modeling and integration of diverse knowledge
+sources for automatic sentence segmentation from
+speech: a state-of-the-art approach based on
+HMMs, and an alternative approach based on pos-
+terior probability estimation via maximum entropy.
+To achieve competitive performance with the max-
+ent model we devised a cumulative binary coding
+scheme to map posterior estimates from auxiliary
+submodels into features for the maxent model.
+The two approaches have complementary
+strengths and weaknesses that were reflected in the
+results, consistent with the findings for text-based
+NLP tasks (Klein and Manning, 2002). The maxent
+model showed much better accuracy than the HMM
+with lexical information, and a smaller win after
+combination with prosodic features. The HMM
+made more effective use of prosodic information
+and degraded less with errorful word recognition.
+A interpolation of posterior probabilities from the
+two systems achieved 2-7% relative error reduction
+compared to the baseline (significant at p < 0:05
+for the reference transcription condition). The
+results were consistent for two different genres of
+speech.
+In future work we hope to determine how the in-
+dividual qualitative differences of the two models
+(estimation methods, model structure, etc.) con-
+tribute to the observed differences in results. To
+improve results overall, we plan to explore features
+that combine multiple knowledge sources, as well
+as approaches that model recognition uncertainty in
+order to mitigate the effects of word errors. We also
+plan to investigate using a conditional random field
+(CRF) model. CRFs combine the advantages of
+both the HMM and the maxent approaches, being
+a discriminatively trained model that can incorpo-
+rate overlapping features (the maxent advantages),
+while also modeling sequence dependencies (an ad-
+vantage of HMMs) (Lafferty et al, 2001).
+7 Acknowledgments
+The authors gratefully thank Le Zhang for his guid-
+ance in applying the maximum entropy approach
+to this task. This research has been supported
+by DARPA under contract MDA972-02-C-0038,
+NSF-STIMULATE under IRI-9619921, NSF BCS-
+9980054, and NASA under NCC 2-1256. Distri-
+bution is unlimited. Any opinions expressed in this
+paper are those of the authors and do not necessarily
+reflect the views of DARPA, NSF, or NASA. Part of
+this work was carried out while the last author was
+on leave from Purdue University and at NSF.
+References
+A. L. Berger, S. A. Della Pietra, and V. J. Della
+Pietra. 1996. A maximum entropy approach to
+natural language processing. Computational Lin-
+guistics, 22:39?72.
+T. Brants. 2000. TnT?a statistical part-of-speech
+tagger. In Proc. of the Sixth Applied NLP, pages
+224?231.
+P. F. Brown, V. J. Della Pietra, P. V. DeSouza, J. C.
+Lai, and R. L. Mercer. 1992. Class-based n-gram
+models of natural language. Computational Lin-
+guistics, 18:467?479.
+S. Chen and R. Rosenfeld. 1999. A Gaussian prior
+for smoothing maximum entropy models. Tech-
+nical report, Carnegie Mellon University.
+H. Christensen. 2001. Punctuation annotation us-
+ing statistical prosody models. In ISCA Work-
+shop on Prosody in Speech Recognition and Un-
+derstanding.
+DARPA Information Processing Technol-
+ogy Office. 2003. Effective, afford-
+able, reusable speech-to-text (EARS).
+http://www.darpa.mil/ipto/programs/ears/.
+Y. Gotoh and S. Renals. 2000. Sentence bound-
+ary detection in broadcast speech transcripts. In
+ISCA Workshop: Automatic Speech Recognition:
+Challenges for the new Millennium ASR-2000,
+pages 228?235.
+J. Kim and P. C. Woodland. 2001. The use of
+prosody in a combined system for punctuation
+generation and speech recognition. In Proc. of
+Eurospeech 2001, pages 2757?2760.
+D. Klein and C. Manning. 2002. Conditional struc-
+ture versus conditional estimation in NLP mod-
+els. In Proc. of EMNLP 2002, pages 9?16.
+J. Lafferty, A. McCallum, and F. Pereira. 2001.
+Conditional random field: Probabilistic models
+for segmenting and labeling sequence data. In
+Prof. of ICML 2001, pages 282?289.
+Y. Liu, E. Shriberg, A. Stolcke, and M. Harper.
+2004. Using machine learning to cope with im-
+balanced classes in natural speech: Evidence
+from sentence boundary and disfluency detection.
+In Proc. of ICSLP 2004 (To Appear).
+National Institute of Standards and Technol-
+ogy. 2003. RT-03F workshop agenda and
+presentations. http://www.nist.gov/speech/tests/
+rt/rt2003/fall/presentations/, November.
+G. Ngai and R. Florian. 2001. Transformation-
+based learning in the fast lane. In Proc. of NAACL
+2001, pages 40?47, June.
+D. D. Palmer and M. A. Hearst. 1994. Adaptive
+sentence boundary disambiguation. In Proc. of
+the Fourth Applied NLP, pages 78?83.
+L. R. Rabiner and B. H. Juang. 1986. An introduc-
+tion to hidden Markov models. IEEE ASSP Mag-
+azine, 3(1):4?16, January.
+J. Reynar and A. Ratnaparkhi. 1997. A maximum
+entropy approach to identifying sentence bound-
+aries. In Proc. of the Fifth Applied NLP, pages
+16?19.
+H. Schmid. 2000. Unsupervised learning of pe-
+riod disambiguation for tokenisation. University
+of Stuttgart, Internal Report.
+E. Shriberg, A. Stolcke, D. H. Tur, and G. Tur.
+2000. Prosody-based automatic segmentation of
+speech into sentences and topics. Speech Com-
+munication, 32(1-2):127?154.
+A. Stolcke and E. Shriberg. 1996. Automatic lin-
+guistic segmentation of conversational speech. In
+Proc. of ICSLP 1996, pages 1005?1008.
+A. Stolcke, H. Franco, and R. Gadde et al
+2003. Speech-to-text research at SRI-ICSI-UW.
+http://www.nist.gov/speech/tests/rt/rt2003/spring/
+presentations/index.htm.
+S. Strassel, 2003. Simple Metadata Annotation
+Specification V5.0. Linguistic Data Consortium.

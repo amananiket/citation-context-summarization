@@ -1,0 +1,711 @@
+Proceedings of SSST, NAACL-HLT 2007 / AMTA Workshop on Syntax and Structure in Statistical Translation, pages 41?48,
+Rochester, New York, April 2007. c?2007 Association for Computational Linguistics
+Machine Translation as Tree Labeling
+Mark Hopkins
+Department of Linguistics
+University of Potsdam, Germany
+hopkins@ling.uni-potsdam.de
+Jonas Kuhn
+Department of Linguistics
+University of Potsdam, Germany
+kuhn@ling.uni-potsdam.de
+Abstract
+We present the main ideas behind a new
+syntax-based machine translation system,
+based on reducing the machine translation
+task to a tree-labeling task. This tree la-
+beling is further reduced to a sequence of
+decisions (of four varieties), which can be
+discriminatively trained. The optimal tree
+labeling (i.e. translation) is then found
+through a simple depth-first branch-and-
+bound search. An early system founded
+on these ideas has been shown to be
+competitive with Pharaoh when both are
+trained on a small subsection of the Eu-
+roparl corpus.
+1 Motivation
+Statistical machine translation has, for a while now,
+been dominated by the phrase-based translation par-
+adigm (Och and Ney, 2003). In this paradigm,
+sentences are translated from a source language to
+a target language through the repeated substitution
+of contiguous word sequences (?phrases?) from the
+source language for word sequences in the target
+language. Training of the phrase translation model
+builds on top of a standard statistical word align-
+ment over the training corpus for identifying corre-
+sponding word blocks, assuming no further linguis-
+tic analysis of the source or target language. In de-
+coding, these systems then typically rely on n-gram
+language models and simple statistical reordering
+models to shuffle the phrases into an order that is
+coherent in the target language.
+There are limits to what such an approach can ul-
+timately achieve. Machine translation based on a
+deeper analysis of the syntactic structure of a sen-
+tence has long been identified as a desirable objec-
+tive in principle (consider (Wu, 1997; Yamada and
+Knight, 2001)). However, attempts to retrofit syn-
+tactic information into the phrase-based paradigm
+have not met with enormous success (Koehn et al,
+2003; Och et al, 2003)1, and purely phrase-based
+machine translation systems continue to outperform
+these syntax/phrase-based hybrids.
+In this work, we try to make a fresh start with
+syntax-based machine translation, discarding the
+phrase-based paradigm and designing a machine
+translation system from the ground up, using syntax
+as our central guiding star. Evaluation with BLEU
+and a detailed manual error analysis of our nascent
+system show that this new approach might well have
+the potential to finally realize some of the promises
+of syntax.
+2 Problem Formulation
+We want to build a system that can learn to translate
+sentences from a source language to a destination
+language. As our first step, we will assume that the
+system will be learning from a corpus consisting of
+triples ?f, e, a?, where: (i) f is a sentence from our
+source language, which is parsed (the words of the
+sentence and the nodes of the parse tree may or may
+not be annotated with auxiliary information), (ii) e is
+a gold-standard translation of sentence f (the words
+of sentence e may or may not be annotated with aux-
+iliary information), and (iii) a is an automatically-
+generated word alignment (e.g. via GIZA++) be-
+tween source sentence f and destination sentence e.
+1(Chiang, 2005) also reports that with his hierarchical gen-
+eralization of the phrase-based approach, the addition of parser
+information doesn?t lead to any improvements.
+41
+Figure 1: Example translation object.
+Let us refer to these triples as translation objects.
+The learning task is: using the training data, pro-
+duce a scoring function P that assigns a score to
+every translation object ?f, e, a?, such that this scor-
+ing function assigns a high score to good transla-
+tions, and a low score to poor ones. The decoding
+task is: given scoring function P and an arbitrary
+sentence f from the source language, find transla-
+tion object ?f, e, a? that maximizes P (?f, e, a?).
+To facilitate matters, we will map translation ob-
+jects to an alternate representation. In (Galley et al,
+2003), the authors give a semantics to every trans-
+lation object by associating each with an annotated
+parse tree (hereafter called a GHKM tree) represent-
+ing a specific theory about how the source sentence
+was translated into the destination sentence.
+In Figure 1, we show an example translation ob-
+ject and in Figure 2, we show its associated GHKM
+tree. The GHKM tree is simply the parse tree f of
+the translation object, annotated with rules (hereafter
+referred to as GHKM rules). We will not describe in
+depth the mapping process from translation object to
+GHKM tree. Suffice it to say that the alignment in-
+duces a set of intuitive translation rules. Essentially,
+a rule like: ?not 1? ne 1 pas? (see Figure 2) means:
+if we see the word ?not? in English, followed by a
+phrase already translated into French, then translate
+the entire thing as the word ?ne? + the translated
+phrase + the word ?pas.? A parse tree node gets la-
+beled with one of these rules if, roughly speaking,
+its span is still contiguous when projected (via the
+alignment) into the target language.
+Formally, what is a GHKM tree? Define a rule el-
+ement as a string or an indexed variable (e.g. x1,
+x4, x32). A GHKM rule of rank k (where k is
+a non-negative integer) is a pair ?Rs, Rd?, where
+source list Rs and destination list Rd are both lists
+of rule elements, such that each variable of Xk ,
+{x1, x2, ..., xk} appears exactly once in Rs and ex-
+actly once in Rd. Moreover, in Rs, the variables ap-
+pear in ascending order. In Figure 2, some of the
+tree nodes are annotated with GHKM rules. For
+clarity, we use a simplified notation. For instance,
+rule ??x1, x2, x3?, ?x3, ?,?, x1, x2?? is represented as
+?1 2 3 ? 3 , 1 2?. We have also labeled the nodes
+with roman numerals. When we want to refer to a
+particular node in later examples, we will refer to it,
+e.g., as t(i) or t(vii).
+A rule node is a tree node annotated with a
+GHKM rule (for instance, nodes t(i) or t(v) of Fig-
+ure 2, but not node t(iv)). A tree node t2 is reachable
+from tree node t1 iff node t2 is a proper descendant
+of node t1 and there is no rule node (not including
+nodes t1, t2) on the path from node t1 to node t2.
+Define the successor list of a tree node t as the list
+of rule nodes and leaves reachable from t (ordered in
+left-to-right depth-first search order). For Figure 2,
+the successor list of node t(i) is ?t(ii), t(v), t(xiii)?,
+and the successor list of node t(v) is ?t(vii), t(viii)?.
+The rule node successor list of a tree node is its suc-
+cessor list, with all non-rule nodes removed.
+Define the signature of a parse tree node t as the
+result of taking its successor list, replacing the jth
+rule node with variable xj , and replacing every non-
+rule node with its word label (observe that all non-
+rule nodes in the successor list are parse tree leaves,
+and therefore they have word labels). For Figure 2,
+the signature of node t(i) is ?x1, x2, x3?, and the sig-
+nature of node t(v) is ??am?, x1?.
+Notice that the signature of every rule node in Fig-
+ure 2 coincides with the source list of its GHKM
+rule. This is no accident, but rather a requirement.
+Define a GHKM tree node as a parse tree node
+whose children are all GHKM tree nodes, and whose
+GHKM rule?s source list is equivalent to its signa-
+ture (if the node is a rule node).
+Given these definitions, we can proceed to define
+how a GHKM tree expresses a translation theory.
+Suppose we have a list S = ?s1, ..., sk? of strings.
+Define the substitution of string list S into rule ele-
+42
+Figure 2: GHKM tree equivalent of example translation object. The light gray nodes are rule nodes of the
+GHKM tree.
+ment r as:
+r[S] =
+ si if r is indexed var xi
+r otherwise
+Notice that this operation always produces a
+string. Define the substitution of string list S into
+rule element list R = ?r1, ..., rj? as:
+R[S] = concat(r1[S], r2[S], ..., rj [S])
+where concat(s1, ..., sk) is the spaced concatenation
+of strings s1, ..., sk (e.g., concat( ?hi?, ?there? ) =
+?hi there?). This operation also produces a string.
+Finally, define the translation of GHKM tree node
+t as:
+?(t) , Rd[??(t1), ..., ?(tk)?]
+where ?t1, ..., tk? is the rule node successor list of
+GHKM tree node t.
+For Figure 2, the rule node successor list of node
+t(viii) is ?t(xi)?. So:
+?(t(viii)) = ??ne?, x1, ?pas??[??(t(xi))?]
+= ??ne?, x1, ?pas??[??vais??]
+= ?ne vais pas?
+A similar derivation gives us:
+?(t(i)) = ?aujourd?hui , je ne vais pas?
+In this way, every GHKM tree encodes a transla-
+tion. Given this interpretation of a translation object,
+the task of machine translation becomes something
+concrete: label the nodes of a parsed source sentence
+with a good set of GHKM rules.
+3 Probabilistic Approach
+To achieve this ?good? labeling of GHKM rules,
+we will define a probabilistic generative model P
+of GHKM trees, which will serve as our scoring
+function. We would like to depart from the stan-
+dard probabilistic approach of most phrase-based
+translators, which employ very simple probability
+models to enable polynomial-time decoding. In-
+stead, we will use an alternative probabilistic ap-
+proach (an assignment process), which sacrifices
+polynomial-time guarantees in favor of a more flexi-
+ble and powerful model. This sacrifice of guaranteed
+polynomial-time decoding does not entail the sacri-
+fice of good running time in practice.
+3.1 Assignment Processes
+An assignment process builds a sequence of vari-
+able assignments (called an assignment history) by
+repeatedly iterating the following steps. First, it re-
+quests a variable name (say x22) from a so-named
+variable generator. It takes this variable name
+and the assignment history built so far and com-
+presses this information into a set of features (say
+{f2, f6, f80}) using a feature function. These fea-
+tures are then mapped to a probability distribution by
+a function (say p7) requested from a so-named distri-
+bution generator. The iteration ends by assigning to
+the chosen variable a value (say v4) drawn from this
+distribution. In the above running example, the iter-
+ation assigns v4 to x22, which was drawn according
+to distribution p7({f2, f6, f80}). The process ends
+when the variable generator produces the reserved
+token STOP instead of a variable name. At this
+43
+Var Assignment Distribution Features
+x23 true p4 {}
+x7 ?the? p10 {f12, f102}
+x8 blue p2 {f5, f55}
+x51 red p2 {f5, f15, f50}
+x19 7.29 p5 {f2}
+x30 false p4 {f2, f5, f7}
+x1 ?man? p10 {f1, f2, f12}
+x102 blue p2 {f1, f55, f56}
+Figure 3: A example assignment history generated
+by an assignment process.
+point, the assignment history built so far (like the
+example in Figure 3) is returned.
+Formally, define a variable signature as a pair
+? = ?X, V ?, where X is a set of variable names
+and V is a set of values. Define a variable assign-
+ment of signature ?X, V ? as a pair ?x, v?, for vari-
+able x ? X and value v ? V . Define an assignment
+history of signature ? as an ordered list of variable
+assignments of ?. The notation H(?) represents the
+set of all assignment histories of signature ?.
+We define a feature function of signature ? =
+?X, V ? as a function f that maps every pair of set
+X ?H(?) to a set of assignments (called features)
+of an auxiliary variable signature ?f .
+We define an assignment process of signature
+? = ?X, V ? as a tuple ?f, P, gx, gp?, where: (i) f is
+a feature function of ?, (ii) P = {p1, ..., pk} is a fi-
+nite set of k functions (called the feature-conditional
+distributions) that map each feature set in range(f)
+to a probability distribution over V , (iii) gx is a func-
+tion (called the variable generator) mapping each
+assignment history in the set H(?) to either a vari-
+able name in X or the reserved token STOP , and
+(iv) gp is a function (called the distribution gener-
+ator) mapping each assignment history in the set
+H(?) to a positive integer between 1 and k.
+An assignment process probabilistically generates
+an assignment history of signature ? in the follow-
+ing way:
+1. h? empty list
+2. Do until gx(h) = STOP :
+(a) Let x = gx(h) and let j = gp(h).
+(b) Draw value v probabilistically from distri-
+bution pj(f(x, h)).
+(c) Append assignment ?x, v? to history h.
+3. Return history h.
+3.2 Training
+Given all components of an assignment process
+of signature ? except for the set P of feature-
+conditional distributions, the training task is to learn
+P from a training corpus of assignment histories of
+signature ?. This can be achieved straightforwardly
+by taking the feature vectors generated by a partic-
+ular distribution and using them to discriminatively
+learn the distribution. For instance, say that our cor-
+pus consists of the single history given in Figure ??.
+To learn distribution p2, we simply take the three
+variable assignments produced by p2 and feed these
+feature vectors to a generic discriminative learner.
+We prefer learners that produce distributions (rather
+than hard classifiers) as output, but this is not re-
+quired.
+3.3 Decoding
+Notice that an assignment process of signature ? in-
+duces a probability distribution over the set H(?) of
+all assignment histories of ?. The decoding ques-
+tion is: given a partial assignment history h, what
+is the most probable completion of the history, ac-
+cording to this induced distribution? We will use
+the natural naive search space for this question. The
+nodes of this search space are the assignment his-
+tories of H(?). The children of the search node
+representing history h are those histories that can be
+generated from h in one iteration of the assignment
+process. The value of a search node is the proba-
+bility of its assignment history (according to the as-
+signment process). To decode, we begin at the node
+representing history h, and search for the highest-
+value descendant that represents a complete assign-
+ment history (i.e. an assignment history terminated
+by the STOP token).
+This is, potentially, a very large and intractible
+search space. However, if most assignment deci-
+sions can be made with relative confidence, then the
+great majority of search nodes have values which
+are inferior to those of the best solutions. The
+standard search technique of depth-first branch-and-
+bound search takes advantage of search spaces with
+this particular characteristic by first finding greedy
+good-quality solutions and using their values to opti-
+mally prune a significant portion of the search space.
+44
+Figure 4: Partial GHKM tree, after rule nodes have been identified (light gray). Notice that once we identify
+the rule node, the rule left-hand sides are already determined.
+Depth-first branch-and-bound search has the follow-
+ing advantage: it finds a good (suboptimal) solution
+in linear time and continually improves on this solu-
+tion until it finds the optimal. Thus it can be run ei-
+ther as an optimal decoder or as a heuristic decoder,
+since we can interrupt its execution at any time to get
+the best solution found so far. Additionally, it takes
+only linear space to run.
+4 Generative Model
+We now return to where we left off at the end of Sec-
+tion 2, and devise an assignment process that pro-
+duces a GHKM tree from an unlabeled parse tree.
+This will give us a quality measure that we can use
+to produce a ?good? labeling of a given parse tree
+with GHKM rules (i.e., the probability of such a la-
+beling according to the assignment process).
+The simplest assignment process would have a
+variable for each node of the parse tree, and these
+variables would all be assigned by the same feature-
+conditional distribution over the space of all possible
+GHKM rules. The problem with such a formulation
+is that such a distribution would be inachievably dif-
+ficult to learn. We want an assignment process in
+which all variables can take only a very small num-
+ber of possible values, because it will be much eas-
+ier to learn distributions over such variables. This
+means we need to break down the process of con-
+structing a GHKM rule into simpler steps.
+Our assignment process will begin by sequen-
+tially assigning a set of boolean variables (which we
+will call rule node indicator variables), one for each
+node in the parse tree. For parse tree node t, we de-
+note its corresponding rule node indicator variable
+xrt . Variable xrt is assigned true iff the parse tree
+node t will be a rule node in the GHKM tree.
+In Figure 3.3, we show a partial GHKM tree af-
+ter these assignments are made. The key thing to
+observe is that, after this sequence of boolean deci-
+sions, the LHS of every rule in the tree is already
+determined! To complete the tree, all we need to do
+is to fill in their right-hand sides.
+Again, we could create variables to do this di-
+rectly, i.e. have a variable for each rule whose do-
+main is the space of possible right-hand sides for its
+established left-hand sides. But this is still a wide-
+open decision, so we will break it down further.
+For each rule, we will begin by choosing the
+template of its RHS, which is a RHS in which
+all sequences of variables are replaced with an
+empty slot into which variables can later be placed.
+For instance, the template of ??ne?, x1, ?pas?? is
+??ne?, X, ?pas?? and the template of ?x3, ?,?, x1, x2?
+is ?X, ?,?, X?, where X represents the empty slots.
+Once the template is chosen, it simply needs to be
+filled with the variables from the LHS. To do so, we
+process the LHS variables, one by one. By default,
+they are placed to the right of the previously placed
+variable (the first variable is placed in the first slot).
+We repeatedly offer the option to push the variable
+to the right until the option is declined or it is no
+longer possible to push it further right. If the vari-
+able was not pushed right at all, we repeatedly offer
+the option to push the variable to the left until the
+option is declined or it is no longer possible to push
+it further left. Figure 4 shows this generative story
+in action for the rule RHS ?x3, ?,?, x1, x2?.
+These are all of the decisions we need to make
+45
+Decision to make Decision RHS so far
+RHS template? X , X X , X
+default placement of var 1 1 , X
+push var 1 right? yes X , 1
+default placement of var 2 X , 1 2
+push var 2 left? no X , 1 2
+default placement of var 3 X , 1 2 3
+push var 3 left? yes X , 1 3 2
+push var 3 left? yes X , 3 1 2
+push var 3 left? yes 3 , 1 2
+Figure 5: Trace of the generative story for the right-
+hand side of a GHKM rule.
+in order to label a parse tree with GHKM rules. No-
+tice that, aside from the template decisions, all of the
+decisions are binary (i.e. feasible to learn discrimi-
+natively). Even the template decisions are not terri-
+bly large-domain, if we maintain a separate feature-
+conditional distribution for each LHS template. For
+instance, if the LHS template is ??not?, X?, then
+RHS template ??ne?, X, ?pas?? and a few other se-
+lect candidates should bear most of the probability
+mass.
+5 Evaluation
+In this section, we evaluate a preliminary English-
+to-German translation system based on the ideas
+outlined in this paper. We first present a quantia-
+tive comparison with the phrase-based approach, us-
+ing the BLEU metric; then we discuss two con-
+crete translation examples as a preliminary qualita-
+tive evaluation. Finally, we present a detailed man-
+ual error analysis.
+Our data was a subset of the Europarl corpus con-
+sisting of sentences of lengths ranging from 8 to 17
+words. Our training corpus contained 50000 sen-
+tences and our test corpus contained 300 sentences.
+We also had a small number of reserved sentences
+for development. The English sentences were parsed
+using the Bikel parser (Bikel, 2004), and the sen-
+tences were aligned with GIZA++ (Och and Ney,
+2000). We used the WEKA machine learning pack-
+age (Witten and Frank, 2005) to train the distribu-
+tions (specifically, we used model trees).
+For comparison, we also trained and evaluated
+Pharaoh (Koehn, 2005) on this limited corpus, us-
+ing Pharaoh?s default parameters. Pharaoh achieved
+a BLEU score of 11.17 on the test set, whereas our
+system achieved a BLEU score of 11.52. What is
+notable here is not the scores themselves (low due to
+the size of the training corpus). However our system
+managed to perform comparably with Pharaoh in a
+very early stage of its development, with rudimen-
+tary features and without the benefit of an n-gram
+language model.
+Let?s take a closer look at the sentences produced
+by our system, to gain some insight as to its current
+strengths and weaknesses.
+Starting with the English sentence (note that all
+data is lowercase):
+i agree with the spirit of those amendments .
+Our system produces:
+ich
+I
+stimme
+vote
+die
+the.FEM
+geist
+spirit.MASC
+dieser
+these
+a?nderungsantra?ge
+change-proposals
+zu
+to
+.
+.
+The GHKM tree is depicted in Figure 5. The key
+feature of this translation is how the English phrase
+?agree with? is translated as the German ?stimme
+... zu? construction. Such a feat is difficult to pro-
+duce consistently with a purely phrase-based sys-
+tem, as phrases of arbitrary length can be placed be-
+tween the words ?stimme? and ?zu?, as we can see
+happening in this particular example. By contrast,
+Pharaoh opts for the following (somewhat less de-
+sirable) translation:
+ich
+I
+stimme
+vote
+mit
+with
+dem
+the.MASC
+geist
+spirit.MASC
+dieser
+these
+a?nderungsantra?ge
+change-proposals
+.
+.
+A weakness in our system is also evident here.
+The German noun ?Geist? is masculine, thus our
+system uses the wrong article (a problem that
+Pharaoh, with its embedded n-gram language model,
+does not encounter).
+In general, it seems that our system is superior to
+Pharaoh at figuring out the proper way to arrange the
+words of the output sentence, and inferior to Pharaoh
+at finding what the actual translation of those words
+should be.
+Consider the English sentence:
+we shall submit a proposal along these lines before
+the end of this year .
+46
+Figure 6: GHKM tree output for the first test sentence.
+Here we have an example of a double verb: ?shall
+submit.? In German, the second verb should go at
+the end of the sentence, and this is achieved by our
+system (translating ?shall? as ?werden?, and ?sub-
+mit? as ?vorlegen?).
+wir
+we
+werden
+will
+eine
+a.FEM
+vorschlag
+proposal.MASC
+in
+in
+dieser
+these
+haushaltslinien
+budget-lines
+vor
+before
+die
+the.FEM
+ende
+end.NEUT
+dieser
+this.FEM
+jahres
+year.NEUT
+vorlegen
+submit
+.
+.
+Pharaoh does not manage this (translating ?sub-
+mit? as ?unterbreiten? and placing it mid-sentence).
+werden
+will
+wir
+we
+unterbreiten
+submit
+eine
+a
+vorschlag
+proposal
+in
+in
+dieser
+these
+haushaltslinien
+budget-lines
+vor
+before
+ende
+end
+dieser
+this.FEM
+jahr
+year.NEUT
+.
+.
+It is worth noting that while our system gets the
+word order of the output system right, it makes sev-
+eral agreement mistakes and (like Pharaoh) doesn?t
+get the translation of ?along these lines? right.
+To have a more systematic basis for comparison,
+we did a manual error analysis for 100 sentences
+from the test set. A native speaker of German (in the
+present pilot study one of the authors) determined
+the editing steps required to transform the system
+output into an acceptable translation ? both in terms
+of fluency and adequacy of translation. In order to
+avoid a bias for our system, we randomized the pre-
+sentation of output from one of the two systems.
+We defined the following basic types of edits, with
+further subdistinctions depending on the word type:
+ADD, DELETE, CHANGE and MOVE. A special type
+TRANSLATE-untranslated was assumed for untrans-
+lated source words in the output. For the CHANGE,
+more fine-grained distinctions were made.2 A sin-
+gle MOVE operation was assumed to displace an en-
+tire phrase; the distance of the movement in terms
+of the number of words was calculated. The table in
+Figure 7 shows the edits required for correcting the
+output of the two systems on 100 sentences.
+We again observe that our system, which is at
+an early stage of development and contrary to the
+Pharaoh system does not include an n-gram lan-
+guage model trained on a large corpus, already
+yields promising results. The higher proportion
+of CHANGE operations, in particular CHANGE-
+inflection and CHANGE-function-word edits is pre-
+sumably a direct consequence of providing a lan-
+guage model or not. An interesting observation is
+that our system currently tends to overtranslate, i.e.,
+redundantly produce several translations for a word,
+which leads to the need of DELETE operations. The
+Pharaoh system had a tendency to undertranslate, of-
+ten with crucial words missing.
+2CHANGE-inflection: keeping the lemma and category the
+same, e.g. taken ? takes; CHANGE-part-of-speech: choos-
+ing a different derivational form, e.g., judged ? judgement;
+CHANGE-function-word: e.g., in ? from; CHANGE-content-
+word: e.g., opinion ? consensus.
+47
+TL-MT Pharaoh
+ADD-function-word 40 49
+ADD-content-word 17 35
+ADD-punctuation 12 13
+ADD (total) 69 97
+DELETE-function-word 37 18
+DELETE-content-word 22 10
+DELETE-punctuation 13 15
+DELETE-untranslated 2 1
+DELETE (total) 74 44
+CHANGE-content-word 24 19
+CHANGE-function-word 44 26
+CHANGE-inflection 101 80
+CHANGE-part-of-speech 4 10
+CHANGE (total) 173 135
+TRANSLATE-untranslated 34 1
+MOVE (distance)
+1 16 17
+2 12 16
+3 13 11
+4 3 6
+? 5 7 5
+MOVE (total) 51 55
+TOTAL # EDITS 401 332
+edits-per-word ratio 0.342 0.295
+Figure 7: Edits required for an acceptable system
+output, based on 100 test sentences.
+6 Discussion
+In describing this pilot project, we have attempted
+to give a ?big picture? view of the essential ideas
+behind our system. To avoid obscuring the presen-
+tation, we have avoided many of the implementation
+details, in particular our choice of features. There
+are exactly four types of decisions that we need to
+train: (1) whether a parse tree node should be a rule
+node, (2) the RHS template of a rule, (3) whether a
+rule variable should be pushed left, and (4) whether
+a rule variable should be pushed right. For each of
+these decisions, there are a number of possible fea-
+tures that suggest themselves. For instance, recall
+that in German, typically the second verb of a double
+verb (such as ?shall submit? or ?can do?) gets placed
+at the end of the sentence or clause. So when the
+system is considering whether to push a rule?s noun
+phrase to the left, past an existing verb, it would be
+useful for it to consider (as a feature) whether that
+verb is the first or second verb of its clause.
+This system was designed to be very flexible with
+the kind of information that it can exploit as fea-
+tures. Essentially any aspect of the parse tree, or
+of previous decisions that have been taken by the
+assignment process, can be used. Furthermore, we
+can mark-up the parse tree with any auxiliary infor-
+mation that might be beneficial, like noun gender or
+verb cases. The current implementation has hardly
+begun to explore these possibilities, containing only
+features pertaining to aspects of the parse tree.
+Even in these early stages of development, the
+system shows promise in using syntactic informa-
+tion flexibly and effectively for machine translation.
+We hope to develop the system into a competitive
+alternative to phrase-based approaches.
+References
+Daniel M. Bikel. 2004. Intricacies of Collins? parsing model.
+Computational Linguistics, 30(4):479?511.
+David Chiang. 2005. A hierarchical phrase-based model for
+statistical machine translation. In Proceedings of ACL, pages
+263?270.
+Michel Galley, Mark Hopkins, Kevin Knight, and Daniel
+Marcu. 2003. What?s in a translation rule? In Proc. NAACL.
+Philipp Koehn, Franz Josef Och, and Daniel Marcu. 2003. Sta-
+tistical phrase-based translation. In Proceedings of the Hu-
+man Language Technology Conference 2003 (HLT-NAACL
+2003), Edmonton, Canada.
+Philipp Koehn. 2005. Pharaoh: a beam search decoder for
+phrase-based statistical machine translation models. In Pro-
+ceedings of the Sixth Conference of the Association for Ma-
+chine Translation in the Americas, pages 115?124.
+F. J. Och and H. Ney. 2000. Improved statistical alignment
+models. In Proc. ACL, pages 440?447, Hongkong, China,
+October.
+Franz Josef Och and Hermann Ney. 2003. A systematic com-
+parison of various statistical alignment models. Computa-
+tional Linguistics, 29(1):19?51.
+F. J. Och, D. Gildea, S. Khudanpur, A. Sarkar, K. Yamada,
+A. Fraser, S. Kumar, L. Shen, D. Smith, K. Eng, Viren
+Jain, Z.Jin, and D. Radev. 2003. Syntax for statistical ma-
+chine translation. Technical report, Center for Language and
+Speech Processing, Johns Hopkins University, Baltimore.
+Summer Workshop Final Report.
+Ian H. Witten and Eibe Frank. 2005. Data Mining: Practical
+machine learning tools and techniques. Morgan Kaufmann.
+Dekai Wu. 1997. Stochastic inversion transduction grammars
+and bilingual parsing of parallel corpora. Computational
+Linguistics, 23(3):377?403.
+Kenji Yamada and Kevin Knight. 2001. A syntax-based statis-
+tical translation model. In Proceedings of the 39th Annual
+Meeting of the Association for Computational Linguistics,
+pages 523?530.
+48

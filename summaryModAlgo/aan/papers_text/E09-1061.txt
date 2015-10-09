@@ -1,0 +1,896 @@
+Proceedings of the 12th Conference of the European Chapter of the ACL, pages 532?540,
+Athens, Greece, 30 March ? 3 April 2009. c?2009 Association for Computational Linguistics
+Translation as Weighted Deduction
+Adam Lopez
+University of Edinburgh
+10 Crichton Street
+Edinburgh, EH8 9AB
+United Kingdom
+alopez@inf.ed.ac.uk
+Abstract
+We present a unified view of many trans-
+lation algorithms that synthesizes work on
+deductive parsing, semiring parsing, and
+efficient approximate search algorithms.
+This gives rise to clean analyses and com-
+pact descriptions that can serve as the ba-
+sis for modular implementations. We illus-
+trate this with several examples, showing
+how to build search spaces for several dis-
+parate phrase-based search strategies, inte-
+grate non-local features, and devise novel
+models. Although the framework is drawn
+from parsing and applied to translation, it
+is applicable to many dynamic program-
+ming problems arising in natural language
+processing and other areas.
+1 Introduction
+Implementing a large-scale translation system is
+a major engineering effort requiring substantial
+time and resources, and understanding the trade-
+offs involved in model and algorithm design de-
+cisions is important for success. As the space of
+systems described in the literature becomes more
+crowded, identifying their common elements and
+isolating their differences becomes crucial to this
+understanding. In this work, we present a com-
+mon framework for model manipulation and anal-
+ysis that accomplishes this, and use it to derive sur-
+prising conclusions about phrase-based models.
+Most translation algorithms do the same thing:
+dynamic programming search over a space of
+weighted rules (?2). Fortunately, we need
+not search far for modular descriptions of dy-
+namic programming algorithms. Deductive logic
+(Pereira and Warren, 1983), extended with semir-
+ings (Goodman, 1999), is an established formal-
+ism used in parsing. It is occasionally used
+to describe formally syntactic translation mod-
+els, but these treatments tend to be brief (Chiang,
+2007; Venugopal et al, 2007; Dyer et al, 2008;
+Melamed, 2004). We apply weighted deduction
+much more thoroughly, first extending it to phrase-
+based models and showing that the set of search
+strategies used by these models have surprisingly
+different implications for model and search error
+(?3, ?4). We then show how it can be used to an-
+alyze common translation problems such as non-
+local parameterizations (?5), alignment, and novel
+model design (?6). Finally, we show that it leads to
+a simple analysis of cube pruning (Chiang, 2007),
+an important approximate search algorithm (?7).
+2 Translation Models
+A translation model consists of two distinct ele-
+ments: an unweighted ruleset, and a parameteriza-
+tion (Lopez, 2008). A ruleset licenses the steps by
+which a source string f1...fI may be rewritten as
+a target string e1...eJ , thereby defining the finite
+set of all possible rewritings of a source string. A
+parameterization defines a weight function over
+every sequence of rule applications.
+In a phrase-based model, the ruleset is simply
+the unweighted phrase table, where each phrase
+pair fi...fi?/ej ...ej? states that phrase fi...fi? in the
+source is rewritten as ej ...ej? in the the target.
+The model operates by iteratively applying
+rewrites to the source sentence until each source
+word has been consumed by exactly one rule. We
+call a sequence of rule applications a derivation.
+A target string e1...eJ yielded by a derivation D is
+obtained by concatenating the target phrases of the
+rules in the order in which they were applied. We
+define Y (D) to be the target string yielded by D.
+532
+Now consider the Viterbi approximation to a
+noisy channel parameterization of this model,
+P (f |D) ? P (D).1 We define P (f |D) in the stan-
+dard way.
+P (f |D) =
+?
+fi...fi?/ej ...ej??D
+p(fi...fi? |ej ...ej?)
+(1)
+Note that in the channel model, we can replace any
+rule application with any other rule containing the
+same source phrase without affecting the partial
+score of the rest of the derivation. We call this a
+local parameterization.
+Now we define a standard n-gram model P (D).
+P (D) =
+?
+ej?Y (D)
+p(ej |ej?n+1...ej?1) (2)
+This parameterization differs from the channel
+model in an important way. If we replace a single
+rule in the derivation, the partial score of the rest
+of derivation is also affected, because the terms
+ej?n+1...ej may come from more than one rule. In
+other words, this parameterization encodes a de-
+pendency between the steps in a derivation. We
+call this a non-local parameterization.
+3 Translation As Deduction
+For the first part of the discussion that follows, we
+consider deductive logics purely over unweighted
+rulesets. As a way to introduce deductive logic, we
+consider the CKY algorithm for context-free pars-
+ing, a common example that we will revisit in ?6.2.
+It is also relevant since it can form the basis of a
+decoder for inversion transduction grammar (Wu,
+1996). In the discussion that follows, we useA,B,
+and C to denote arbitrary nonterminal symbols, S
+to denote the start nonterminal symbol, and a to
+denote a terminal symbol. CKY works on gram-
+mars in Chomsky normal form: all rules are either
+binary as in A? BC, or unary as in A? a.
+The number of possible binary-branching
+parses of a sentence is defined by the Catalan num-
+ber, an exponential combinatoric function (Church
+and Patil, 1982), so dynamic programming is cru-
+cial for efficiency. CKY computes all parses in
+cubic time by reusing subparses. To parse a sen-
+tence a1...aK , we compute a set of items in the
+form [A, k, k?], whereA is a nonterminal category,
+1The true noisy channel parameterization p(f |e) ? p(e)
+would require a marginalization over D, and is intractable
+for most models.
+k and k? are both integers in the range [0, n]. This
+item represents the fact that there is some parse of
+span ak+1...ak? rooted at A (span indices are on
+the spaces between words). CKY works by creat-
+ing items over successively longer spans. First it
+creates items [A, k?1, k] for any ruleA? a such
+that a = ak. It then considers spans of increasing
+length, creating items [A, k, k?] whenever it finds
+two items [B, k, k??] and [C, k??, k?] for some gram-
+mar ruleA? BC and some midpoint k??. Its goal
+is an item [S, 0,K], indicating that there is a parse
+of a1...aK rooted at S.
+A CKY logic describes its actions as inference
+rules, equivalent to Horn clauses. The inference
+rule is a list of antecedents, items and rules that
+must all be true for the inference to occur; and a
+single consequent that is inferred. To denote the
+creation of item [A, k, k?] based on existence of
+rule A? BC and items [B, k, k??] and [C, k??, k?],
+we write an inference rule with antecedents on the
+top line and consequent on the second line, follow-
+ing Goodman (1999) and Shieber et al (1995).
+R(A? BC) [B, k, k??] [C, k??, k?]
+[A, k, k?]
+We now give the complete Logic CKY.
+item form: [A, k, k?] goal: [S, 0,K]
+rules:
+?
+????
+????
+R(A? ak)
+[A, k ? 1, k]
+R(A? BC) [B, k, k??] [C, k??, k?]
+[A, k, k?]
+(Logic CKY)
+A benefit of this declarative description is that
+complexity can be determined by inspection
+(McAllester, 1999). We elaborate on complexity
+in ?7, but for now it suffices to point out that the
+number of possible items and possible deductions
+depends on the product of the domains of the free
+variables. For example, the number of possible
+CKY items for a grammar with G nonterminals
+is O(GK2), because k and k? are both in range
+[0,K]. Likewise, the number of possible inference
+rules that can fire is O(G3K3).
+3.1 A Simple Deductive Decoder
+For our first example of a translation logic we con-
+sider a simple case: monotone decoding (Marin?o
+et al, 2006; Zens and Ney, 2004). Here, rewrite
+rules are applied strictly from left to right on the
+source sentence. Despite its simplicity, the search
+533
+space can be very large?in the limit there could
+be a translation for every possible segmentation
+of the sentence, so there are exponentially many
+possible derivations. Fortunately, we know that
+monotone decoding can easily be cast as a dy-
+namic programming problem. For any position i
+in the source sentence f1...fI , we can freely com-
+bine any partial derivation covering f1...fi on its
+left with any partial derivation covering fi+1...fI
+on its right to yield a complete derivation.
+In our deductive program for monotone decod-
+ing, an item simply encodes the index of the right-
+most word that has been rewritten.
+item form: [i]
+goal: [I]
+rule:
+[i] R(fi+1...fi?/ej ...ej?)
+[i?]
+(Logic MONOTONE)
+This is the algorithm of Zens and Ney (2004).
+With a maximum phrase length of m, i? will range
+over [i+1,min(i+m, I)], giving a complexity of
+O(Im). In the limit it is O(I2).
+3.2 More Complex Decoders
+Now we consider phrase-based decoders with
+more permissive reordering. In the limit we al-
+low arbitrary reordering, so our item must contain
+a coverage vector. Let V be a binary vector of
+length I; that is, V ? {0, 1}I . Le 0m be a vec-
+tor of m 0?s. For example, bit vector 00000 will
+be abbreviated 05 and bit vector 000110 will be
+abbreviated 031201. Finally, we will need bitwise
+AND (?) and OR (?). Note that we impose an ad-
+ditional requirement that is not an item in the de-
+ductive system as a side condition (we elaborate
+on the significance of this in ?4).
+item form: [{0, 1}I ] goal: [1I ]
+rule:
+[V ] R(fi+1...fi?/ej ...ej?)
+[V ? 0i1i??i0I?i? ]
+V ? 0i1i
+??i0I?i
+?
+= 0I
+(Logic PHRASE-BASED)
+The runtime complexity is exponential, O(I22I).
+Practical decoding strategies are more restrictive,
+implementing what is frequently called a distor-
+tion limit or reordering limit. We found that these
+terms are inexact, used to describe a variety of
+quite different strategies.2 Since we did not feel
+that the relationship between these various strate-
+gies was obvious or well-known, we give logics
+2Costa-jussa` and Fonollosa (2006) refer to the reordering
+limit and distortion limit as two distinct strategies.
+for several of them and a brief analysis of the
+implications. Each strategy uses a parameter d,
+generically called the distortion limit or reorder-
+ing limit.
+The Maximum Distortion d strategy (MDd)
+requires that the first word of a phrase chosen for
+translation be within d words of the the last word
+of the most recently translated phrase (Figure 1).3
+The effect of this strategy is that, up to the last
+word covered in a partial derivation, there must be
+a covered word in every d words. Its complexity
+is O(I32d).
+MDd can produce partial derivations that cannot
+be completed by any allowed sequence of jumps.
+To prevent this, the Window Length d strategy
+(WLd) enforces a tighter restriction that the last
+word of a phrase chosen for translation cannot be
+more than d words from the leftmost untranslated
+word in the source (Figure 1).4 For this logic we
+use a bitwise shift operator (), and a predicate
+(?1) that counts the number of leading ones in a
+bit array.5 Its runtime is exponential in parameter
+d, but linear in sentence length, O(d22dI).
+The First d Uncovered Words strategy
+(FdUW) is described by Tillman and Ney (2003)
+and Zens and Ney (2004), who call it the IBM
+Constraint.6 It requires at least one of the leftmost
+d uncovered words to be covered by a new phrase.
+Items in this strategy contain the index i of the
+rightmost covered word and a vector U ? [1, I]d
+of the d leftmost uncovered words (Figure 1). Its
+complexity is O(dI
+( I
+d+1
+)
+), which is roughly ex-
+ponential in d.
+There are additional variants, such as the Maxi-
+mum Jump d strategy (MJd), a polynomial-time
+strategy described by Kumar and Byrne (2005),
+and possibly others. We lack space to describe all
+of them, but simply depicting the strategies as log-
+ics permits us to make some simple analyses.
+First, it should be clear that these reorder-
+ing strategies define overlapping but not identical
+search spaces: for most values of d it is impossi-
+ble to find d? such that any of the other strategies
+would be identical (except for degenerate cases
+3Moore and Quirk (2007) give a nice description of MDd.
+4We do not know if WLd is documented anywhere, but
+from inspection it is used in Moses (Koehn et al, 2007). This
+was confirmed by Philipp Koehn and Hieu Hoang (p.c.).
+5When a phrase covers the first uncovered word in the
+source sentence, the new first uncovered word may be further
+along in the sentence (if the phrase completely filled a gap),
+or just past the end of the phrase (otherwise).
+6We could not identify this strategy in the IBM patents.
+534
+(1)
+item form: [i, {0, 1}I ]
+goal: [i ? [I ? d, I], 1I ]
+rule:
+[i??, V ] R(fi+1...fi?/ej ...ej?)
+[i?, V ? 0i1i??i0I?i? ]
+V ? 0i1i
+??i0I?i
+?
+= 0I , |i? i??| ? d
+(2)
+item form: [i, {0, 1}d]
+goal: [I, 0d]
+rules:
+?
+????
+????
+[i, C] R(fi+1...fi?/ej ...ej?)
+[i??, C  i?? ? i]
+C ? 1i
+??i0d?i
+?+i = 0d, i? ? i ? d,
+?1(C ? 1i
+??i0d?i
+?+i) = i?? ? i
+[i, C] R(fi? ...fi??/ej ...ej?)
+[i, C ? 0i??i1i???i?0d?i??+i]
+C ? 0i
+??i1i
+???i?0d?i
+??+i = 0d, i?? ? i ? d
+(3) item form: [i, [1, I + d]d] goal: [I, [I + 1, I + d]]
+rules:
+?
+????
+????
+[i, U ] R(fi? ...fi??/ej ...ej?)
+[i??, U ? [i?, i??] ? [i??, i?? + d? |U ? [i?, i??]|]]
+i? > i, fi+1 ? U
+[i, U ] R(fi? ...fi??/ej ...ej?)
+[i, U ? [i?, i??] ? [max(U ? i) + 1,max(U ? i) + 1 + d? |U ? [i?, i??]|]]
+i? < i, [fi? , fi?? ] ? U
+Figure 1: Logics (1) MDd, (2) WLd, and (3) FdUW. Note that the goal item of MDd (1) requires that the
+last word of the last phrase translated be within d words of the end of the source sentence.
+d = 0 and d = I). This has important ramifi-
+cations for scientific studies: results reported for
+one strategy may not hold for others, and in cases
+where the strategy is not clearly described it may
+be impossible to replicate results. Furthermore, it
+should be clear that the strategy can have signifi-
+cant impact on decoding speed and pruning strate-
+gies (?7). For example, MDd is more complex
+than WLd, and we expect implementations of the
+former to require more pruning and suffer from
+more search errors, while the latter would suffer
+from more model errors since its space of possible
+reorderings is smaller.
+We emphasize that many other translation mod-
+els can be described this way. Logics for the IBM
+Models (Brown et al, 1993) would be similar to
+our logics for phrase-based models. Syntax-based
+translation logics are similar to parsing logics; a
+few examples already appear in the literature (Chi-
+ang, 2007; Venugopal et al, 2007; Dyer et al,
+2008; Melamed, 2004). For simplicity, we will
+use the MONOTONE logic for the remainder of our
+examples, but all of them generalize to more com-
+plex logics.
+4 Adding Local Parameterizations via
+Semiring-Weighted Deduction
+So far we have focused solely on unweighted log-
+ics, which correspond to search using only rule-
+sets. Now we turn our focus to parameterizations.
+As a first step, we consider only local parame-
+terizations, which make computing the score of a
+derivation quite simple. We are given a set of in-
+ferences in the following form (interpreting side
+conditions B1...BM as boolean constraints).
+A1...AL
+C
+B1...BM
+Now suppose we want to find the highest-scoring
+derivation. Each antecedent item A` has a proba-
+bility p(A`): if A` is a rule, then the probability is
+given, otherwise its probability is computed recur-
+sively in the same way that we now compute p(C).
+Since C can be the consequent of multiple deduc-
+tions, we take the max of its current value (initially
+0) and the result of the new deduction.
+p(C) = max(p(C), (p(A1)? ...? p(AL))) (3)
+If for every A` that is an item, we replace p(A`)
+recursively with this expression, we end up with a
+maximization over a product of rule probabilities.
+Applying this to logic MONOTONE, the result will
+be a maximization (over all possible derivations
+D) of the algebraic expression in Equation 1.
+We might also want to calculate the total prob-
+ability of all possible derivations, which is useful
+for parameter estimation (Blunsom et al, 2008).
+We can do this using the following equation.
+p(C) = p(C) + (p(A1)? ...? p(AL)) (4)
+535
+Equations 3 and 4 are quite similar. This suggests
+a useful generalization: semiring-weighted deduc-
+tion (Goodman, 1999).7 A semiring ?A,?,??
+consists of a domain A, a multiplicative opera-
+tor ? and an additive operator ?.8 In Equa-
+tion 3 we use the Viterbi semiring ?[0, 1],?,max?,
+while in Equation 4 we use the inside semiring
+?[0, 1],?,+?. The general form of Equations 3
+and 4 can be written for weights w ? A.
+w(C)?= w(A1)? ...? w(A`) (5)
+Many quantities can be computed simply by us-
+ing the appropriate semiring. Goodman (1999) de-
+scribes semirings for the Viterbi derivation, k-best
+Viterbi derivations, derivation forest, and num-
+ber of paths.9 Eisner (2002) describes the expec-
+tation semiring for parameter learning. Gimpel
+and Smith (2009) describe approximation semir-
+ings for approximate summing in (usually in-
+tractable) models. In parsing, the boolean semir-
+ing ?{>,?},?,?? is used to determine grammati-
+cality of an input string. In translation it is relevant
+for alignment (?6.1).
+5 Adding Non-Local Parameterizations
+with the PRODUCT Transform
+A problem arises with the semiring-weighted de-
+ductive formalism when we add non-local parame-
+terizations such as an n-gram model (Equation 2).
+Suppose we have a derivation D = (d1, ..., dM ),
+where each dm is a rule application. We can view
+the language model as a function on D.
+P (D) = f(d1, ..., dm, ..., dM ) (6)
+The problem is that replacing dm with a lower-
+scoring rule d?m may actually improve f due to
+the language model dependency. This means that
+f is nonmonotonic?it does not display the opti-
+mal substructure property on partial derivations,
+which is required for dynamic programming (Cor-
+men et al, 2001). The logics still work for some
+semirings (e.g. boolean), but not others. There-
+fore, non-local parameterizations break semiring-
+weighted deduction, because we can no longer use
+7General weighted deduction subsumes semiring-
+weighted deduction (Eisner et al, 2005; Eisner and Blatz,
+2006; Nederhof, 2003), but semiring-weighted deduction
+covers all translation models we are aware of, so it is a good
+first step in applying weighted deduction to translation.
+8See Goodman (1999) for additional conditions on semir-
+ings used in this framework.
+9Eisner and Blatz (2006) give an alternate strategy for the
+best derivation.
+the same logic under all semirings. We need new
+logics; for this we will use a logic programming
+transform called the PRODUCT transform (Cohen
+et al, 2008).
+We first define a logic for the non-local param-
+eterization. The logic for an n-gram language
+model generates sequence e1...eQ by generating
+each new word given the past n? 1 words.10
+item form: [eq, ..., eq+n?2] goal: [eQ?n+2, ..., eQ]
+rule:
+[eq, ..., eq+n?2]R(eq, ..., eq+n?1)
+[eq+1, ..., eq+n?1]
+(Logic NGRAM)
+Now we want to combine NGRAM and MONO-
+TONE. To make things easier, we modify MONO-
+TONE to encode the idea that once a source phrase
+has been recognized, its target words are gener-
+ated one at a time. We will use ue and ve to denote
+(possibly empty) sequences in ej ...e?j . Borrowing
+the notation of Earley (1970), we encode progress
+using a dotted phrase ue ? ve.
+item form: [i, ue ? ve] goal: [I, ue ? ve]
+rules:
+[i, ue?] R(fi+1...fi?/ejve)
+[i?, ej ? ve]
+[i, ue ? ejve]
+[i, ueej ? ve]
+(Logic MONOTONE-GENERATE)
+We combine NGRAM and MONOTONE-
+GENERATE using the PRODUCT transform,
+which takes two logics as input and essentially
+does the following.11
+1. Create a new item type from the cross-
+product of item types in the input logics.
+2. Create inference rules for the new item type
+from the cross-product of all inference rules
+in the input logics.
+3. Constrain the new logic as needed. This is
+done by hand, but quite simple, as we will
+show by example.
+The first two steps give us logic MONOTONE-
+GENERATE ? NGRAM (Figure 2). This is close to
+what we want, but not quite done. The constraint
+we want to apply is that each word written by logic
+MONOTONE-GENERATE is equal to the word gen-
+erated by logic NGRAM. We accomplish this by
+unifying variables eq and en?i in the inference
+rules, giving us logic MONOTONE-GENERATE +
+NGRAM (Figure 2).
+10We ignore start and stop probabilities for simplicity.
+11The description of Cohen et al (2008) is much more
+complete and includes several examples.
+536
+(1)
+item form: [i, ue ? ve, eq, ..., eq+n?2]
+goal: [I, ue?, eQ?n+2, ..., eQ]
+rules:
+[i, ue?, eq, ..., eq+n?2] R(fi...fi?/ejue) R(eq, ..., eq+n?1)
+[i?, ej ? ue, eq+1, ..., eq+n?1]
+[i, ue ? ejve, eq, ..., eq+n?2] R(eq, ..., eq+n?1)
+[i, ueej ? ve, eq+1, ..., eq+n?1]
+(2)
+item form: [i, ue ? ve, ej , ..., ej+n?2]
+goal: [I, ue?, eJ?n+2, ..., eJ ]
+rules:
+[i, ue?, ej?n+1, ..., ej?1] R(fi...fi?/ejve) R(ej?n+2...ej)
+[i?, ej ? ve, ej?n+2, ..., ej ]
+[i, ue ? ei+n?1ve, ei, ..., ei+n?2] R(ej?n+2...ej)
+[i+ 1, ueej ? ve, ej?n+2, ..., ej ]
+(3) item form: [i, ue ? ve, ei, ..., en?i?2] goal: [I, ue?, eI?n+2, ..., eI ]
+rule:
+[i, ej?n+1, ..., ej?1] R(fi...fi?/ej ...ej?)R(ej?n+1, ..., ej)...R(ej??n+1...ej?)
+[i?, ej??n+2...ej? ]
+Figure 2: Logics (1) MONOTONE-GENERATE ? NGRAM, (2) MONOTONE-GENERATE + NGRAM and
+(3) MONOTONE-GENERATE + NGRAM SINGLE-SHOT.
+This logic restores the optimal subproblem
+property and we can apply semiring-weighted de-
+duction. Efficient algorithms are given in ?7, but
+a brief comment is in order about the new logic.
+In most descriptions of phrase-based decoding,
+the n-gram language model is applied all at once.
+MONOTONE-GENERATE+NGRAM applies the n-
+gram language model one word at a time. This
+illuminates a space of search strategies that are to
+our knowledge unexplored. If a four-word phrase
+were proposed as an extension of a partial hypoth-
+esis in a typical decoder implementation using a
+five-word language model, all four n-grams will
+be applied even though the first n-gram might have
+a very low score. Viewing each n-gram applica-
+tion as producing a new state may yield new strate-
+gies for approximate search.
+We can derive the more familiar logic by ap-
+plying a different transform: unfolding (Eisner
+and Blatz, 2006). The idea is to replace an item
+with the sequence of antecedents used to pro-
+duce it (similar to function inlining). This gives
+us MONOTONE-GENERATE+NGRAM SINGLE-
+SHOT (Figure 2).
+We call the ruleset-based logic the minimal
+logic and the logic enhanced with non-local pa-
+rameterization the complete logic. Note that the
+set of variables in the complete logic is a superset
+of the set of variables in the minimal logic. We
+can view the minimal logic as a projection of the
+complete logic into a smaller dimensional space.
+It is important to note that complete logic is sub-
+stantially more complex than the minimal logic,
+by a factor of O(|VE |n) for a target vocabulary of
+VE . Thus, the complexity of non-local parameteri-
+zations often makes search spaces large regardless
+of the complexity of the minimal logic.
+6 Other Uses of the PRODUCT Transform
+The PRODUCT transform can also implement
+alignment and help derive new models.
+6.1 Alignment
+In the alignment problem (sometimes called con-
+strained decoding or forced decoding), we are
+given a reference target sentence r1, ..., rJ , and
+we require the translation model to generate only
+derivations that produce that sentence. Alignment
+is often used in training both generative and dis-
+criminative models (Brown et al, 1993; Blunsom
+et al, 2008; Liang et al, 2006). Our approach to
+alignment is similar to the one for language mod-
+eling. First, we implement a logic requiring an
+537
+input to be identical to the reference.
+item form: [j]
+goal: [J ]
+rule:
+[j]
+[j + 1]
+ej+1 = rj+1
+(Logic RECOGNIZE)
+The logic only reaches its goal if the input is iden-
+tical to the reference. In fact, partial derivations
+must produce a prefix of the reference. When we
+combine this logic with MONOTONE-GENERATE,
+we obtain a logic that only succeeds if the transla-
+tion logic generates the reference.
+item form: [i, j, ue ? ve] goal: [I, j, ue?]
+rules:
+?
+????
+????
+[i, j, ue?] R(fi...fi?/ej ...ej?)
+[i?, j, ?ej ...ej? ]
+[i, j, ue ? ejve]
+[i, j + 1, ueej ? ve]
+ej+1 = rj+1
+(Logic MONOTONE-ALIGN)
+Under the boolean semiring, this (minimal) logic
+decides if a training example is reachable by the
+model, which is required by some discriminative
+training regimens (Liang et al, 2006; Blunsom et
+al., 2008). We can also compute the Viterbi deriva-
+tion or the sum over all derivations of a training
+example, needed for some parameter estimation
+methods. Cohen et al (2008) derive an alignment
+logic for ITG from the product of two CKY logics.
+6.2 Translation Model Design
+A motivation for many syntax-based translation
+models is to use target-side syntax as a language
+model (Charniak et al, 2003). Och et al (2004)
+showed that simply parsing the N -best outputs
+of a phrase-based model did not work; to ob-
+tain the full power of a language model, we need
+to integrate it into the search process. Most ap-
+proaches to this problem focus on synchronous
+grammars, but it is possible to integrate the target-
+side language model with a phrase-based transla-
+tion model. As an exercise, we integrate CKY
+with the output of logic MONOTONE-GENERATE.
+The constraint is that the indices of the CKY items
+unify with the items of the translation logic, which
+form a word lattice. Note that this logic retains the
+rules in the basic MONOTONE logic, which are not
+depicted (Figure 3).
+The result is a lattice parser on the output of the
+translation model. Lattice parsing is not new to
+translation (Dyer et al, 2008), but to our knowl-
+edge it has not been used in this way. Viewing
+(1)
+(2)
+Figure 4: Example graphs corresponding to a sim-
+ple minimal (1) and complete (2) logic, with cor-
+responding nodes in the same color. The state-
+splitting induced by non-local features produces in
+a large number of arcs which must be evaluated,
+which can be reduced by cube pruning.
+translation as deduction is helpful for the design
+and construction of novel models.
+7 Algorithms
+Most translation logics are too expensive to ex-
+haustively search. However, the logics conve-
+niently specify the full search space, which forms
+a hypergraph (Klein and Manning, 2001).12 The
+equivalence is useful for complexity analysis:
+items correspond to nodes and deductions corre-
+spond to hyperarcs. These equivalences make it
+easy to compute algorithmic bounds.
+Cube pruning (Chiang, 2007) is an approxi-
+mate search technique for syntax-based translation
+models with integrated language models. It op-
+erates on two objects: a ?LM graph containing
+no language model state, and a +LM hypergraph
+containing state. The idea is to generate a fixed
+number of nodes in the +LM for each node in
+the ?LM graph, using a clever enumeration strat-
+egy. We can view cube pruning as arising from
+the interaction between a minimal logic and the
+state splits induced by non-local features. Figure 4
+shows how the added state information can dra-
+matically increase the number of deductions that
+must be evaluated. Cube pruning works by con-
+sidering the most promising states paired with the
+most promising extensions. In this way, it easily
+fits any search space constructed using the tech-
+nique of ?5. Note that the efficiency of cube prun-
+ing is limited by the minimal logic.
+Stack decoding is a search heuristic that simpli-
+fies the complexity of searching a minimal logic.
+Each item is associated with a stack whose signa-
+12Specifically a B-hypergraph, equivalent to an and-or
+graph (Gallo et al, 1993) or context-free grammar (Neder-
+hof, 2003). In the degenerate case, this is simply a graph, as
+is the case with most phrase-based models.
+538
+item forms: [i, ue ? ve], [A, i, ue ? ve, i?, u?e ? v?e] goal: [S, 0, ?, I, ue?]
+rules:
+[i, ue?] R(fi+1...fi?/ejve) R(A? ej)
+[A, i, ue?, i?, ej ? ve]
+[i, ue ? ejve] R(A? ej)
+[A, i, ue ? ejve, i, ueej ? ve]
+[B, i, ue ? ve, i??, u??e ? v
+??
+e ] [C, i
+??, u??e ? v
+??
+e , i
+?, u?e ? v
+?
+e] R(A? BC)
+[A, i, ue ? ve, i?, u?e ? v?e]
+Figure 3: Logic MONOTONE-GENERATE + CKY
+ture is a projection of the item signature (or a pred-
+icate on the item signatures)?multiple items are
+associated to the same stack. The strength of the
+pruning (and resulting complexity improvements)
+depending on how much the projection reduces the
+search space. In many phrase-based implemen-
+tations the stack signature is just the number of
+words translated, but other strategies are possible
+(Tillman and Ney, 2003).
+It is worth noting that logic FdUW (?3.2), de-
+pends on stack pruning for speed. Because the
+number of stacks is linear in the length of the in-
+put, so is the number of unpruned nodes in the
+search graph. In contrast, the complexity of logic
+WLd is naturally linear in input length. As men-
+tioned in ?3.2, this implies a wide divergence in
+the model and search errors of these logics, which
+to our knowledge has not been investigated.
+8 Related Work
+We are not the first to observe that phrase-based
+models can be represented as logic programs (Eis-
+ner et al, 2005; Eisner and Blatz, 2006), but to
+our knowledge we are the first to provide explicit
+logics for them.13 We also showed that deductive
+logic is a useful analytical tool to tackle a variety
+of problems in translation algorithm design.
+Our work is strongly influenced by Goodman
+(1999) and Eisner et al (2005). They describe
+many issues not mentioned here, including con-
+ditions on semirings, termination conditions, and
+strategies for cyclic search graphs. However,
+while their weighted deductive formalism is gen-
+eral, they focus on concerns relevant to parsing,
+such as boolean semirings and cyclicity. Our work
+focuses on concerns common for translation, in-
+cluding a general view of non-local parameteriza-
+tions and cube pruning.
+13Huang and Chiang (2007) give an informal example, but
+do not elaborate on it.
+9 Conclusions and Future Work
+We have described a general framework that syn-
+thesizes and extends deductive parsing and semir-
+ing parsing, and adapts it to translation. Our goal
+has been to show that logics make an attractive
+shorthand for description, analysis, and construc-
+tion of translation models. For instance, we have
+shown that it is quite easy to mechanically con-
+struct search spaces using non-local features, and
+to create exotic models. We showed that differ-
+ent flavors of phrase-based models should suffer
+from quite different types of error, a problem that
+to our knowledge was heretofore unknown. How-
+ever, we have only scratched the surface, and we
+believe it is possibly to unify a wide variety of
+translation algorithms. For example, we believe
+that cube pruning can be described as an agenda
+discipline in chart parsing (Kay, 1986).
+Although the work presented here is abstract,
+our motivation is practical. Isolating the errors
+in translation systems is a difficult task which can
+be made easier by describing and analyzing mod-
+els in a modular way (Auli et al, 2009). Fur-
+thermore, building large-scale translation systems
+from scratch should be unnecessary if existing sys-
+tems were built using modular logics and algo-
+rithms. We aim to build such systems.
+Acknowledgments
+This work developed from discussions with Phil
+Blunsom, Chris Callison-Burch, Chris Dyer,
+Hieu Hoang, Martin Kay, Philipp Koehn, Josh
+Schroeder, and Lane Schwartz. Many thanks go to
+Chris Dyer, Josh Schroeder, the three anonymous
+EACL reviewers, and one anonymous NAACL re-
+viewer for very helpful comments on earlier drafts.
+This research was supported by the Euromatrix
+Project funded by the European Commission (6th
+Framework Programme).
+539
+References
+M. Auli, A. Lopez, P. Koehn, and H. Hoang. 2009.
+A systematic analysis of translation model search
+spaces. In Proc. of WMT, Mar.
+P. Blunsom, T. Cohn, and M. Osborne. 2008. A dis-
+criminative latent variable model for statistical ma-
+chine translation. In Proc. of ACL:HLT.
+P. F. Brown, S. A. D. Pietra, V. J. D. Pietra, and R. L.
+Mercer. 1993. The mathematics of statistical ma-
+chine translation: Parameter estimation. Computa-
+tional Linguistics, 19(2):263?311, Jun.
+E. Charniak, K. Knight, and K. Yamada. 2003.
+Syntax-based language models for statistical ma-
+chine translation. In Proceedings of MT Summit,
+Sept.
+D. Chiang. 2007. Hierarchical phrase-based transla-
+tion. Computational Linguistics, 33(2):201?228.
+K. Church and R. Patil. 1982. Coping with syntactic
+ambiguity or how to put the block in the box on the
+table. Computational Linguistics, 8(3?4):139?149,
+Jul.
+S. B. Cohen, R. J. Simmons, and N. A. Smith. 2008.
+Dynamic programming algorithms as products of
+weighted logic programs. In Proc. of ICLP.
+T. H. Cormen, C. D. Leiserson, R. L. Rivest, and
+C. Stein. 2001. Introduction to Algorithms. MIT
+Press, 2nd edition.
+M. R. Costa-jussa` and J. A. R. Fonollosa. 2006. Statis-
+tical machine reordering. In Proc. of EMNLP, pages
+70?76, Jul.
+C. J. Dyer, S. Muresan, and P. Resnik. 2008. General-
+izing word lattice translation. In Proc. of ACL:HLT,
+pages 1012?1020.
+J. Earley. 1970. An efficient context-free parsing algo-
+rithm. Communications of the ACM, 13(2):94?102,
+Feb.
+J. Eisner and J. Blatz. 2006. Program transformations
+for optimization of parsing algorithms and other
+weighted logic programs. In Proc. of Formal Gram-
+mar, pages 45?85.
+J. Eisner, E. Goldlust, and N. A. Smith. 2005. Compil-
+ing comp ling: Weighted dynamic programming and
+the Dyna language. In Proc. of HLT-EMNLP, pages
+281?290.
+J. Eisner. 2002. Parameter estimation for probabilistic
+finite-state transducers. In Proc. of ACL, pages 1?8,
+Jul.
+G. Gallo, G. Longo, and S. Pallottino. 1993. Di-
+rected hypergraphs and applications. Discrete Ap-
+plied Mathematics, 42(2), Apr.
+K. Gimpel and N. A. Smith. 2009. Approximation
+semirings: Dynamic programming with non-local
+features. In Proc. of EACL, Mar.
+J. Goodman. 1999. Semiring parsing. Computational
+Linguistics, 25(4):573?605, Dec.
+L. Huang and D. Chiang. 2007. Forest rescoring:
+Faster decoding with integrated language models. In
+Proc. of ACL, pages 144?151, Jun.
+M. Kay. 1986. Algorithm schemata and data structures
+in syntactic processing. In B. J. Grosz, K. S. Jones,
+and B. L. Webber, editors, Readings in Natural Lan-
+guage Processing, pages 35?70. Morgan Kaufmann.
+D. Klein and C. Manning. 2001. Parsing and hyper-
+graphs. In Proc. of IWPT.
+P. Koehn, H. Hoang, A. Birch, C. Callison-Burch,
+M. Federico, N. Bertoldi, B. Cowan, W. Shen,
+C. Moran, R. Zens, C. Dyer, O. Bojar, A. Constantin,
+and E. Herbst. 2007. Moses: Open source toolkit
+for statistical machine translation. In Proc. of ACL
+Demo and Poster Sessions, pages 177?180, Jun.
+S. Kumar and W. Byrne. 2005. Local phrase reorder-
+ing models for statistical machine translation. In
+Proc. of HLT-EMNLP, pages 161?168.
+P. Liang, A. Bouchard-Co?te?, B. Taskar, and D. Klein.
+2006. An end-to-end discriminative approach to ma-
+chine translation. In Proc. of ACL-COLING, pages
+761?768, Jul.
+A. Lopez. 2008. Statistical machine translation. ACM
+Computing Surveys, 40(3), Aug.
+J. B. Marin?o, R. E. Banchs, J. M. Crego, A. de Gispert,
+P. Lambert, J. A. R. Fonollosa, and M. R. Costa-
+jussa`. 2006. N -gram based statistical machine
+translation. Computational Linguistics, 32(4):527?
+549, Dec.
+D. McAllester. 1999. On the complexity analysis of
+static analyses. In Proc. of Static Analysis Sympo-
+sium, volume 1694/1999 of LNCS. Springer Verlag.
+I. D. Melamed. 2004. Statistical machine translation
+by parsing. In Proc. of ACL, pages 654?661, Jul.
+R. C. Moore and C. Quirk. 2007. Faster beam-search
+decoding for phrasal statistical machine translation.
+In Proc. of MT Summit.
+M.-J. Nederhof. 2003. Weighted deductive parsing
+and Knuth?s algorithm. Computational Linguistics,
+29(1):135?143, Mar.
+F. J. Och, D. Gildea, S. Khudanpur, A. Sarkar, K. Ya-
+mada, A. Fraser, S. Kumar, L. Shen, D. Smith,
+K. Eng, V. Jain, Z. Jin, and D. Radev. 2004. A smor-
+gasbord of features for statistical machine transla-
+tion. In Proc. of HLT-NAACL, pages 161?168, May.
+F. C. N. Pereira and D. H. D. Warren. 1983. Parsing as
+deduction. In Proc. of ACL, pages 137?144.
+S. M. Shieber, Y. Schabes, and F. C. N. Pereira. 1995.
+Principles and implementation of deductive parsing.
+Journal of Logic Programming, 24(1?2):3?36, Jul.
+C. Tillman and H. Ney. 2003. Word reordering and
+a dynamic programming beam search algorithm for
+statistical machine translation. Computational Lin-
+guistics, 29(1):98?133, Mar.
+A. Venugopal, A. Zollmann, and S. Vogel. 2007.
+An efficient two-pass approach to synchronous-CFG
+driven statistical MT. In Proc. of HLT-NAACL.
+D. Wu. 1996. A polynomial-time algorithm for sta-
+tistical machine translation. In Proc. of ACL, pages
+152?158, Jun.
+R. Zens and H. Ney. 2004. Improvements in phrase-
+based statistical machine translation. In Proc. of
+HLT-NAACL, pages 257?264, May.
+540

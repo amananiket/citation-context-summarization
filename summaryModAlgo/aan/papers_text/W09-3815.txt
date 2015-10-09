@@ -1,0 +1,999 @@
+Proceedings of the 11th International Conference on Parsing Technologies (IWPT), pages 89?98,
+Paris, October 2009. c?2009 Association for Computational Linguistics
+Weight pushing and binarization for fixed-grammar parsing
+Matt Post and Daniel Gildea
+Department of Computer Science
+University of Rochester
+Rochester, NY 14627
+Abstract
+We apply the idea of weight pushing
+(Mohri, 1997) to CKY parsing with fixed
+context-free grammars. Applied after
+rule binarization, weight pushing takes the
+weight from the original grammar rule and
+pushes it down across its binarized pieces,
+allowing the parser to make better prun-
+ing decisions earlier in the parsing pro-
+cess. This process can be viewed as gen-
+eralizing weight pushing from transduc-
+ers to hypergraphs. We examine its ef-
+fect on parsing efficiency with various bi-
+narization schemes applied to tree sub-
+stitution grammars from previous work.
+We find that weight pushing produces dra-
+matic improvements in efficiency, espe-
+cially with small amounts of time and with
+large grammars.
+1 Introduction
+Fixed grammar-parsing refers to parsing that em-
+ploys grammars comprising a finite set of rules
+that is fixed before inference time. This is in
+contrast to markovized grammars (Collins, 1999;
+Charniak, 2000), variants of tree-adjoining gram-
+mars (Chiang, 2000), or grammars with wildcard
+rules (Bod, 2001), all of which allow the con-
+struction and use of rules not seen in the training
+data. Fixed grammars must be binarized (either
+explicitly or implicitly) in order to maintain the
+O(n3|G|) (n the sentence length, |G| the grammar
+size) complexity of algorithms such as the CKY
+algorithm.
+Recently, Song et al (2008) explored different
+methods of binarization of a PCFG read directly
+from the Penn Treebank (the Treebank PCFG),
+showing that binarization has a significant effect
+on both the number of rules and new nontermi-
+nals introduced, and subsequently on parsing time.
+This variation occurs because different binariza-
+tion schemes produce different amounts of shared
+rules, which are rules produced during the bina-
+rization process from more than one rule in the
+original grammar. Increasing sharing reduces the
+amount of state that the parser must explore. Bina-
+rization has also been investigated in the context of
+parsing-based approaches to machine translation,
+where it has been shown that paying careful atten-
+tion to the binarization scheme can produce much
+faster decoders (Zhang et al, 2006; Huang, 2007;
+DeNero et al, 2009).
+The choice of binarization scheme will not af-
+fect parsing results if the parser is permitted to ex-
+plore the whole search space. In practice, how-
+ever, this space is too large, so parsers use prun-
+ing to discard unlikely hypotheses. This presents
+a problem for bottom-up parsing algorithms be-
+cause of the way the probability of a rule is dis-
+tributed among its binarized pieces: The standard
+approach is to place all of that probability on the
+top-level binarized rule, and to set the probabilities
+of lower binarized pieces to 1.0. Because these
+rules are reconstructed from the bottom up, prun-
+ing procedures do not have a good estimate of the
+complete cost of a rule until the entire original rule
+has been reconstructed. It is preferable to have this
+information earlier on, especially for larger rules.
+In this paper we adapt the technique of weight
+pushing for finite state transducers (Mohri, 1997)
+to arbitrary binarizations of context-free grammar
+rules. Weight pushing takes the probability (or,
+more generally, the weight) of a rule in the origi-
+nal grammar and pushes it down across the rule?s
+binarized pieces. This helps the parser make bet-
+89
+ter pruning decisions, and to make them earlier in
+the bottom-up parsing process. We investigate this
+algorithm with different binarization schemes and
+grammars, and find that it improves the time vs.
+accuracy tradeoff for parsers roughly proportion-
+ally to the size of the grammar being binarized.
+This paper extends the work of Song et al
+(2008) in three ways. First, weight pushing fur-
+ther reduces the amount of time required for pars-
+ing. Second, we apply these techniques to Tree
+Substitution Grammars (TSGs) learned from the
+Treebank, which are both larger and more accu-
+rate than the context-free grammar read directly
+from the Treebank.1 Third, we examine the inter-
+action between binarization schemes and the in-
+exact search heuristic of beam-based and k-best
+pruning.
+2 Weight pushing
+2.1 Binarization
+Not all binarization schemes are equivalent in
+terms of efficiency of representation. Consider the
+grammar in the lefthand column of Figure 1 (rules
+1 and 2). If this grammar is right-binarized or
+left-binarized, it will produce seven rules, whereas
+the optimal binarization (depicted) produces only
+5 rules due to the fact that two of them are shared.
+Since the complexity of parsing with CKY is a
+function of the grammar size as well as the input
+sentence length, and since in practice parsing re-
+quires significant pruning, having a smaller gram-
+mar with maximal shared substructure among the
+rules is desirable.
+We investigate two kinds of binarization in this
+paper. The first is right binarization, in which non-
+terminal pairs are collapsed beginning from the
+two rightmost children and moving leftward. The
+second is a greedy binarization, similar to that of
+Schmid (2004), in which the most frequently oc-
+curring (grammar-wide) nonterminal pair is col-
+lapsed in turn, according to the algorithm given in
+Figure 2.
+Binarization must ensure that the product of the
+probabilities of the binarized pieces is the same as
+that of the original rule. The easiest way to do
+this is to assign each newly-created binarized rule
+a probability of 1.0, and give the top-level rule the
+complete probability of the original rule. In the
+following subsection, we describe a better way.
+1The mean rule rank in a Treebank PCFG is 2.14, while
+the mean rank in our sampled TSG is 8.51. See Table 1.
+NP
+a JJ NN NN PP
+??JJ:NN?:NN?
+?JJ:NN? NN
+JJ NN
+?a:??JJ:NN?:NN??
+a
+PP
+NPE
+C
+B
+A
+1Rule
+NP
+the JJ NN NN
+Rule 2
+??JJ:NN?:NN?
+?JJ:NN? NN
+JJ NN
+NP
+the
+A
+B
+D
+Figure 1: A two-rule grammar. The greedy
+binarization algorithm produces the binarization
+shown, with the shared structure highlighted. Bi-
+narized rules A, B, and C are initially assigned
+a probability of 1.0, while rules D and E are as-
+signed the original probabilities of rules 2 and 1,
+respectively.
+2.2 Weight pushing
+Spreading the weight of an original rule across
+its binarized pieces is complicated by sharing,
+because of the constraint that the probability of
+shared binarized pieces must be set so that the
+product of their probabilities is the same as the
+original rule, for each rule the shared piece partici-
+pates in. Mohri (1997) introduced weight pushing
+as a step in the minimization of weighted finite-
+state transducers (FSTs), which addressed a sim-
+ilar problem for tasks employing finite-state ma-
+chinery. At a high level, weight pushing moves
+the weight of a path towards the initial state, sub-
+ject to the constraint that the weight of each path
+in the FST is unchanged. To do weight pushing,
+one first computes for each state q in the trans-
+ducer the shortest distance d(q) to any final state.
+Let ?(q, a) be the state transition function, deter-
+ministically transitioning on input a from state q to
+state ?(q, a). Pushing adjusts the weight of each
+edge w(e) according to the following formula:
+w?(e) = d(q)?1 ? w(e)? d(?(q, a)) (1)
+Mohri (1997, ?3.7) and Mohri and Riley (2001)
+discuss how these operations can be applied us-
+ing various semirings; in this paper we use the
+(max,?) semiring. The important observation for
+our purposes is that pushing can be thought of as a
+sequence of local operations on individual nodes
+90
+1: function GREEDYBINARIZE(P )
+2: while RANK(P ) > 2 do
+3: ? := UPDATECOUNTS(P )
+4: for each rule X ? x1x2 ? ? ?xr do
+5: b := argmaxi?(2???r) ?[xi?1, xi]
+6: l := ?xb?1 : xb?
+7: add l ? xb?1xb to P
+8: replace xb?1xb with l in rule
+9: function UPDATECOUNTS(P )
+10: ? := {} ? a dictionary
+11: for each rule X ? x1x2 ? ? ?xr ? P do
+12: for i ? (2 ? ? ? r) do
+13: ?[xi?1, xi]++
+return ?
+Figure 2: A greedy binarization algorithm. The
+rank of a grammar is the rank of its largest rule.
+Our implementation updates the counts in ? more
+efficiently, but we present it this way for clarity.
+q, shifting a constant amount of weight d(q)?1
+from q?s outgoing edges to its incoming edges.
+Klein and Manning (2003) describe an encod-
+ing of context-free grammar rule binarization that
+permits weight pushing to be applied. Their ap-
+proach, however, works only with left or right bi-
+narizations whose rules can be encoded as an FST.
+We propose a form of weight pushing that works
+for arbitrary binarizations. Weight pushing across
+a grammar can be viewed as generalizing push-
+ing from weighted transducers to a certain kind of
+weighted hypergraph. To begin, we use the fol-
+lowing definition of a hypergraph:
+Definition. A hypergraph H is a tuple
+?V,E, F,R?, where V is a set of nodes, E is a
+set of hyperedges, F ? V is a set of final nodes,
+and R is a set of permissible weights on the hy-
+peredges. Each hyperedge e ? E is a triple
+?T (e), h(e), w(e)?, where h(e) ? V is its head
+node, T (e) is a sequence of tail nodes, and w(e) is
+its weight.
+We can arrange the binarized rules of Figure 1
+into a shared hypergraph forest (Figure 3), with
+nodes as nonterminals and binarized rules as hy-
+peredges. We distinguish between final and non-
+final nodes and hyperedges. Nonfinal nodes are
+those in V ?F . Nonfinal hyperdges ENF are those
+in {e : h(e) ? V ? F}, that is, all hyperedges
+whose head is a nonfinal node. Because all nodes
+introduced by our binarization procedure expand
+deterministically, each nonfinal node is the head
+of no more than one such hyperedge. Initially, all
+0.6/1.0
+0.4/0.67?
+1.0/0.6
+1.0/1.0
+1.0/1.0
+??JJ:NN?:NN?
+?JJ:NN? NN
+JJ NN
+NP
+the
+?a:??JJ:NN?:NN??
+a
+PP
+Figure 3: The binarized rules of Figure 1 arranged
+in a shared hypergraph forest. Each hyperedge is
+labeled with its weight before/after pushing.
+nonfinal hyperedges have a probability of 1, and fi-
+nal hyperedges have a probability equal to the that
+of the original unbinarized rule. Each path through
+the forest exactly identifies a binarization of a rule
+in the original grammar, and hyperpaths overlap
+where binarized rules are shared.
+Weight pushing in this hypergraph is similar to
+weight pushing in a transducer. We consider each
+nonfinal node v in the graph and execute a local
+operation that moves weight in some way from the
+set of edges {e : v ? T (e)} (v?s outgoing hyper-
+edges) to the edge eh for which v = h(e) (v?s
+incoming hyperedge).
+A critical difference from pushing in trans-
+ducers is that a node in a hyperpath may be
+used more than once. Consider adding the rule
+NP?JJ NN JJ NN to the binarized two-rule gram-
+mar we have been considering. Greedy binariza-
+tion could2 binarize it in the following manner
+NP ? ?JJ:NN? ?JJ:NN?
+?JJ:NN? ? JJ NN
+which would yield the hypergraph in Figure 4. In
+order to maintain hyperpath weights, a pushing
+procedure at the ?JJ:NN? node must pay attention
+to the number of times it appears in the set of tail
+nodes of each outgoing hyperedge.
+2Depending on the order in which the argmax variable i
+of Line 5 from the algorithm in Figure 2 is considered. This
+particular binarization would not have been produced if the
+values 2 . . . r were tested sequentially.
+91
+0.6/1.0
+0.3/0.5
+1.0/0.6
+1.0/1.0
+1.0/1.0
+0.1/0.27?
+??JJ:NN?:NN?
+?JJ:NN? NN
+JJ NN
+NP
+the
+?a:??JJ:NN?:NN??
+a
+PP
+Figure 4: A hypergraph containing a hyperpath
+representing a rule using the same binarized piece
+twice. Hyperedge weights are again shown be-
+fore/after pushing.
+With these similarities and differences in mind,
+we can define the local weight pushing procedure.
+For each nonfinal node v in the hypergraph, we
+define eh as the edge for which h(e) = v (as be-
+fore), P = {e : v ? T (e)} (the set of outgo-
+ing hyperedges), and c(v, T (e)) as the number of
+times v appears in the sequence of tail nodes T (e).
+The minimum amount of probability available for
+pushing is then
+max{ c(v,T (e))?w(e) : e ? P} (2)
+This amount can then be multiplied into w(eh) and
+divided out of each edge e ? P . This max is a
+lower bound because we have to ensure that the
+amount of probability we divide out of the weight
+of each outgoing hyperedge is at least as large as
+that of the maximum weight.
+While finite state transducers each have a
+unique equivalent transducer on which no further
+pushing is possible, defined by Equation 1, this is
+not the case when operating on hypergraphs. In
+this generalized setting, the choice of which tail
+nodes to push weight across can result in differ-
+ent final solutions. We must define a strategy for
+choosing among sequences of pushing operations,
+and for this we now turn to a discussion of the
+specifics of our algorithm.
+2.3 Algorithm
+We present two variants. Maximal pushing, analo-
+gous to weight pushing in weighted FSTs, pushes
+the original rule?s weight down as far as pos-
+sible. Analysis of interactions between pruning
+1: function DIFFUSEWEIGHTS(PBIN ,?)
+2: R := bottom-up sort of PBIN
+3: for each rule r ? R do
+4: r.pr := max{ c(r,p)?p.pr : p ? ?(r)}
+5: for each rule p ? ?(r) do
+6: p.pr := p.pr/r.prc(r,p)
+Figure 6: Maximal weight pushing algorithm ap-
+plied to a binarized grammar, PBIN . ? is a dictio-
+nary mapping from an internal binary rule to a list
+of top-level binary rules that it appeared under.
+and maximal pushing discovered situations where
+maximal pushing resulted in search error (see
+?4.2). To address this, we also discuss nthroot
+pushing, which attempts to distribute the weight
+more evenly across its pieces, by taking advantage
+of the fact that Equation 2 is a lower bound on the
+amount of probability available for pushing.
+The algorithm for maximal pushing is listed
+in Figure 6, and works in the following manner.
+When binarizing we maintain, for each binarized
+piece, a list of all the original rules that share
+it. We then distribute that original rule?s weight
+by considering each of these binarized pieces in
+bottom-up topological order and setting the prob-
+ability of the piece to the maximum (remaining)
+probability of these parents. This amount is then
+divided out of each of the parents, and the process
+continues. See Figure 5 for a depiction of this pro-
+cess. Note that, although we defined pushing as a
+local operation between adjacent hyperedges, it is
+safe to move probability mass from the top-level
+directly to the bottom (as we do here). Intuitively,
+we can imagine this as a series of local pushing
+operations on all intervening nodes; the end result
+is the same.
+For nthroot pushing, we need to maintain a dic-
+tionary ? which records, for each binary piece, the
+rank (number of items on the rule?s righthand side)
+of the original rule it came from. This is accom-
+plished by replacing line 4 in Figure 6 with
+r.pr := max{ (?(p)?1)?c(r,p)?p.pr : p ? ?(r)}
+Applying weight pushing to a binarized PCFG
+results in a grammar that is not a PCFG, be-
+cause rule probabilities for each lefthand side
+no longer sum to one. However, the tree dis-
+tribution, as well as the conditional distribution
+P(tree|string) (which are what matter for parsing)
+are unchanged. To show this, we argue from
+the algorithm in Figure 6, demonstrating that, for
+92
+step A B C D E
+0 1.0 1.0 1.0 x y
+1 max(x, y) ? ? xmax(x,y) ymax(x,y)
+2 ? max(z1,D, z1,E) ? z1,Dmax(z1,D,z1,E)
+z1,D
+max(z1,D,z1,E)
+3 ? ? max(z2,D, z2,E) z2,Dmax(z2,D,z2,E)
+z2,E
+max(z2,D,z2,E)
+4 ? ? ? ? ?
+Figure 5: Stepping through the maximal weight pushing algorithm for the binarized grammar in Figure 1.
+Rule labels A through E were chosen so that the binarized pieces are sorted in topological order. A (?)
+indicates a rule whose value has not changed from the previous step, and the value zr,c denotes the value
+in row r column c.
+each rule in the original grammar, its probability
+is equal to the product of the probabilities of its
+pieces in the binarized grammar. This invariant
+holds at the start of the algorithm (because the
+probability of each original rule was placed en-
+tirely at the top-level rule, and all other pieces re-
+ceived a probability of 1.0) and is also true at the
+end of each iteration of the outer loop. Consider
+this loop. Each iteration considers a single binary
+piece (line 3), determines the amount of probabil-
+ity to claim from the parents that share it (line 4),
+and then removes this amount of weight from each
+of its parents (lines 5 and 6). There are two impor-
+tant considerations.
+1. A binarized rule piece may be used more than
+once in the reconstruction of an original rule;
+this is important because we are assigning
+probabilities to binarized rule types, but rule
+reconstruction makes use of binarized rule to-
+kens.
+2. Multiplying together two probabilities results
+in a lower number: when we shift weight p
+from the parent rule to (n instances of) a bi-
+narized piece beneath it, we are creating a
+new set of probabilities pc and pp such that
+pnc ? pp = p, where pc is the weight placed on
+the binarized rule type, and pp is the weight
+we leave at the parent. This means that we
+must choose pc from the range [p, 1.0].3
+In light of these considerations, the weight re-
+moved from each parent rule in line 6 must be
+greater than or equal to each parent sharing the
+binarized rule piece. To ensure this, line 4 takes
+3The upper bound of 1.0 is set to avoid assigning a nega-
+tive weight to a rule.
+the maximum of the c(r, p)th root of each parent?s
+probability, where c(r, p) is the number of times
+binarized rule token r appears in the binarization
+of p.
+Line 4 breaks the invariant, but line 6 restores it
+for each parent rule the current piece takes part in.
+From this it can be seen that weight pushing does
+not change the product of the probabilities of the
+binarized pieces for each rule in the grammar, and
+hence the tree distribution is also unchanged.
+We note that, although Figures 3 and 4 show
+only one final node, any number of final nodes can
+appear if binarized pieces are shared across differ-
+ent top-level nonterminals (which our implemen-
+tation permits and which does indeed occur).
+3 Experimental setup
+We present results from four different grammars:
+1. The standard Treebank probabilistic context-
+free grammar (PCFG).
+2. A ?spinal? tree substitution grammar (TSG),
+produced by extracting n lexicalized subtrees
+from each length n sentence in the training
+data. Each subtree is defined as the sequence
+of CFG rules from leaf upward all sharing the
+same lexical head, according to the Mager-
+man head-selection rules (Collins, 1999). We
+detach the top-level unary rule, and add in
+counts from the Treebank CFG rules.
+3. A ?minimal subset? TSG, extracted and then
+refined according to the process defined in
+Bod (2001). For each height h, 2 ? h ? 14,
+400,000 subtrees are randomly sampled from
+the trees in the training data, and the counts
+93
+rank
+grammar # rules median mean max
+PCFG 46K 1 2.14 51
+spinal 190K 3 3.36 51
+sampled 804K 8 8.51 70
+minimal 2,566K 10 10.22 62
+Table 1: Grammar statistics. A rule?s rank is the
+number of symbols on its right-hand side.
+grammar unbinarized right greedy
+PCFG 46K 56K 51K
+spinal 190K 309K 235K
+sampled 804K 3,296K 1,894K
+minimal 2,566K 15,282K 7,981K
+Table 2: Number of rules in each of the complete
+grammars before and after binarization.
+are summed. From these counts we remove
+(a) all unlexicalized subtrees of height greater
+than six and (b) all lexicalized subtrees con-
+taining more than twelve terminals on their
+frontier, and we add all subtrees of height one
+(i.e., the Treebank PCFG).
+4. A sampled TSG produced by inducing
+derivations on the training data using a
+Dirichlet Process prior (described below).
+The sampled TSG was produced by inducing a
+TSG derivation on each of the trees in the train-
+ing data, from which subtree counts were read di-
+rectly. These derivations were induced using a
+collapsed Gibbs sampler, which sampled from the
+posterior of a Dirichlet process (DP) defined over
+the subtree rewrites of each nonterminal. The DP
+describes a generative process that prefers small
+subtrees but occasionally produces larger ones;
+when used for inference, it essentially discovers
+TSG derivations that contain larger subtrees only
+if they are frequent in the training data, which dis-
+courages model overfitting. See Post and Gildea
+(2009) for more detail. We ran the sampler for 100
+iterations with a stop probability of 0.7 and the DP
+parameter ? = 100, accumulating subtree counts
+from the derivation state at the end of all the itera-
+tions, which corresponds to the (100, 0.7,? 100)
+grammar from that paper.
+All four grammar were learned from all sen-
+tences in sections 2 to 21 of the Wall Street Journal
+portion of the Penn Treebank. All trees were pre-
+processed to remove empty nodes and nontermi-
+NP
+NP
+DT
+a
+JJ NN NN
+PP
+Figure 7: Rule 1 in Figure 1 was produced by
+flattening this rule from the sampled grammar.
+nal annotations. Punctuation was retained. Statis-
+tics for these grammars can be found in Table 1.
+We present results on sentences with no more than
+forty words from section 23.
+Our parser is a Perl implementation of the CKY
+algorithm.4 For the larger grammars, memory lim-
+itations require us to remove from consideration
+all grammar rules that could not possibly take part
+in a parse of the current sentence, which we do by
+matching the rule?s frontier lexicalization pattern
+against the words in the sentence. All unlexical-
+ized rules are kept. This preprocessing time is not
+included in the parsing times reported in the next
+section.
+For pruning, we group edges into equivalence
+classes according to the following features:
+? span (s, t) of the input
+? level of binarization (0,1,2+)
+The level of binarization refers to the height of a
+nonterminal in the subtree created by binarizing a
+CFG rule (with the exception that the root of this
+tree has a binarization level of 0). The naming
+scheme used to create new nonterminals in line 6
+of Figure 2 means we can determine this level by
+counting the number of left-angle brackets in the
+nonterminal?s name. In Figure 1, binarized rules
+D and E have level 0, C has level 3, B has level 2,
+and A has level 1.
+Within each bin, only the ? highest-weight
+items are kept, where ? ? (1, 5, 10, 25, 50) is a pa-
+rameter that we vary during our experiments. Ties
+are broken arbitrarily. Additionally, we maintain a
+beam within each bin, and an edge is pruned if its
+score is not within a factor of 10?5 of the highest-
+scoring edge in the bin. Pruning takes place when
+the edge is added and then again at the end of each
+4It is available from http://www.cs.rochester.
+edu/
+?
+post/.
+94
+span in the CKY algorithm (but before applying
+unary rules).
+In order to binarize TSG subtrees, we follow
+Bod (2001) in first flattening each subtree to a
+depth-one PCFG rule that shares the subtree?s root
+nonterminal and leaves, as depicted in Figure 7.
+Afterward, this transformation is reversed to pro-
+duce the parse tree for scoring. If multiple TSG
+subtrees have identical mappings, we take only the
+most probable one. Table 2 shows how grammar
+size is affected by binarization scheme.
+We note two differences in our work that ex-
+plain the large difference between the scores re-
+ported for the ?minimal subset? grammar in Bod
+(2001) and here. First, we did not implement the
+smoothed ?mismatch parsing?, which introduces
+new subtrees into the grammar at parsing time by
+allowing lexical leaves of subtrees to act as wild-
+cards. This technique reportedly makes a large
+difference in parsing scores (Bod, 2009). Second,
+we approximate the most probable parse with the
+single most probable derivation instead of the top
+1,000 derivations, which Bod also reports as hav-
+ing a large impact (Bod, 2003, ?4.2).
+4 Results
+Figure 8 displays search time vs. model score for
+the PCFG and the sampled grammar. Weight
+pushing has a significant impact on search effi-
+ciency, particularly for the larger sampled gram-
+mar. The spinal and minimal graphs are similar to
+the PCFG and sampled graphs, respectively, which
+suggests that the technique is more effective for
+the larger grammars.
+For parsing, we are ultimately interested in ac-
+curacy as measured by F1 score.5 Figure 9 dis-
+plays graphs of time vs. accuracy for parses with
+each of the grammars, alongside the numerical
+scores used to generate them. We begin by noting
+that the improved search efficiency from Figure 8
+carries over to the time vs. accuracy curves for
+the PCFG and sampled grammars, as we expect.
+Once again, we note that the difference is less pro-
+nounced for the two smaller grammars than for the
+two larger ones.
+4.1 Model score vs. accuracy
+The tables in Figure 9 show that parser accuracy
+is not always a monotonic function of time; some
+of the runs exhibited peak performance as early
+5F1 = 2?P ?RP+R , where P is precision and R recall.
+-340
+-338
+-336
+-334
+-332
+-330
+-328
+-326
+-324
+-322
+-320
+1 5 10 25 50
+m
+o
+de
+l s
+co
+re
+ (th
+ou
+sa
+nd
+s)
+(greedy,max)
+(greedy,nthroot)
+(greedy,none)
+(right,max)
+(right,nthroot)
+(right,none)
+-370
+-360
+-350
+-340
+-330
+-320
+-310
+-300
+-290
+1 5 10 25 50
+m
+o
+de
+l s
+co
+re
+ (th
+ou
+sa
+nd
+s)
+mean time per sentence (s)
+(greedy,max)
+(greedy,nthroot)
+(greedy,none)
+(right,max)
+(right,nthroot)
+(right,none)
+Figure 8: Time vs. model score for the PCFG (top)
+and the sampled grammar (bottom). Note that the
+y-axis range differs between plots.
+as at a bin size of ? = 10, and then saw drops
+in scores when given more time. We examined
+a number of instances where the F1 score for a
+sentence was lower at a higher bin setting, and
+found that they can be explained as modeling (as
+opposed to search) errors. With the PCFG, these
+errors were standard parser difficulties, such as PP
+attachment, which require more context to resolve.
+TSG subtrees, which have more context, are able
+to correct some of these issues, but introduce a dif-
+ferent set of problems. In many situations, larger
+bin settings permitted erroneous analyses to re-
+main in the chart, which later led to the parser?s
+discovery of a large TSG fragment. Because these
+fragments often explain a significant portion of the
+sentence more cheaply than multiple smaller rules
+multiplied together, the parser prefers them. More
+often than not, they are useful, but sometimes they
+are overfit to the training data, and result in an in-
+correct analysis despite a higher model score.
+Interestingly, these dips occur most frequently
+for the heuristically extracted TSGs (four of six
+95
+ 50
+ 55
+ 60
+ 65
+ 70
+ 75
+ 80
+ 85
+1 5 10 25 50
+a
+cc
+u
+ra
+cy
+mean time per sentence (s)
+(greedy,max)
+(greedy,none)
+(right,max)
+(right,none)
+PCFG
+run 1 5 10 25 50
+ (g,m) 66.44 72.45 72.54 72.54 72.51u (g,n) 65.44 72.21 72.47 72.45 72.47
+N (g,-) 63.91 71.91 72.48 72.51 72.51
+ (r,m) 67.30 72.45 72.61 72.47 72.49e (r,n) 64.09 71.78 72.33 72.45 72.47
+? (r,-) 61.82 71.00 72.18 72.42 72.41
+ 50
+ 55
+ 60
+ 65
+ 70
+ 75
+ 80
+ 85
+1 5 10 25 50
+a
+cc
+u
+ra
+cy
+mean time per sentence (s)
+(greedy,max)
+(greedy,none)
+(right,max)
+(right,none)
+spinal
+run 1 5 10 25 50
+ (g,m) 68.33 78.35 79.21 79.25 79.24u (g,n) 64.67 78.46 79.04 79.07 79.09
+N (g,-) 61.44 77.73 78.94 79.11 79.20
+ (r,m) 69.92 79.07 79.18 79.25 79.05e (r,n) 67.76 78.46 79.07 79.04 79.04
+? (r,-) 65.27 77.34 78.64 78.94 78.90
+ 50
+ 55
+ 60
+ 65
+ 70
+ 75
+ 80
+ 85
+1 5 10 25 50
+a
+cc
+u
+ra
+cy
+mean time per sentence (s)
+(greedy,max)
+(greedy,none)
+(right,max)
+(right,none)
+sampled
+run 1 5 10 25 50
+ (g,m) 63.75 80.65 81.86 82.40 82.41u (g,n) 61.87 79.88 81.35 82.10 82.17
+N (g,-) 53.88 78.68 80.48 81.72 81.98
+ (r,m) 72.98 81.66 82.37 82.49 82.40e (r,n) 65.53 79.01 80.81 81.91 82.13
+? (r,-) 61.82 77.33 79.72 81.13 81.70
+ 50
+ 55
+ 60
+ 65
+ 70
+ 75
+ 80
+ 85
+1 5 10 25 50
+a
+cc
+u
+ra
+cy
+mean time per sentence (s)
+(greedy,max)
+(greedy,none)
+(right,max)
+(right,none)
+minimal
+run 1 5 10 25 50
+ (g,m) 59.75 77.28 77.77 78.47 78.52u (g,n) 57.54 77.12 77.82 78.35 78.36
+N (g,-) 51.00 75.52 77.21 78.30 78.13
+ (r,m) 65.29 76.14 77.33 78.34 78.13e (r,n) 61.63 75.08 76.80 77.97 78.31
+? (r,-) 59.10 73.42 76.34 77.88 77.91
+Figure 9: Plots of parsing time vs. accuracy for each of the grammars. Each plot contains four sets of five
+points (? ? (1, 5, 10, 25, 50)), varying the binarization strategy (right (r) or greedy (g)) and the weight
+pushing technique (maximal (m) or none (-)). The tables also include data from nthroot (n) pushing.
+96
+ 50
+ 55
+ 60
+ 65
+ 70
+ 75
+ 80
+ 85
+1 5 10 25 50
+a
+cc
+u
+ra
+cy
+(right,max)
+(right,nthroot)
+(right,none)
+ 50
+ 55
+ 60
+ 65
+ 70
+ 75
+ 80
+ 85
+1 5 10 25 50
+a
+cc
+u
+ra
+cy
+mean time per sentence (s)
+(greedy,max)
+(greedy,nthroot)
+(greedy,none)
+Figure 10: Time vs. accuracy (F1) for the sampled
+grammar, broken down by binarization (right on
+top, greedy on bottom).
+runs for the spinal grammar, and two for the min-
+imal grammar) and for the PCFG (four), and least
+often for the model-based sampled grammar (just
+once). This may suggest that rules selected by our
+sampling procedure are less prone to overfitting on
+the training data.
+4.2 Pushing
+Figure 10 compares the nthroot and maximal
+pushing techniques for both binarizations of the
+sampled grammar. We can see from this figure
+that there is little difference between the two tech-
+niques for the greedy binarization and a large dif-
+ference for the right binarization. Our original mo-
+tivation in developing nthroot pushing came as a
+result of analysis of certain sentences where max-
+imal pushing and greedy binarization resulted in
+the parser producing a lower model score than
+with right binarization with no pushing. One such
+example was binarized fragment A from Fig-
+ure 1; when parsing a particular sentence in the
+development set, the correct analysis required the
+rule from Figure 7, but greedy binarization and
+maximal pushing resulted in this piece getting
+pruned early in the search procedure. This pruning
+happened because maximal pushing allowed too
+much weight to shift down for binarized pieces of
+competing analyses relative to the correct analy-
+sis. Using nthroot pushing solved the search prob-
+lem in that instance, but in the aggregate it does
+not appear to be helpful in improving parser effi-
+ciency as much as maximal pushing. This demon-
+strates some of the subtle interactions between bi-
+narization and weight pushing when inexact prun-
+ing heuristics are applied.
+4.3 Binarization
+Song et al (2008, Table 4) showed that CKY pars-
+ing efficiency is not a monotonic function of the
+number of constituents produced; that is, enumer-
+ating fewer edges in the dynamic programming
+chart does not always correspond with shorter run
+times. We see here that efficiency does not al-
+ways perfectly correlate with grammar size, ei-
+ther. For all but the PCFG, right binarization
+improves upon greedy binarization, regardless of
+the pushing technique, despite the fact that the
+right-binarized grammars are always larger than
+the greedily-binarized ones.
+Weight pushing and greedy binarization both in-
+crease parsing efficiency, and the graphs in Fig-
+ures 8 and 9 suggest that they are somewhat com-
+plementary. We also investigated left binarization,
+but discontinued that exploration because the re-
+sults were nearly identical to that of right bina-
+rization. Another popular binarization approach
+is head-outward binarization. Based on the anal-
+ysis above, we suspect that its performance will
+fall somewhere among the binarizations presented
+here, and that pushing will improve it as well. We
+hope to investigate this in future work.
+5 Summary
+Weight pushing increases parser efficiency, espe-
+cially for large grammars. Most notably, it im-
+proves parser efficiency for the Gibbs-sampled
+tree substitution grammar of Post and Gildea
+(2009).
+We believe this approach could alo bene-
+fit syntax-based machine translation. Zhang et
+al. (2006) introduced a synchronous binariza-
+tion technique that improved decoding efficiency
+and accuracy by ensuring that rule binarization
+avoided gaps on both the source and target sides
+97
+(for rules where this was possible). Their binariza-
+tion was designed to share binarized pieces among
+rules, but their approach to distributing weight was
+the default (nondiffused) case found in this paper
+to be least efficient: The entire weight of the orig-
+inal rule is placed at the top binarized rule and all
+internal rules are assigned a probability of 1.0.
+Finally, we note that the weight pushing algo-
+rithm described in this paper began with a PCFG
+and ensured that the tree distribution was not
+changed. However, weight pushing need not be
+limited to a probabilistic interpretation, but could
+be used to spread weights for grammars with dis-
+criminatively trained features as well, with neces-
+sary adjustments to deal with positively and nega-
+tively weighted rules.
+Acknowledgments We thank the anonymous
+reviewers for their helpful comments. This work
+was supported by NSF grants IIS-0546554 and
+ITR-0428020.
+References
+Rens Bod. 2001. What is the minimal set of fragments
+that achieves maximal parse accuracy? In Pro-
+ceedings of the 39th Annual Conference of the As-
+sociation for Computational Linguistics (ACL-01),
+Toulouse, France.
+Rens Bod. 2003. Do all fragments count? Natural
+Language Engineering, 9(4):307?323.
+Rens Bod. 2009. Personal communication.
+Eugene Charniak. 2000. A maximum-entropy-
+inspired parser. In Proceedings of the 2000 Meet-
+ing of the North American chapter of the Association
+for Computational Linguistics (NAACL-00), Seattle,
+Washington.
+David Chiang. 2000. Statistical parsing with an
+automatically-extracted tree adjoining grammar. In
+Proceedings of the 38th Annual Conference of the
+Association for Computational Linguistics (ACL-
+00), Hong Kong.
+Michael John Collins. 1999. Head-driven Statistical
+Models for Natural Language Parsing. Ph.D. thesis,
+University of Pennsylvania, Philadelphia.
+John DeNero, Mohit Bansal, Adam Pauls, and Dan
+Klein. 2009. Efficient parsing for transducer gram-
+mars. In Proceedings of the 2009 Meeting of the
+North American chapter of the Association for Com-
+putational Linguistics (NAACL-09), Boulder, Col-
+orado.
+Liang Huang. 2007. Binarization, synchronous bi-
+narization, and target-side binarization. In North
+American chapter of the Association for Computa-
+tional Linguistics Workshop on Syntax and Struc-
+ture in Statistical Translation (NAACL-SSST-07),
+Rochester, NY.
+Dan Klein and Christopher D. Manning. 2003. A*
+parsing: Fast exact Viterbi parse selection. In Pro-
+ceedings of the 2003 Meeting of the North American
+chapter of the Association for Computational Lin-
+guistics (NAACL-03), Edmonton, Alberta.
+Mehryar Mohri and Michael Riley. 2001. A weight
+pushing algorithm for large vocabulary speech
+recognition. In European Conference on Speech
+Communication and Technology, pages 1603?1606.
+Mehryar Mohri. 1997. Finite-state transducers in lan-
+guage and speech processing. Computational Lin-
+guistics, 23(2):269?311.
+Matt Post and Daniel Gildea. 2009. Bayesian learning
+of a tree substitution grammar. In Proceedings of the
+47th Annual Meeting of the Association for Compu-
+tational Linguistics (ACL-09), Suntec, Singapore.
+Helmut Schmid. 2004. Efficient parsing of highly am-
+biguous context-free grammars with bit vectors. In
+Proceedings of the 20th International Conference on
+Computational Linguistics (COLING-04), Geneva,
+Switzerland.
+Xinying Song, Shilin Ding, and Chin-Yew Lin. 2008.
+Better binarization for the CKY parsing. In 2008
+Conference on Empirical Methods in Natural Lan-
+guage Processing (EMNLP-08), Honolulu, Hawaii.
+Hao Zhang, Liang Huang, Daniel Gildea, and Kevin
+Knight. 2006. Synchronous binarization for ma-
+chine translation. In Proceedings of the 2006 Meet-
+ing of the North American chapter of the Associ-
+ation for Computational Linguistics (NAACL-06),
+New York, NY.
+98

@@ -1,0 +1,870 @@
+Human Language Technologies: The 2009 Annual Conference of the North American Chapter of the ACL, pages 101?109,
+Boulder, Colorado, June 2009. c?2009 Association for Computational Linguistics
+Improving Unsupervised Dependency Parsing
+with Richer Contexts and Smoothing
+William P. Headden III, Mark Johnson, David McClosky
+Brown Laboratory for Linguistic Information Processing (BLLIP)
+Brown University
+Providence, RI 02912
+{headdenw,mj,dmcc}@cs.brown.edu
+Abstract
+Unsupervised grammar induction models tend
+to employ relatively simple models of syntax
+when compared to their supervised counter-
+parts. Traditionally, the unsupervised mod-
+els have been kept simple due to tractabil-
+ity and data sparsity concerns. In this paper,
+we introduce basic valence frames and lexi-
+cal information into an unsupervised depen-
+dency grammar inducer and show how this
+additional information can be leveraged via
+smoothing. Our model produces state-of-the-
+art results on the task of unsupervised gram-
+mar induction, improving over the best previ-
+ous work by almost 10 percentage points.
+1 Introduction
+The last decade has seen great strides in statisti-
+cal natural language parsing. Supervised and semi-
+supervised methods now provide highly accurate
+parsers for a number of languages, but require train-
+ing from corpora hand-annotated with parse trees.
+Unfortunately, manually annotating corpora with
+parse trees is expensive and time consuming so for
+languages and domains with minimal resources it is
+valuable to study methods for parsing without re-
+quiring annotated sentences.
+In this work, we focus on unsupervised depen-
+dency parsing. Our goal is to produce a directed
+graph of dependency relations (e.g. Figure 1) where
+each edge indicates a head-argument relation. Since
+the task is unsupervised, we are not given any ex-
+amples of correct dependency graphs and only take
+words and their parts of speech as input. Most
+of the recent work in this area (Smith, 2006; Co-
+hen et al, 2008) has focused on variants of the
+The big dog barks
+Figure 1: Example dependency parse.
+Dependency Model with Valence (DMV) by Klein
+and Manning (2004). DMV was the first unsu-
+pervised dependency grammar induction system to
+achieve accuracy above a right-branching baseline.
+However, DMV is not able to capture some of the
+more complex aspects of language. Borrowing some
+ideas from the supervised parsing literature, we
+present two new models: Extended Valence Gram-
+mar (EVG) and its lexicalized extension (L-EVG).
+The primary difference between EVG and DMV is
+that DMV uses valence information to determine the
+number of arguments a head takes but not their cat-
+egories. In contrast, EVG allows different distri-
+butions over arguments for different valence slots.
+L-EVG extends EVG by conditioning on lexical in-
+formation as well. This allows L-EVG to potentially
+capture subcategorizations. The downside of adding
+additional conditioning events is that we introduce
+data sparsity problems. Incorporating more valence
+and lexical information increases the number of pa-
+rameters to estimate. A common solution to data
+sparsity in supervised parsing is to add smoothing.
+We show that smoothing can be employed in an un-
+supervised fashion as well, and show that mixing
+DMV, EVG, and L-EVG together produces state-of-
+the-art results on this task. To our knowledge, this is
+the first time that grammars with differing levels of
+detail have been successfully combined for unsuper-
+vised dependency parsing.
+A brief overview of the paper follows. In Section
+2, we discuss the relevant background. Section 3
+presents how we will extend DMV with additional
+101
+features. We describe smoothing in an unsupervised
+context in Section 4. In Section 5, we discuss search
+issues. We present our experiments in Section 6 and
+conclude in Section 7.
+2 Background
+In this paper, the observed variables will be a corpus
+of n sentences of text s = s1 . . . sn, and for each
+word sij an associated part-of-speech ?ij . We denote
+the set of all words as Vw and the set of all parts-of-
+speech as V? . The hidden variables are parse trees
+t = t1 . . . tn and parameters ?? which specify a dis-
+tribution over t. A dependency tree ti is a directed
+acyclic graph whose nodes are the words in si. The
+graph has a single incoming edge for each word in
+each sentence, except one called the root of ti. An
+edge from word i to word j means that word j is
+an argument of word i or alternatively, word i is the
+head of word j. Note that each word token may be
+the argument of at most one head, but a head may
+have several arguments.
+If parse tree ti can be drawn on a plane above the
+sentence with no crossing edges, it is called projec-
+tive. Otherwise it is nonprojective. As in previous
+work, we restrict ourselves to projective dependency
+trees. The dependency models in this paper will be
+formulated as a particular kind of Probabilistic Con-
+text Free Grammar (PCFG), described below.
+2.1 Tied Probabilistic Context Free Grammars
+In order to perform smoothing, we will find useful a
+class of PCFGs in which the probabilities of certain
+rules are required to be the same. This will allow
+us to make independence assumptions for smooth-
+ing purposes without losing information, by giving
+analogous rules the same probability.
+Let G = (N ,T , S,R, ?) be a Probabilistic Con-
+text Free Grammar with nonterminal symbols N ,
+terminal symbols T , start symbol S ? N , set of
+productions R of the form N ? ?, N ? N , ? ?
+(N ? T )?. Let RN indicate the subset of R whose
+left-hand sides are N . ? is a vector of length |R|, in-
+dexed by productions N ? ? ? R. ?N?? specifies
+the probability that N rewrites to ?. We will let ?N
+indicate the subvector of ? corresponding to RN .
+A tied PCFG constrains a PCFG G with a tying
+relation, which is an equivalence relation over rules
+that satisfies the following properties:
+1. Tied rules have the same probability.
+2. Rules expanding the same nonterminal are
+never tied.
+3. If N1 ? ?1 and N2 ? ?2 are tied then the ty-
+ing relation defines a one-to-one mapping be-
+tween rules in RN1 and RN2 , and we say that
+N1 and N2 are tied nonterminals.
+As we see below, we can estimate tied PCFGs using
+standard techniques. Clearly, the tying relation also
+defines an equivalence class over nonterminals. The
+tying relation allows us to formulate the distribu-
+tions over trees in terms of rule equivalence classes
+and nonterminal equivalence classes. Suppose R? is
+the set of rule equivalence classes and N? is the set
+of nonterminal equivalence classes. Since all rules
+in an equivalence class r? have the same probability
+(condition 1), and since all the nonterminals in an
+equivalence class N? ? N? have the same distribu-
+tion over rule equivalence classes (condition 1 and
+3), we can define the set of rule equivalence classes
+R?N? associated with a nonterminal equivalence class
+N? , and a vector ?? of probabilities, indexed by rule
+equivalence classes r? ? R? . ??N? refers to the sub-
+vector of ?? associated with nonterminal equivalence
+class N? , indexed by r? ? R?N? . Since rules in the
+same equivalence class have the same probability,
+we have that for each r ? r?, ?r = ??r?.
+Let f(t, r) denote the number of times rule r ap-
+pears in tree t, and let f(t, r?) = ?r?r? f(t, r). We
+see that the complete data likelihood is
+P (s, t|?) = ?
+r??R?
+?
+r?r?
+?f(t,r)r =
+?
+r??R?
+??f(t,r?)r?
+That is, the likelihood is a product of multinomi-
+als, one for each nonterminal equivalence class, and
+there are no constraints placed on the parameters of
+these multinomials besides being positive and sum-
+ming to one. This means that all the standard es-
+timation methods (e.g. Expectation Maximization,
+Variational Bayes) extend directly to tied PCFGs.
+Maximum likelihood estimation provides a point
+estimate of ??. However, often we want to incorpo-
+rate information about ?? by modeling its prior distri-
+bution. As a prior, for each N? ? N? we will specify a
+102
+Dirichlet distribution over ??N? with hyperparameters
+?N? . The Dirichlet has the density function:
+P (??N? |?N? ) =
+?(?r??R?N? ?r?)?
+r??R?N? ?(?r?)
+?
+r??R?N?
+???r??1r? ,
+Thus the prior over ?? is a product of Dirichlets,which
+is conjugate to the PCFG likelihood function (John-
+son et al, 2007). That is, the posterior P (??|s, t, ?)
+is also a product of Dirichlets, also factoring into a
+Dirichlet for each nonterminal N? , where the param-
+eters ?r? are augmented by the number of times rule
+r? is observed in tree t:
+P (??|s, t, ?) ? P (s, t|??)P (??|?)
+?
+?
+r??R?
+??f(t,r?)+?r??1r?
+We can see that ?r? acts as a pseudocount of the num-
+ber of times r? is observed prior to t.
+To make use of this prior, we use the Variational
+Bayes (VB) technique for PCFGs with Dirichlet Pri-
+ors presented by Kurihara and Sato (2004). VB es-
+timates a distribution over ??. In contrast, Expec-
+tation Maximization estimates merely a point esti-
+mate of ??. In VB, one estimates Q(t, ??), called
+the variational distribution, which approximates the
+posterior distribution P (t, ??|s, ?) by minimizing the
+KL divergence of P from Q. Minimizing the KL
+divergence, it turns out, is equivalent to maximiz-
+ing a lower bound F of the log marginal likelihood
+log P (s|?).
+log P (s|?) ? ?
+t
+?
+??
+Q(t, ??) log P (s, t, ??|?)Q(t, ??) = F
+The negative of the lower bound, ?F , is sometimes
+called the free energy.
+As is typical in variational approaches, Kuri-
+hara and Sato (2004) make certain independence as-
+sumptions about the hidden variables in the vari-
+ational posterior, which will make estimating it
+simpler. It factors Q(t, ??) = Q(t)Q(??) =?n
+i=1 Qi(ti)
+?
+N??N? Q(??N? ). The goal is to recover
+Q(??), the estimate of the posterior distribution over
+parameters and Q(t), the estimate of the posterior
+distribution over trees. Finding a local maximum of
+F is done via an alternating maximization of Q(??)
+and Q(t). Kurihara and Sato (2004) show that each
+Q(??N? ) is a Dirichlet distribution with parameters
+??r = ?r + EQ(t)f(t, r).
+2.2 Split-head Bilexical CFGs
+In the sections that follow, we frame various de-
+pendency models as a particular variety of CFGs
+known as split-head bilexical CFGs (Eisner and
+Satta, 1999). These allow us to use the fast Eisner
+and Satta (1999) parsing algorithm to compute the
+expectations required by VB in O(m3) time (Eis-
+ner and Blatz, 2007; Johnson, 2007) where m is the
+length of the sentence.1
+In the split-head bilexical CFG framework, each
+nonterminal in the grammar is annotated with a ter-
+minal symbol. For dependency grammars, these
+annotations correspond to words and/or parts-of-
+speech. Additionally, split-head bilexical CFGs re-
+quire that each word sij in sentence si is represented
+in a split form by two terminals called its left part
+sijL and right part sijR. The set of these parts con-
+stitutes the terminal symbols of the grammar. This
+split-head property relates to a particular type of de-
+pendency grammar in which the left and right depen-
+dents of a head are generated independently. Note
+that like CFGs, split-head bilexical CFGs can be
+made probabilistic.
+2.3 Dependency Model with Valence
+The most successful recent work on dependency
+induction has focused on the Dependency Model
+with Valence (DMV) by Klein and Manning (2004).
+DMV is a generative model in which the head of
+the sentence is generated and then each head recur-
+sively generates its left and right dependents. The
+arguments of head H in direction d are generated
+by repeatedly deciding whether to generate another
+new argument or to stop and then generating the
+argument if required. The probability of deciding
+whether to generate another argument is conditioned
+on H , d and whether this would be the first argument
+(this is the sense in which it models valence). When
+DMV generates an argument, the part-of-speech of
+that argument A is generated given H and d.
+1Efficiently parsable versions of split-head bilexical CFGs
+for the models described in this paper can be derived using the
+fold-unfold grammar transform (Eisner and Blatz, 2007; John-
+son, 2007).
+103
+Rule Description
+S ? YH Select H as root
+YH ? LH RH Move to split-head representation
+LH ? HL STOP | dir = L, head = H,val = 0
+LH ? L1H CONT | dir = L, head = H, val = 0
+L?H ? HL STOP | dir = L, head = H,val = 1
+L?H ? L1H CONT | dir = L, head = H, val = 1
+L1H ? YA L?H Arg A | dir = L, head = H
+Figure 2: Rule schema for DMV. For brevity, we omit
+the portion of the grammar that handles the right argu-
+ments since they are symmetric to the left (all rules are
+the same except for the attachment rule where the RHS is
+reversed). val ? {0, 1} indicates whether we have made
+any attachments.
+The grammar schema for this model is shown in
+Figure 2. The first rule generates the root of the sen-
+tence. Note that these rules are for ?H,A ? V? so
+there is an instance of the first schema rule for each
+part-of-speech. YH splits words into their left and
+right components. LH encodes the stopping deci-
+sion given that we have not generated any arguments
+so far. L?H encodes the same decision after generat-
+ing one or more arguments. L1H represents the distri-
+bution over left attachments. To extract dependency
+relations from these parse trees, we scan for attach-
+ment rules (e.g., L1H ? YA L?H) and record that
+A depends on H . The schema omits the rules for
+right arguments since they are symmetric. We show
+a parse of ?The big dog barks? in Figure 3.2
+Much of the extensions to this work have fo-
+cused on estimation procedures. Klein and Manning
+(2004) use Expectation Maximization to estimate
+the model parameters. Smith and Eisner (2005) and
+Smith (2006) investigate using Contrastive Estima-
+tion to estimate DMV. Contrastive Estimation max-
+imizes the conditional probability of the observed
+sentences given a neighborhood of similar unseen
+sequences. The results of this approach vary widely
+based on regularization and neighborhood, but often
+outperforms EM.
+2Note that our examples use words as leaf nodes but in our
+unlexicalized models, the leaf nodes are in fact parts-of-speech.
+S
+Ybarks
+Lbarks
+L1barks
+Ydog
+Ldog
+L1dog
+YThe
+LThe
+TheL
+RThe
+TheR
+L?dog
+L1dog
+Ybig
+Lbig
+bigL
+Rbig
+bigR
+L?dog
+dogL
+Rdog
+dogR
+L?barks
+barksL
+Rbarks
+barksR
+Figure 3: DMV split-head bilexical CFG parse of ?The
+big dog barks.?
+Smith (2006) also investigates two techniques for
+maximizing likelihood while incorporating the lo-
+cality bias encoded in the harmonic initializer for
+DMV. One technique, skewed deterministic anneal-
+ing, ameliorates the local maximum problem by flat-
+tening the likelihood and adding a bias towards the
+Klein and Manning initializer, which is decreased
+during learning. The second technique is structural
+annealing (Smith and Eisner, 2006; Smith, 2006)
+which penalizes long dependencies initially, grad-
+ually weakening the penalty during estimation. If
+hand-annotated dependencies on a held-out set are
+available for parameter selection, this performs far
+better than EM; however, performing parameter se-
+lection on a held-out set without the use of gold de-
+pendencies does not perform as well.
+Cohen et al (2008) investigate using Bayesian
+Priors with DMV. The two priors they use are the
+Dirichlet (which we use here) and the Logistic Nor-
+mal prior, which allows the model to capture correla-
+tions between different distributions. They initialize
+using the harmonic initializer of Klein and Manning
+(2004). They find that the Logistic Normal distri-
+bution performs much better than the Dirichlet with
+this initialization scheme.
+Cohen and Smith (2009), investigate (concur-
+104
+Rule Description
+S ? YH Select H as root
+YH ? LH RH Move to split-head representation
+LH ? HL STOP | dir = L, head = H,val = 0
+LH ? L?H CONT | dir = L, head = H, val = 0
+L?H ? L1H STOP | dir = L, head = H,val = 1
+L?H ? L2H CONT | dir = L, head = H, val = 1
+L2H ? YA L?H Arg A | dir = L, head = H,val = 1
+L1H ? YA HL Arg A | dir = L, head = H,val = 0
+Figure 4: Extended Valence Grammar schema. As be-
+fore, we omit rules involving the right parts of words. In
+this case, val ? {0, 1} indicates whether we are generat-
+ing the nearest argument (0) or not (1).
+rently with our work) an extension of this, the
+Shared Logistic Normal prior, which allows differ-
+ent PCFG rule distributions to share components.
+They use this machinery to investigate smoothing
+the attachment distributions for (nouns/verbs), and
+for learning using multiple languages.
+3 Enriched Contexts
+DMV models the distribution over arguments iden-
+tically without regard to their order. Instead, we
+propose to distinguish the distribution over the argu-
+ment nearest the head from the distribution of sub-
+sequent arguments. 3
+Consider the following changes to the DMV
+grammar (results shown in Figure 4). First, we will
+introduce the rule L2H ? YA L?H to denote the deci-
+sion of what argument to generate for positions not
+nearest to the head. Next, instead of having L?H ex-
+pand to HL or L1H , we will expand it to L1H (attach
+to nearest argument and stop) or L2H (attach to non-
+nearest argument and continue). We call this the Ex-
+tended Valence Grammar (EVG).
+As a concrete example, consider the phrase ?the
+big hungry dog? (Figure 5). We would expect that
+distribution over the nearest left argument for ?dog?
+to be different than farther left arguments. The fig-
+3McClosky (2008) explores this idea further in an un-
+smoothed grammar.
+.
+.
+.
+Ldog
+L1dog
+YThe
+TheL TheR
+L?dog
+L1dog
+Ybig
+bigL bigR
+L?dog
+dogL
+.
+.
+.
+Ldog
+L?dog
+L2dog
+YThe
+TheL TheR
+L?dog
+L1dog
+Ybig
+bigL bigR
+dogL
+Figure 5: An example of moving from DMV to EVG
+for a fragment of ?The big dog.? Boxed nodes indicate
+changes. The key difference is that EVG distinguishes
+between the distributions over the argument nearest the
+head (big) from arguments farther away (The).
+ure shows that EVG allows these two distributions to
+be different (nonterminals L2dog and L1dog) whereas
+DMV forces them to be equivalent (both use L1dog as
+the nonterminal).
+3.1 Lexicalization
+All of the probabilistic models discussed thus far
+have incorporated only part-of-speech information
+(see Footnote 2). In supervised parsing of both de-
+pendencies and constituency, lexical information is
+critical (Collins, 1999). We incorporate lexical in-
+formation into EVG (henceforth L-EVG) by extend-
+ing the distributions over argument parts-of-speech
+A to condition on the head word h in addition to the
+head part-of-speech H , direction d and argument po-
+sition v. The argument word a distribution is merely
+conditioned on part-of-speech A; we leave refining
+this model to future work.
+In order to incorporate lexicalization, we extend
+the EVG CFG to allow the nonterminals to be anno-
+tated with both the word and part-of-speech of the
+head. We first remove the old rules YH ? LH RH
+for each H ? V? . Then we mark each nonter-
+minal which is annotated with a part-of-speech as
+also annotated with its head, with a single excep-
+tion: YH . We add a new nonterminal YH,h for each
+H ? V? , h ? Vw, and the rules YH ? YH,h and
+YH,h ? LH,h RH,h. The rule YH ? YH,h cor-
+responds to selecting the word, given its part-of-
+speech.
+105
+4 Smoothing
+In supervised estimation one common smoothing
+technique is linear interpolation, (Jelinek, 1997).
+This section explains how linear interpolation can
+be represented using a PCFG with tied rule proba-
+bilities, and how one might estimate smoothing pa-
+rameters in an unsupervised framework.
+In many probabilistic models it is common to esti-
+mate the distribution of some event x conditioned on
+some set of context information P (x|N(1) . . . N(k))
+by smoothing it with less complicated condi-
+tional distributions. Using linear interpolation
+we model P (x|N(1) . . . N(k)) as a weighted aver-
+age of two distributions ?1P1(x|N(1), . . . , N(k)) +
+?2P2(x|N(1), . . . , N(k?1)), where the distribution
+P2 makes an independence assumption by dropping
+the conditioning event N(k).
+In a PCFG a nonterminal N can encode a collec-
+tion of conditioning events N(1) . . . N(k), and ?N de-
+termines a distribution conditioned on N(1) . . . N(k)
+over events represented by the rules r ? RN . For
+example, in EVG the nonterminal L1NN encodes
+three separate pieces of conditioning information:
+the direction d = left , the head part-of-speech
+H = NN , and the argument position v = 0;
+?L1NN?YJJ NNL represents the probability of gener-
+ating JJ as the first left argument of NN . Sup-
+pose in EVG we are interested in smoothing P (A |
+d,H, v) with a component that excludes the head
+conditioning event. Using linear interpolation, this
+would be:
+P (A | d,H, v) = ?1P1(A | d,H, v)+?2P2(A | d, v)
+We will estimate PCFG rules with linearly interpo-
+lated probabilities by creating a tied PCFG which
+is extended by adding rules that select between the
+main distribution P1 and the backoff distribution P2,
+and also rules that correspond to draws from those
+distributions. We will make use of tied rule proba-
+bilities to make the independence assumption in the
+backoff distribution.
+We still use the original grammar to parse the sen-
+tence. However, we estimate the parameters in the
+extended grammar and then translate them back into
+the original grammar for parsing.
+More formally, suppose B ? N is a set of non-
+terminals (called the backoff set) with conditioning
+events N(1) . . . N(k?1) in common (differing in a
+conditioning event N(k)), and with rule sets of the
+same cardinality. If G is our model?s PCFG, we can
+define a new tied PCFG G? = (N ?,T , S,R?, ?),
+where N ? = N ? {N b? | N ? B, ? ? {1, 2}},
+meaning for each nonterminal N in the backoff
+set we add two nonterminals N b1 , N b2 represent-
+ing each distribution P1 and P2. The new rule
+set R? = (?N?N ?R?N ) where for all N ? B
+rule set R?N =
+{
+N ? N b? | ? ? {1, 2}}, mean-
+ing at N in G? we decide which distribution P1, P2
+to use; and for N ? B and ? ? {1, 2} ,
+R?Nb? =
+{
+N b? ? ? | N ? ? ? RN
+}
+indicating a
+draw from distribution P?. For nonterminals N 6? B,
+R?N = RN . Finally, for each N,M ? B we
+specify a tying relation between the rules in R?Nb2
+and R?Mb2 , grouping together analogous rules. This
+has the effect of making an independence assump-
+tion about P2, namely that it ignores the condition-
+ing event N(k), drawing from a common distribution
+each time a nonterminal N b2 is rewritten.
+For example, in EVG to smooth P (A = DT |
+d = left ,H = NN , v = 0) with P2(A = DT |
+d = left , v = 0) we define the backoff set to
+be
+{
+L1H | H ? V?
+}
+. In the extended grammar we
+define the tying relation to form rule equivalence
+classes by the argument they generate, i.e. for each
+argument A ? V? , we have a rule equivalence class{
+L1b2H ? YA HL | H ? V?
+}
+.
+We can see that in grammar G? each N ? B even-
+tually ends up rewriting to one of N ?s expansions ?
+in G. There are two indirect paths, one through N b1
+and one through N b2 . Thus this defines the proba-
+bility of N ? ? in G, ?N??, as the probability of
+rewriting N as ? in G? via N b1 and N b2 . That is:
+?N?? = ?N?Nb1?Nb1?? + ?N?Nb2?Nb2??
+The example in Figure 6 shows the probability that
+L1dog rewrites to Ybig dogL in grammar G.
+Typically when smoothing we need to incorporate
+the prior knowledge that conditioning events that
+have been seen fewer times should be more strongly
+smoothed. We accomplish this by setting the Dirich-
+let hyperparameters for each N ? N b1 , N ? N b2
+decision to (K, 2K), where K = |RNb1 | is the num-
+ber of rewrite rules for A. This ensures that the
+model will only start to ignore the backoff distribu-
+106
+PG
+0
+B
+B
+@
+L1dog
+Ybig dogL
+1
+C
+C
+A
+= PG?
+0
+B
+B
+B
+B
+B
+B
+B
+@
+L1dog
+L1b1dog
+Ybig dogL
+1
+C
+C
+C
+C
+C
+C
+C
+A
++ PG?
+0
+B
+B
+B
+B
+B
+B
+B
+@
+L1dog
+L1b2dog
+Ybig dogL
+1
+C
+C
+C
+C
+C
+C
+C
+A
+Figure 6: Using linear interpolation to smooth L1dog ?
+Ybig dogL: The first component represents the distri-
+bution fully conditioned on head dog, while the second
+component represents the distribution ignoring the head
+conditioning event. This later is accomplished by tying
+the rule L1b2dog ? Ybig dogL to, for instance, L1b2cat ?
+Ybig catL, L1b2fish ? Ybig fishL etc.
+tion after having seen a sufficiently large number of
+training examples. 4
+4.1 Smoothed Dependency Models
+Our first experiments examine smoothing the dis-
+tributions over an argument in the DMV and EVG
+models. In DMV we smooth the probability of argu-
+ment A given head part-of-speech H and direction d
+with a distribution that ignores H . In EVG, which
+conditions on H , d and argument position v we back
+off two ways. The first is to ignore v and use back-
+off conditioning event H, d. This yields a backoff
+distribution with the same conditioning information
+as the argument distribution from DMV. We call this
+EVG smoothed-skip-val.
+The second possibility is to have the backoff
+distribution ignore the head part-of-speech H and
+use backoff conditioning event v, d. This assumes
+that arguments share a common distribution across
+heads. We call this EVG smoothed-skip-head. As
+we see below, backing off by ignoring the part-of-
+speech of the head H worked better than ignoring
+the argument position v.
+For L-EVG we smooth the argument part-of-
+speech distribution (conditioned on the head word)
+with the unlexicalized EVG smoothed-skip-head
+model.
+5 Initialization and Search issues
+Klein and Manning (2004) strongly emphasize the
+importance of smart initialization in getting good
+performance from DMV. The likelihood function is
+full of local maxima and different initial parameter
+values yield vastly different quality solutions. They
+offer what they call a ?harmonic initializer? which
+4We set the other Dirichlet hyperparameters to 1.
+initializes the attachment probabilities to favor ar-
+guments that appear more closely in the data. This
+starts EM in a state preferring shorter attachments.
+Since our goal is to expand the model to incor-
+porate lexical information, we want an initializa-
+tion scheme which does not depend on the details
+of DMV. The method we use is to create M sets of
+B random initial settings and to run VB some small
+number of iterations (40 in all our experiments) for
+each initial setting. For each of the M sets, the
+model with the best free energy of the B runs is
+then run out until convergence (as measured by like-
+lihood of a held-out data set); the other models are
+pruned away. In this paper we use B = 20 and
+M = 50.
+For the bth setting, we draw a random sample
+from the prior ??(b). We set the initial Q(t) =
+P (t|s, ??(b)) which can be calculated using the
+Expectation-Maximization E-Step. Q(??) is then ini-
+tialized using the standard VB M-step.
+For the Lexicalized-EVG, we modify this proce-
+dure slightly, by first running MB smoothed EVG
+models for 40 iterations each and selecting the best
+model in each cohort as before; each L-EVG dis-
+tribution is initialized from its corresponding EVG
+distribution. The new P (A|h,H, d, v) distributions
+are set initially to their corresponding P (A|H, d, v)
+values.
+6 Results
+We trained on the standard Penn Treebank WSJ cor-
+pus (Marcus et al, 1993). Following Klein and Man-
+ning (2002), sentences longer than 10 words after
+removing punctuation are ignored. We refer to this
+variant as WSJ10. Following Cohen et al (2008),
+we train on sections 2-21, used 22 as a held-out de-
+velopment corpus, and present results evaluated on
+section 23. The models were all trained using Varia-
+tional Bayes, and initialized as described in Section
+5. To evaluate, we follow Cohen et al (2008) in us-
+ing the mean of the variational posterior Dirichlets
+as a point estimate ???. For the unsmoothed models
+we decode by selecting the Viterbi parse given ???, or
+argmaxtP (t|s, ???).
+For the smoothed models we find the Viterbi parse
+of the unsmoothed CFG, but use the smoothed prob-
+abilities. We evaluate against the gold standard
+107
+Model Variant Dir. Acc.
+DMV harmonic init 46.9*
+DMV random init 55.7 (8.0)
+DMV log normal-families 59.4*
+DMV shared log normal-families 62.4?
+DMV smoothed 61.2 (1.2)
+EVG random init 53.3 (7.1)
+EVG smoothed-skip-val 62.1 (1.9)
+EVG smoothed-skip-head 65.0 (5.7)
+L-EVG smoothed 68.8 (4.5)
+Table 1: Directed accuracy (DA) for WSJ10, section 23.
+*,? indicate results reported by Cohen et al (2008), Co-
+hen and Smith (2009) respectively. Standard deviations
+over 10 runs are given in parentheses
+dependencies for section 23, which were extracted
+from the phrase structure trees using the standard
+rules by Yamada and Matsumoto (2003). We mea-
+sure the percent accuracy of the directed dependency
+edges. For the lexicalized model, we replaced all
+words that were seen fewer than 100 times with
+?UNK.? We ran each of our systems 10 times, and
+report the average directed accuracy achieved. The
+results are shown in Table 1. We compare to work
+by Cohen et al (2008) and Cohen and Smith (2009).
+Looking at Table 1, we can first of all see the
+benefit of randomized initialization over the har-
+monic initializer for DMV. We can also see a large
+gain by adding smoothing to DMV, topping even
+the logistic normal prior. The unsmoothed EVG ac-
+tually performs worse than unsmoothed DMV, but
+both smoothed versions improve even on smoothed
+DMV. Adding lexical information (L-EVG) yields a
+moderate further improvement.
+As the greatest improvement comes from moving
+to model EVG smoothed-skip-head, we show in Ta-
+ble 2 the most probable arguments for each val, dir,
+using the mean of the appropriate variational Dirich-
+let. For d = right, v = 1, P (A|v, d) largely seems
+to acts as a way of grouping together various verb
+types, while for d = left, v = 0 the model finds
+that nouns tend to act as the closest left argument.
+Dir,Val Arg Prob Dir,Val Arg Prob
+left, 0 NN 0.65 right, 0 NN 0.26
+NNP 0.18 RB 0.23
+DT 0.12 NNS 0.12
+IN 0.11
+left, 1 CC 0.35 right, 1 IN 0.78
+RB 0.27
+IN 0.18
+Table 2: Most likely arguments given valence and direc-
+tion, according to smoothing distributionP (arg|dir, val)
+in EVG smoothed-skip-head model with lowest free en-
+ergy.
+7 Conclusion
+We present a smoothing technique for unsupervised
+PCFG estimation which allows us to explore more
+sophisticated dependency grammars. Our method
+combines linear interpolation with a Bayesian prior
+that ensures the backoff distribution receives proba-
+bility mass. Estimating the smoothed model requires
+running the standard Variational Bayes on an ex-
+tended PCFG. We used this technique to estimate a
+series of dependency grammars which extend DMV
+with additional valence and lexical information. We
+found that both were helpful in learning English de-
+pendency grammars. Our L-EVG model gives the
+best reported accuracy to date on the WSJ10 corpus.
+Future work includes using lexical information
+more deeply in the model by conditioning argument
+words and valence on the lexical head. We suspect
+that successfully doing so will require using much
+larger datasets. We would also like to explore us-
+ing our smoothing technique in other models such
+as HMMs. For instance, we could do unsupervised
+HMM part-of-speech induction by smooth a tritag
+model with a bitag model. Finally, we would like to
+learn the parts-of-speech in our dependency model
+from text and not rely on the gold-standard tags.
+Acknowledgements
+This research is based upon work supported by
+National Science Foundation grants 0544127 and
+0631667 and DARPA GALE contract HR0011-06-
+2-0001. We thank members of BLLIP for their feed-
+back.
+108
+References
+Shay B. Cohen and Noah A. Smith. 2009. Shared lo-
+gistic normal distributions for soft parameter tying in
+unsupervised grammar induction. In Proceedings of
+NAACL-HLT 2009.
+Shay B. Cohen, Kevin Gimpel, and Noah A. Smith.
+2008. Logistic normal priors for unsupervised prob-
+abilistic grammar induction. In Advances in Neural
+Information Processing Systems 21.
+Michael Collins. 1999. Head-driven Statistical Models
+for Natural Language Parsing. Ph.D. thesis, The Uni-
+versity of Pennsylvania.
+Jason Eisner and John Blatz. 2007. Program transforma-
+tions for optimization of parsing algorithms and other
+weighted logic programs. In Proceedings of the 11th
+Conference on Formal Grammar.
+Jason Eisner and Giorgio Satta. 1999. Efficient pars-
+ing for bilexical context-free grammars and head-
+automaton grammars. In Proceedings of ACL 1999.
+Frederick Jelinek. 1997. Statistical Methods for Speech
+Recognition. The MIT Press, Cambridge, Mas-
+sachusetts.
+Mark Johnson, Thomas L. Griffiths, and Sharon Goldwa-
+ter. 2007. Bayesian inference for PCFGs via Markov
+chain Monte Carlo. In Proceedings of NAACL 2007.
+Mark Johnson. 2007. Transforming projective bilexical
+dependency grammars into efficiently-parsable CFGs
+with unfold-fold. In Proceedings of ACL 2007.
+Dan Klein and Christopher Manning. 2002. A genera-
+tive constituent-context model for improved grammar
+induction. In Proceedings of ACL 2002.
+Dan Klein and Christopher Manning. 2004. Corpus-
+based induction of syntactic structure: Models of de-
+pendency and constituency. In Proceedings of ACL
+2004, July.
+Kenichi Kurihara and Taisuke Sato. 2004. An applica-
+tion of the variational bayesian approach to probabilis-
+tics context-free grammars. In IJCNLP 2004 Work-
+shop Beyond Shallow Analyses.
+Mitchell P. Marcus, Beatrice Santorini, and Mary Ann
+Marcinkiewicz. 1993. Building a large annotated cor-
+pus of English: The Penn Treebank. Computational
+Linguistics, 19(2):313?330.
+David McClosky. 2008. Modeling valence effects in un-
+supervised grammar induction. Technical Report CS-
+09-01, Brown University, Providence, RI, USA.
+Noah A. Smith and Jason Eisner. 2005. Guiding unsu-
+pervised grammar induction using contrastive estima-
+tion. In International Joint Conference on Artificial
+Intelligence Workshop on Grammatical Inference Ap-
+plications.
+Noah A. Smith and Jason Eisner. 2006. Annealing struc-
+tural bias in multilingual weighted grammar induction.
+In Proceedings of COLING-ACL 2006.
+Noah A. Smith. 2006. Novel Estimation Methods for
+Unsupervised Discovery of Latent Structure in Natural
+Language Text. Ph.D. thesis, Department of Computer
+Science, Johns Hopkins University.
+Hiroyasu Yamada and Yuji Matsumoto. 2003. Statistical
+dependency analysis with support vector machines. In
+In Proceedings of the International Workshop on Pars-
+ing Technologies.
+109

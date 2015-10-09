@@ -1,0 +1,708 @@
+Proceedings of the ACL Workshop on Building and Using Parallel Texts, pages 208?215,
+Ann Arbor, June 2005. c?Association for Computational Linguistics, 2005
+Training and Evaluating Error Minimization Rules for Statistical Machine
+Translation
+Ashish Venugopal
+School of Computer Science
+Carnegie Mellon University
+arv@andrew.cmu.edu
+Andreas Zollmann
+School of Computer Science
+Carnegie Mellon University
+zollmann@cs.cmu.edu
+Alex Waibel
+School of Computer Science
+Carnegie Mellon University
+waibel@cs.cmu.edu
+Abstract
+Decision rules that explicitly account for
+non-probabilistic evaluation metrics in
+machine translation typically require spe-
+cial training, often to estimate parame-
+ters in exponential models that govern the
+search space and the selection of candi-
+date translations. While the traditional
+Maximum A Posteriori (MAP) decision
+rule can be optimized as a piecewise lin-
+ear function in a greedy search of the pa-
+rameter space, the Minimum Bayes Risk
+(MBR) decision rule is not well suited to
+this technique, a condition that makes past
+results difficult to compare. We present a
+novel training approach for non-tractable
+decision rules, allowing us to compare and
+evaluate these and other decision rules on
+a large scale translation task, taking ad-
+vantage of the high dimensional parame-
+ter space available to the phrase based
+Pharaoh decoder. This comparison is
+timely, and important, as decoders evolve
+to represent more complex search space
+decisions and are evaluated against in-
+novative evaluation metrics of translation
+quality.
+1 Introduction
+State of the art statistical machine translation takes
+advantage of exponential models to incorporate a
+large set of potentially overlapping features to se-
+lect translations from a set of potential candidates.
+As discussed in (Och, 2003), the direct translation
+model represents the probability of target sentence
+?English? e = e1 . . . eI being the translation for a
+source sentence ?French? f = f1 . . . fJ through an
+exponential, or log-linear model
+p?(e|f) =
+exp(
+?m
+k=1 ?k ? hk(e, f))?
+e??E exp(
+?m
+k=1 ?k ? hk(e
+?, f))
+(1)
+where e is a single candidate translation for f
+from the set of all English translations E, ? is the
+parameter vector for the model, and each hk is a
+feature function of e and f . In practice, we restrict
+E to the set Gen(f) which is a set of highly likely
+translations discovered by a decoder (Vogel et al,
+2003). Selecting a translation from this model under
+the Maximum A Posteriori (MAP) criteria yields
+transl?(f) = argmax
+e
+p?(e|f) . (2)
+This decision rule is optimal under the zero-
+one loss function, minimizing the Sentence Error
+Rate (Mangu et al, 2000). Using the log-linear
+form to model p?(e|f) gives us the flexibility to
+introduce overlapping features that can represent
+global context while decoding (searching the space
+of candidate translations) and rescoring (ranking a
+set of candidate translations before performing the
+argmax operation), albeit at the cost of the tradi-
+tional source-channel generative model of transla-
+tion proposed in (Brown et al, 1993).
+A significant impact of this paradigm shift, how-
+ever, has been the movement to leverage the flex-
+ibility of the exponential model to maximize per-
+formance with respect to automatic evaluation met-
+208
+rics. Each evaluation metric considers different as-
+pects of translation quality, both at the sentence and
+corpus level, often achieving high correlation to hu-
+man evaluation (Doddington, 2002). It is clear that
+the decision rule stated in (1) does not reflect the
+choice of evaluation metric, and substantial work
+has been done to correct this mismatch in crite-
+ria. Approaches include integrating the metric into
+the decision rule, and learning ? to optimize the
+performance of the decision rule. In this paper
+we will compare and evaluate several aspects of
+these techniques, focusing on Minimum Error Rate
+(MER) training (Och, 2003) and Minimum Bayes
+Risk (MBR) decision rules, within a novel training
+environment that isolates the impact of each compo-
+nent of these methods.
+2 Addressing Evaluation Metrics
+We now describe competing strategies to address the
+problem of modeling the evaluation metric within
+the decoding and rescoring process, and introduce
+our contribution towards training non-tractable error
+surfaces. The methods discussed below make use
+of Gen(f), the approximation to the complete can-
+didate translation space E, referred to as an n-best
+list. Details regarding n-best list generation from
+decoder output can be found in (Ueffing et al, 2002).
+2.1 Minimum Error Rate Training
+The predominant approach to reconciling the mis-
+match between the MAP decision rule and the eval-
+uation metric has been to train the parameters ? of
+the exponential model to correlate the MAP choice
+with the maximum score as indicated by the evalu-
+ation metric on a development set with known ref-
+erences (Och, 2003). We differentiate between the
+decision rule
+transl?(f) = argmax
+e?Gen(f)
+p?(e|f) (3a)
+and the training criterion
+?? = argmin
+?
+Loss(transl?(~f),~r) (3b)
+where the Loss function returns an evaluation re-
+sult quantifying the difference between the English
+candidate translation transl?(f) and its correspond-
+ing reference r for a source sentence f . We indicate
+that this loss function is operating on a sequence of
+sentences with the vector notation. To avoid overfit-
+ting, and since MT researchers are generally blessed
+with an abundance of data, these sentences are from
+a separate development set.
+The optimization problem (3b) is hard since the
+argmax of (3a) causes the error surface to change
+in steps in Rm, precluding the use of gradient based
+optimization methods. Smoothed error counts can
+be used to approximate the argmax operator, but the
+resulting function still contains local minima. Grid-
+based line search approaches like Powell?s algorithm
+could be applied but we can expect difficultly when
+choosing the appropriate grid size and starting pa-
+rameters. In the following, we summarize the opti-
+mization algorithm for the unsmoothed error counts
+presented in (Och, 2003) and the implementation de-
+tailed in (Venugopal and Vogel, 2005).
+? Regard Loss(transl?(~f),~r) as defined in (3b)
+as a function of the parameter vector ? to
+optimize and take the argmax to compute
+transl?(~f) over the translations Gen(f) accord-
+ing to the n-best list generated with an initial
+estimate ?0.
+? The error surface defined by Loss (as a func-
+tion of ?) is piecewise linear with respect to a
+single model parameter ?k, hence we can deter-
+mine exactly where it would be useful (values
+that change the result of the argmax) to evalu-
+ate ?k for a given sentence using a simple line
+intersection method.
+? Merge the list of useful evaluation points
+for ?k and evaluate the corpus level
+Loss(transl?(~f),~r) at each one.
+? Select the model parameter that represents the
+lowest Loss as k varies, set ?k and consider the
+parameter ?j for another dimension j.
+This training algorithm, referred to as minimum er-
+ror rate (MER) training, is a greedy search in each
+dimension of ?, made efficient by realizing that
+within each dimension, we can compute the points
+at which changes in ? actually have an impact on
+Loss. The appropriate considerations for termina-
+tion and initial starting points relevant to any greedy
+search procedure must be accounted for. From the
+209
+nature of the training procedure and the MAP de-
+cision rule, we can expect that the parameters se-
+lected by MER training will strongly favor a few
+translations in the n-best list, namely for each source
+sentence the one resulting in the best score, moving
+most of the probability mass towards the translation
+that it believes should be selected. This is due to the
+decision rule, rather than the training procedure, as
+we will see when we consider alternative decision
+rules.
+2.2 The Minimum Bayes Risk Decision Rule
+The Minimum Bayes Risk Decision Rule as pro-
+posed by (Mangu et al, 2000) for the Word Error
+Rate Metric in speech recognition, and (Kumar and
+Byrne, 2004) when applied to translation, changes
+the decision rule in (2) to select the translation that
+has the lowest expected loss E[Loss(e, r)], which
+can be estimated by considering a weighted Loss
+between e and the elements of the n-best list, the
+approximation to E, as described in (Mangu et al,
+2000). The resulting decision rule is:
+transl?(f) = argmin
+e?Gen(f)
+?
+e??Gen(f)
+Loss(e, e?)p?(e
+?|f) .
+(4)
+(Kumar and Byrne, 2004) explicitly consider select-
+ing both e and a, an alignment between the Eng-
+lish and French sentences. Under a phrase based
+translation model (Koehn et al, 2003; Marcu and
+Wong, 2002), this distinction is important and will
+be discussed in more detail. The representation of
+the evaluation metric or the Loss function is in the
+decision rule, rather than in the training criterion for
+the exponential model. This criterion is hard to op-
+timize for the same reason as the criterion in (3b):
+the objective function is not continuous in ?. To
+make things worse, it is more expensive to evalu-
+ate the function at a given ?, since the decision rule
+involves a sum over all translations.
+2.3 MBR and the Exponential Model
+Previous work has reported the success of the MBR
+decision rule with fixed parameters relating indepen-
+dent underlying models, typically including only the
+language model and the translation model as fea-
+tures in the exponential model.
+We extend the MBR approach by developing a
+training method to optimize the parameters ? in the
+exponential model as an explicit form for the condi-
+tional distribution in equation (1). The training task
+under the MBR criterion is
+?? = argmin
+?
+Loss(transl?(~f),~r) (5a)
+where
+transl?(f) = argmin
+e?Gen(f)
+?
+e??Gen(f)
+Loss(e, e?)p?(e
+?|f) .
+(5b)
+We begin with several observations about this opti-
+mization criterion.
+? The MAP optimal ?? are not the optimal para-
+meters for this training criterion.
+? We can expect the error surface of the MBR
+training criterion to contain larger sections of
+similar altitude, since the decision rule empha-
+sizes consensus.
+? The piecewise linearity observation made in
+(Papineni et al, 2002) is no longer applicable
+since we cannot move the log operation into the
+expected value.
+3 Score Sampling
+Motivated by the challenges that the MBR training
+criterion presents, we present a training method that
+is based on the assumption that the error surface is
+locally non-smooth but consists of local regions of
+similar Loss values. We would like to focus the
+search within regions of the parameter space that re-
+sult in low Loss values, simulating the effect that
+the MER training process achieves when it deter-
+mines the merged error boundaries across a set of
+sentences.
+Let Score(?) be some function of
+Loss(transl?(~f),~r) that is greater or equal
+zero, decreases monotonically with Loss, and for
+which
+?
+(Score(?) ? min?? Score(??))d? is finite;
+e.g., 1 ? Loss(transl?(~f),~r) for the word-error
+rate (WER) loss and a bounded parameter space.
+While sampling parameter vectors ? and estimating
+Loss in these points, we will constantly refine
+our estimate of the error surface and thereby of
+the Score function. The main idea in our score
+210
+sampling algorithm is to make use of this Score
+estimate by constructing a probability distribution
+over the parameter space that depends on the Score
+estimate in the current iteration step i and sample
+the parameter vector ?i+1 for the next iteration from
+that distribution. More precisely, let S?c
+(i)
+be the
+estimate of Score in iteration i (we will explain how
+to obtain this estimate below). Then the probability
+distribution from which we sample the parameter
+vector to test in the next iteration is given by:
+p(?) =
+S?c
+(i)
+(?) ? min?? S?c
+(i)
+(??)
+?
+(S?c
+(i)
+(?) ? min?? S?c
+(i)
+(??)) d?
+. (6)
+This distribution produces a sequence ?1, . . . , ?n of
+parameter vectors that are more concentrated in ar-
+eas that result in a high Score. We can select the
+value from this sequence that generates the highest
+Score, just as in the MER training process.
+The exact method of obtaining the Score estimate
+S?c is crucial: If we are not careful enough and guess
+too low values of S?c(?) for parameter regions that
+are still unknown to us, the resulting sampling dis-
+tribution p might be zero in those regions and thus
+potentially optimal parameters might never be sam-
+pled. Rather than aiming for a consistent estimator
+of Score (i.e., an estimator that converges to Score
+when the sample size goes to infinity), we design S?c
+with regard to yielding a suitable sampling distribu-
+tion p.
+Assume that the parameter space is bounded such
+that mink ? ?k ? maxk for each dimension k,
+We then define a set of pivots P , forming a grid of
+points in Rm that are evenly spaced between mink
+and maxk for each dimension k. Each pivot repre-
+sents a region of the parameter space where we ex-
+pect generally consistent values of Score. We do not
+restrict the values of ?m to be at these pivot points
+as a grid search would do, rather we treat the pivots
+as landmarks within the search space.
+We approximate the distribution p(?) with the
+discrete distribution p(? ? P), leaving the problem
+of estimating |P| parameters. Initially, we set p to
+be uniform, i.e., p(0)(?) = 1/|P|. For subsequent
+iterations, we now need an estimate of Score(?) for
+each pivot ? ? P in the discrete version of equation
+(6) to obtain the new sampling distribution p. Each
+iteration i proceeds as follows.
+? Sample ??i from the discrete distribution
+p(i?1)(? ? P) obtained by the previous it-
+eration.
+? Sample the new parameter vector ?i by choos-
+ing for each k ? {1, . . . ,m}, ?ik := ??ik + ?k,
+where ?k is sampled uniformly from the inter-
+val (?dk/2, dk/2) and dk is the distance be-
+tween neighboring pivot points along dimen-
+sion k. Thus, ?i is sampled from a region
+around the sampled pivot.
+? Evaluate Score(?i) and distribute this score to
+obtain new estimates S?c
+(i)
+(?) for all pivots ? ?
+P as described below.
+? Use the updated estimates S?c
+(i)
+to generate the
+sampling distribution p(i) for the next iteration
+according to
+p(i)(?) =
+S?c
+(i)
+(?) ? min?? S?c
+(i)
+(??)
+?
+??P(S?c
+(i)
+(?) ? min?? S?c
+(i)
+(??))
+.
+The score Score(?i) of the currently evaluated pa-
+rameter vector does not only influence the score es-
+timate at the pivot point of the respective region, but
+the estimates at all pivot points. The closest piv-
+ots are influenced most strongly. More precisely, for
+each pivot ? ? P , S?c
+(i)
+(?) is a weighted average
+of Score(?1), . . . , Score(?i), where the weights
+w(i)(?) are chosen according to
+w(i)(?) = infl(i)(?) ? corr(i)(?) with
+infl(i)(?) = mvnpdf(?, ?i,?) and
+corr(i)(?) = 1/p(i?1)(?) .
+Here, mvnpdf(x, ?,?) denotes the m-dimensional
+multivariate-normal probability density function
+with mean ? and covariance matrix ?, evaluated
+at point x. We chose the covariance matrix ? =
+diag(d21, . . . , d
+2
+m), where again dk is the distance be-
+tween neighboring grid points along dimension k.
+The term infl(i)(?) quantifies the influence of the
+evaluated point ?i on the pivot ?, while corr(i)(?)
+is a correction term for the bias introduced by hav-
+ing sampled ?i from p(i?1).
+211
+Smoothing uncertain regions In the beginning of
+the optimization process, there will be pivot regions
+that have not yet been sampled from and for which
+not even close-by regions have been sampled yet.
+This will be reflected in the low sum of influence
+terms infl(1)(?) + ? ? ? + infl(i)(?) of the respective
+pivot points ?. It is therefore advisable to discount
+some probability mass from p(i) and distribute it
+over pivots with low influence sums (reflecting low
+confidence in the respective score estimates) accord-
+ing to some smoothing procedure.
+4 N-Best lists in Phrase Based Decoding
+The methods described above make extensive use of
+n-best lists to approximate the search space of can-
+didate translations. In phrase based decoding we of-
+ten interpret the MAP decision rule to select the top
+scoring path in the translation lattice. Selecting a
+particular path means in fact selecting the pair ?e, s?,
+where s is a segmentation of the the source sentence
+f into phrases and alignments onto their translations
+in e. Kumar and Byrne (2004) represent this deci-
+sion explicitly, since the Loss metrics considered in
+their work evaluate alignment information as well as
+lexical (word) level output. When considering lexi-
+cal scores as we do here, the decision rule minimiz-
+ing 0/1 loss actually needs to take the sum over all
+potential segmentations that can generate the same
+word sequence. In practice, we only consider the
+high probability segmentation decisions, namely the
+ones that were found in the n-best list. This gives
+the 0/1 loss criterion shown below.
+transl?(f) = argmax
+e
+?
+s
+p?(e, s|f) (7)
+The 0/1 loss criterion favors translations that are
+supported by several segmentation decisions. In the
+context of phrase-based translations, this is a useful
+criterion, since a given lexical target word sequence
+can be correctly segmented in several different ways,
+all of which would be scored equally by an evalua-
+tion metric that only considers the word sequence.
+5 Experimental Framework
+Our goal is to evaluate the impact of the three de-
+cision rules discussed above on a large scale trans-
+lation task that takes advantage of multidimensional
+features in the exponential model. In this section
+we describe the experimental framework used in this
+evaluation.
+5.1 Data Sets and Resources
+We perform our analysis on the data provided by the
+2005 ACL Workshop in Exploiting Parallel Texts for
+Statistical Machine Translation, working with the
+French-English Europarl corpus. This corpus con-
+sists of 688031 sentence pairs, with approximately
+156 million words on the French side, and 138 mil-
+lion words on the English side. We use the data as
+provided by the workshop and run lower casing as
+our only preprocessing step. We use the 15.5 mil-
+lion entry phrase translation table as provided for the
+shared workshop task for the French-English data
+set. Each translation pair has a set of 5 associated
+phrase translation scores that represent the maxi-
+mum likelihood estimate of the phrase as well as in-
+ternal alignment probabilities. We also use the Eng-
+lish language model as provided for the shared task.
+Since each of these decision rules has its respective
+training process, we split the workshop test set of
+2000 sentences into a development and test set using
+random splitting. We tried two decoders for trans-
+lating these sets. The first system is the Pharaoh de-
+coder provided by (Koehn et al, 2003) for the shared
+data task. The Pharaoh decoder has support for mul-
+tiple translation and language model scores as well
+as simple phrase distortion and word length models.
+The pruning and distortion limit parameters remain
+the same as in the provided initialization scripts,
+i.e., DistortionLimit = 4, BeamThreshold =
+0.1, Stack = 100. For further information on
+these parameter settings, confer (Koehn et al, 2003).
+Pharaoh is interesting for our optimization task be-
+cause its eight different models lead to a search
+space with seven free parameters. Here, a princi-
+pled optimization procedure is crucial. The second
+decoder we tried is the CMU Statistical Translation
+System (Vogel et al, 2003) augmented with the four
+translation models provided by the Pharaoh system,
+in the following called CMU-Pharaoh. This system
+also leads to a search space with seven free parame-
+ters.
+212
+5.2 N-Best lists
+As mentioned earlier, the model parameters ? play
+a large role in the search space explored by a prun-
+ing beam search decoder. These parameters affect
+the histogram and beam pruning as well as the fu-
+ture cost estimation used in the Pharaoh and CMU
+decoders. The initial parameter file for Pharaoh pro-
+vided by the workshop provided a very poor esti-
+mate of ?, resulting in an n-best list of limited po-
+tential. To account for this condition, we ran Min-
+imum Error Rate training on the development data
+to determine scaling factors that can generate a n-
+best list with high quality translations. We realize
+that this step biases the n-best list towards the MAP
+criteria, since its parameters will likely cause more
+aggressive pruning. However, since we have cho-
+sen a large N=1000, and retrain the MBR, MAP, and
+0/1 loss parameters separately, we do not feel that
+the bias has a strong impact on the evaluation.
+5.3 Evaluation Metric
+This paper focuses on the BLEU metric as presented
+in (Papineni et al, 2002). The BLEU metric is de-
+fined on a corpus level as follows.
+Score(~e,~r) = BP (~e,~r) ? exp(
+1
+N
+N?
+1
+(log pn))
+where pn represent the precision of n-grams sug-
+gested in ~e and BP is a brevity penalty measur-
+ing the relative shortness of ~e over the whole cor-
+pus. To use the BLEU metric in the candidate pair-
+wise loss calculation in (4), we need to make a de-
+cision regarding cases where higher order n-grams
+matches are not found between two candidates. Ku-
+mar and Byrne (2004) suggest that if any n-grams
+are not matched then the pairwise BLEU score is set
+to zero. As an alternative we first estimate corpus-
+wide n-gram counts on the development set. When
+the pairwise counts are collected between sentences
+pairs, they are added onto the baseline corpus counts
+to and scored by BLEU. This scoring simulates the
+process of scoring additional sentences after seeing
+a whole corpus.
+5.4 Training Environment
+It is important to separate the impact of the decision
+rule from the success of the training procedure. To
+appropriately compare the MAP, 0/1 loss and MBR
+decisions rules, they must all be trained with the
+same training method, here we use the Score Sam-
+pling training method described above. We also re-
+port MAP scores using the MER training described
+above to determine the impact of the training algo-
+rithm for MAP. Note that the MER training approach
+cannot be performed on the MBR decision rule, as
+explained in Section 2.3. MER training is initialized
+at random values of ? and run (successive greedy
+search over the parameters) until there is no change
+in the error for three complete cycles through the pa-
+rameter set. This process is repeated with new start-
+ing parameters as well as permutations of the para-
+meter search order to ensure that there is no bias in
+the search towards a particular parameter. To im-
+prove efficiency, pairwise scores are cached across
+requests for the score at different values of ?, and
+for MBR only the E[Loss(e, r)] for the top twenty
+hypotheses as ranked by the model are computed.
+6 Results
+The results in Table 1 compare the BLEU score
+achieved by each training method on the develop-
+ment and test data for both Pharaoh and CMU-
+Pharaoh. Score-sampling training was run for 150
+iterations to find ? for each decision rule. The MAP-
+MER training was performed to evaluate the effect
+of the greedy search method on the generalization
+of the development set results. Each row represents
+an alternative training method described in this pa-
+per, while the test set columns indicate the criteria
+used to select the final translation output ~e. The
+bold face scores are the scores for matching train-
+ing and testing methods. The underlined score is
+the highest test set score, achieved by MBR decod-
+ing using the CMU-Pharaoh system trained for the
+MBR decision rule with the score-sampling algo-
+rithm. When comparing MER training for MAP-
+decoding with score-sampling training for MAP-
+decoding, score-sampling surprisingly outperforms
+MER training for both Pharaoh and CMU-Pharaoh,
+although MER training is specifically tailored to
+the MAP metric. Note, however, that our score-
+sampling algorithm has a considerably longer run-
+ning time (several hours) than the MER algorithm
+(several minutes). Interestingly, within MER train-
+213
+training method Dev. set sc. test set sc. MAP test set sc. 0/1 loss test set sc. MBR
+MAP MER (Pharaoh) 29.08 29.30 29.42 29.36
+MAP score-sampl. (Pharaoh) 29.08 29.41 29.24 29.30
+0/1 loss sc.-s. (Pharaoh) 29.08 29.16 29.28 29.30
+MBR sc.-s. (Pharaoh) 29.00 29.11 29.08 29.17
+MAP MER (CMU-Pharaoh) 28.80 29.02 29.41 29.60
+MAP sc.-s. (CMU-Ph.) 29.10 29.85 29.75 29.55
+0/1 loss sc.-s. (CMU-Ph.) 28.36 29.97 29.91 29.72
+MBR sc.-s. (CMU-Ph.) 28.36 30.18 30.16 30.28
+Table 1. Comparing BLEU scores generated by alternative training methods and decision rules
+ing for Pharaoh, the 0/1 loss metric is the top per-
+former; we believe the reason for this disparity be-
+tween training and test methods is the impact of
+phrasal consistency as a valuable measure within the
+n-best list.
+The relative performance of MBR score-sampling
+w.r.t. MAP and 0/1-loss score sampling is quite dif-
+ferent between Pharaoh and CMU-Pharaoh: While
+MBR score-sampling performs worse than MAP
+and 0/1-loss score sampling for Pharaoh, it yields the
+best test scores across the board for CMU-Pharaoh.
+A possible reason is that the n-best lists generated by
+Pharaoh have a large percentage of lexically iden-
+tical translations, differing only in their segmenta-
+tions. As a result, the 1000-best lists generated by
+Pharaoh contain only a small percentage of unique
+translations, a condition that reduces the potential
+of the Minimum Bayes Risk methods. The CMU
+decoder, contrariwise, prunes away alternatives be-
+low a certain score-threshold during decoding and
+does not recover them when generating the n-best
+list. The n-best lists of this system are therefore typi-
+cally more diverse and in particular contain far more
+unique translations.
+7 Conclusions and Further Work
+This work describes a general algorithm for the ef-
+ficient optimization of error counts for an arbitrary
+Loss function, allowing us to compare and evalu-
+ate the impact of alternative decision rules for sta-
+tistical machine translation. Our results suggest
+the value and sensitivity of the translation process
+to the Loss function at the decoding and reorder-
+ing stages of the process. As phrase-based trans-
+lation and reordering models begin to dominate
+the state of the art in machine translation, it will
+become increasingly important to understand the
+nature and consistency of n-best list training ap-
+proaches. Our results are reported on a complete
+package of translation tools and resources, allow-
+ing the reader to easily recreate and build upon our
+framework. Further research might lie in finding
+efficient representations of Bayes Risk loss func-
+tions within the decoding process (rather than just
+using MBR to rescore n-best lists), as well as
+analyses on different language pairs from the avail-
+able Europarl data. We have shown score sam-
+pling to be an effective training method to con-
+duct these experiments and we hope to establish its
+use in the changing landscape of automatic trans-
+lation evaluation. The source code is available at:
+www.cs.cmu.edu/?zollmann/scoresampling/
+8 Acknowledgments
+We thank Stephan Vogel, Ying Zhang, and the
+anonymous reviewers for their valuable comments
+and suggestions.
+References
+Peter F. Brown, Vincent J. Della Pietra, Stephen A. Della
+Pietra, and Robert L. Mercer. 1993. The mathemat-
+ics of statistical machine translation: parameter esti-
+mation. Computational Linguistics, 19(2):263?311.
+George Doddington. 2002. Automatic evaluation of ma-
+chine translation quality using n-gram co-occurrence
+statistics. In In Proc. ARPA Workshop on Human Lan-
+guage Technology.
+Philipp Koehn, Franz Josef Och, and Daniel Marcu.
+2003. Statistical phrase-based translation. In Proceed-
+ings of the Human Language Technology and North
+214
+American Association for Computational Linguistics
+Conference (HLT/NAACL), Edomonton, Canada, May
+27-June 1.
+Shankar Kumar and William Byrne. 2004. Minimum
+bayes-risk decoding for statistical machine translation.
+In Proceedings of the Human Language Technology
+and North American Association for Computational
+Linguistics Conference (HLT/NAACL), Boston,MA,
+May 27-June 1.
+Lidia Mangu, Eric Brill, and Andreas Stolcke. 2000.
+Finding consensus in speech recognition: word error
+minimization and other applications of confusion net-
+works. CoRR, cs.CL/0010012.
+Daniel Marcu and William Wong. 2002. A phrase-based,
+joint probability model for statistical machine transla-
+tion. In Proc. of the Conference on Empirical Meth-
+ods in Natural Language Processing, Philadephia, PA,
+July 6-7.
+Franz Josef Och. 2003. Minimum error rate training in
+statistical machine translation. In Proc. of the Associ-
+ation for Computational Linguistics, Sapporo, Japan,
+July 6-7.
+Kishore Papineni, Salim Roukos, Todd Ward, and Wei-
+Jing Zhu. 2002. Bleu: a method for automatic eval-
+uation of machine translation. In Proceedings of the
+Association of Computational Linguistics, pages 311?
+318.
+Nicola Ueffing, Franz Josef Och, and Hermann Ney.
+2002. Generation of word graphs in statistical ma-
+chine translation. In Proc. of the Conference on
+Empirical Methods in Natural Language Processing,
+Philadephia, PA, July 6-7.
+Ashish Venugopal and Stephan Vogel. 2005. Consider-
+ations in mce and mmi training for statistical machine
+translation. In Proceedings of the Tenth Conference
+of the European Association for Machine Translation
+(EAMT-05), Budapest, Hungary, May. The European
+Association for Machine Translation.
+Stephan Vogel, Ying Zhang, Fei Huang, Alicia Trib-
+ble, Ashish Venogupal, Bing Zhao, and Alex Waibel.
+2003. The CMU statistical translation system. In Pro-
+ceedings of MT Summit IX, New Orleans, LA, Septem-
+ber.
+215

@@ -1,0 +1,825 @@
+Proceedings of the 2009 Workshop on Graph-based Methods for Natural Language Processing, ACL-IJCNLP 2009, pages 58?65,
+Suntec, Singapore, 7 August 2009.
+c
+?2009 ACL and AFNLP
+Ranking and Semi-supervised Classification
+on Large Scale Graphs Using Map-Reduce
+Delip Rao
+Dept. of Computer Science
+Johns Hopkins University
+delip@cs.jhu.edu
+David Yarowsky
+Dept. of Computer Science
+Johns Hopkins University
+yarowsky@cs.jhu.edu
+Abstract
+Label Propagation, a standard algorithm
+for semi-supervised classification, suffers
+from scalability issues involving memory
+and computation when used with large-
+scale graphs from real-world datasets. In
+this paper we approach Label Propagation
+as solution to a system of linear equations
+which can be implemented as a scalable
+parallel algorithm using the map-reduce
+framework. In addition to semi-supervised
+classification, this approach to Label Prop-
+agation allows us to adapt the algorithm to
+make it usable for ranking on graphs and
+derive the theoretical connection between
+Label Propagation and PageRank. We pro-
+vide empirical evidence to that effect using
+two natural language tasks ? lexical relat-
+edness and polarity induction. The version
+of the Label Propagation algorithm pre-
+sented here scales linearly in the size of
+the data with a constant main memory re-
+quirement, in contrast to the quadratic cost
+of both in traditional approaches.
+1 Introduction
+Natural language data often lend themselves to a
+graph-based representation. Words can be linked
+by explicit relations as in WordNet (Fellbaum,
+1989), and documents can be linked to one an-
+other via hyperlinks. Even in the absence of such a
+straightforward representation it is possible to de-
+rive meaningful graphs such as the nearest neigh-
+bor graphs, as done in certain manifold learning
+methods, e.g. Roweis and Saul (2000); Belkin and
+Niyogi (2001). Typically, these graphs share the
+following properties:
+? They are edge-weighted.
+? The edge weight encodes some notion of re-
+latedness between the vertices.
+? The relation represented by edges is at least
+weakly transitive. Examples of such rela-
+tions include, ?is similar to?, ?is more gen-
+eral than?, and so on. It is important that the
+relations selected are transitive for the graph-
+based learning methods using random walks.
+Such graphs present several possibilities for
+solving natural language problems involving rank-
+ing, classification, and clustering. Graphs have
+been successfully employed in machine learning
+in a variety of supervised, unsupervised, and semi-
+supervised tasks. Graph based algorithms perform
+better than their counterparts as they capture the
+latent structure of the problem. Further, their ele-
+gant mathematical framework allows simpler anal-
+ysis to gain a deeper understanding of the prob-
+lem. Despite these advantages, implementations
+of most graph-based learning algorithms do not
+scale well on large datasets from real world prob-
+lems in natural language processing. With large
+amounts of unlabeled data available, the graphs
+can easily grow to millions of nodes and most ex-
+isting non-parallel methods either fail to work due
+to resource constraints or find the computation in-
+tractable.
+In this paper we describe a scalable implemen-
+tation of Label Propagation, a popular random
+walk based semi-supervised classification method.
+We show that our framework can also be used for
+ranking on graphs. Our parallel formulation shows
+a theoretical connection between Label Propaga-
+tion and PageRank. We also confirm this em-
+pirically using the lexical relatedness task. The
+58
+proposed Parallel Label Propagation scales up lin-
+early in the data and the number of processing ele-
+ments available. Also, the main memory required
+by the method does not grow with the size of the
+graph.
+The outline of this paper is as follows: Section 2
+introduces the manifold assumption and explains
+why graph-based learning algorithms perform bet-
+ter than their counterparts. Section 3 motivates
+the random walk based approach for learning on
+graphs. Section 4 introduces the Label Propaga-
+tion method by Zhu et al (2003). In Section 5 we
+describe a method to scale up Label Propagation
+using Map-Reduce. Section 6 shows how Label
+Propagation could be used for ranking on graphs
+and derives the relation between Label Propaga-
+tion and PageRank. Parallel Label Propagation is
+evaluated on ranking and semi-supervised classifi-
+cation problems in natural language processing in
+Section 8. We study scalability of this algorithm in
+Section 9 and describe related work in the area of
+parallel algorithms and machine learning in Sec-
+tion 10.
+2 Manifold Assumption
+The training data D can be considered as a collec-
+tion of tuples D = (X ,Y) where Y are the labels
+and X are the features, and the learned modelM
+is a surrogate for an underlying physical process
+which generates the data D. The data D can be
+considered as a sampling from a smooth surface or
+a manifold which represents the physical process.
+This is known as the manifold assumption (Belkin
+et al, 2005). Observe that even in the simple case
+of Euclidean data (X = {x : x ? R
+d
+}) as shown
+in Figure 1, points that lie close in the Euclidean
+space might actually be far off on the manifold.
+A graph, as shown in Figure 1c, approximates the
+structure of the manifold which was lost in vector-
+ized algorithms operating in the Euclidean space.
+This explains the better performance of graph al-
+gorithms for learning as seen in the literature.
+3 Distance measures on graphs
+Most learning tasks on graphs require some notion
+of distance or similarity to be defined between the
+vertices of a graph. The most obvious measure of
+distance in a graph is the shortest path between the
+vertices, which is defined as the minimum number
+of intervening edges between two vertices. This is
+also known as the geodesic distance. To convert
+this distance measure to a similarity measure, we
+take the reciprocal of the shortest-path length. We
+refer to this as the geodesic similarity.
+Figure 2: Shortest path distances on graphs ignore
+the connectivity structure of the graph.
+While shortest-path distances are useful in
+many applications, it fails to capture the following
+observation. Consider the subgraph of WordNet
+shown in Figure 2. The term moon is con-
+nected to the terms religious leader
+and satellite.
+1
+Observe that both
+religious leader and satellite are
+at the same shortest path distance from moon.
+However, the connectivity structure of the graph
+would suggest satellite to be more similar
+than religious leader as there are multiple
+senses, and hence multiple paths, connecting
+satellite and moon.
+Thus it is desirable to have a measure that cap-
+tures not only path lengths but also the connectiv-
+ity structure of the graph. This notion is elegantly
+captured using random walks on graphs.
+4 Label Propagation: Random Walk on
+Manifold Graphs
+An efficient way to combine labeled and unla-
+beled data involves construction of a graph from
+the data and performing a Markov random walk
+on the graph. This has been utilized in Szummer
+and Jaakkola (2001), Zhu et. al. (2003), and Azran
+(2007). The general idea of Label Propagation in-
+volves defining a probability distribution F over
+the labels for each node in the graph. For labeled
+nodes, this distribution reflects the true labels and
+the aim is to recover this distribution for the unla-
+beled nodes in the graph.
+Consider a graph G(V,E,W ) with vertices V ,
+edges E, and an n ? n edge weight matrix W =
+1
+The religious leader sense of moon is due to Sun
+Myung Moon, a US religious leader.
+59
+(a) (b) (c)
+Figure 1: Manifold Assumption [Belkin et al, 2005]: Data lies on a manifold (a) and points along the
+manifold are locally similar (b).
+[w
+ij
+], where n = |V |. The Label Propagation al-
+gorithm minimizes a quadratic energy function
+E =
+1
+2
+?
+(i, j) ? E
+w
+ij
+(F
+i
+? F
+j
+)
+2
+(1)
+The general recipe for using random walks
+for classification involves constructing the graph
+Laplacian and using the pseudo-inverse of the
+Laplacian as a kernel (Xiao and Gutman, 2003).
+Given a weighted undirected graph, G(V,E,W ),
+the Laplacian is defined as follows:
+L
+ij
+=
+?
+?
+?
+d
+i
+if i = j
+?w
+ij
+if i is adjacent to j
+0 otherwise
+(2)
+where d
+i
+=
+?
+j
+w
+ij
+.
+It has been shown that the pseudo-inverse of the
+Laplacian L is a kernel (Xiao and Gutman, 2003),
+i.e., it satisfies the Mercer conditions. However,
+there is a practical limitation to this approach. For
+very large graphs, even if the graph Laplacians are
+sparse, their pseudo-inverses are dense matrices
+requiring O(n
+2
+) space. This can be prohibitive in
+most computing environments.
+5 Parallel Label Propagation
+In developing a parallel algorithm for Label
+Propagation we instead take an alternate approach
+and completely avoid the use of inverse Lapla-
+cians for the reasons stated above. Our approach
+follows from the observation made from Zhu et
+al.?s (2003) Label Propagation algorithm:
+Observation: In a weighted graph G(V,E,W )
+with n = |V | vertices, minimization of Equation
+(1) is equivalent to solving the following system
+of linear equations.
+?
+(i, j) ? E
+w
+ij
+F
+i
+=
+?
+(i, j) ? E
+w
+ij
+F
+j
+(3)
+?
+c ? classes(i)
+F
+i
+(c) = 1 ?i, j ? V.
+We use this observation to derive an iterative
+Label Propagation algorithm that we will later par-
+allelize. Consider a weighted undirected graph
+G(V,E,W ) with the vertex set partitioned into V
+L
+and V
+U
+(i.e., V = V
+L
+?V
+U
+) such that all vertices in
+V
+L
+are labeled and all vertices in V
+U
+are unlabeled.
+Typically only a small set of vertices are labeled,
+i.e., |V
+U
+|  |V
+L
+|. Let F
+u
+denote the probability
+distribution over the labels associated with vertex
+u ? V . For v ? V
+L
+, F
+v
+is known, and we also
+add a ?dummy vertex? v
+?
+to the graph G such that
+w
+vv
+?
+= 1 and F
+v
+?
+= F
+v
+. This is equivalent to the
+?clamping? done in (Zhu et al, 2003). Let V
+D
+be
+the set of dummy vertices.
+Algorithm 1: Iterative Label Propogation
+repeat
+forall v ? (V ? V
+D
+) do
+F
+v
+=
+?
+(v,u)?E
+w
+uv
+F
+v
+Row normalize F
+v
+.
+end
+until convergence or maxIterations
+Observe that every iteration of Algorithm 1 per-
+forms certain operations on each vertex of the
+graph. Further, these operations only rely on
+local information (from neighboring vertices of
+the graph). This leads to the parallel algorithm
+(Algorithm 2) implemented using the map-reduce
+model. Map-Reduce (Dean and Ghemawat, 2004)
+is a paradigm for implementing distributed algo-
+rithms with two user supplied functions ?map? and
+?reduce?. The map function processes the input
+key/value pairs with the key being a unique iden-
+60
+tifier for a node in the graph and the value corre-
+sponds to the data associated with the node. The
+mappers run on different machines operating on
+different parts of the data and the reduce function
+aggregates results from various mappers.
+Algorithm 2: Parallel Label Propagation
+map(key, value):
+begin
+d = 0
+neighbors = getNeighbors(value);
+foreach n ? neighbors do
+w = n.weight();
+d += w ? n.getDistribution();
+end
+normalize(d);
+value.setDistribution(d);
+Emit(key, value);
+end
+reduce(key, values): Identity Reducer
+Algorithm 2 represents one iteration of Algo-
+rithm 1. This is run repeatedly until convergence
+or for a specified number of iterations. The al-
+gorithm is considered to have converged if the la-
+bel distributions associated with each node do not
+change significantly, i.e.,
+?
+?
+?
+?
+F
+(i+1)
+? F
+(i)
+?
+?
+?
+?
+2
+< 
+for a fixed  > 0.
+6 Label Propagation for Ranking
+Graph ranking is applicable in a variety of prob-
+lems in natural language processing and informa-
+tion retrieval. Given a graph, we would like to
+rank the vertices of a graph with respect to a node,
+called the pivot node or query node. Label Prop-
+agation and its variants (Szummer and Jaakkola,
+2001; Zhu et al, 2003; Azran, 2007) have been
+traditionally used for semi-supervised classifica-
+tion. Our view of Label Propagation (via Algo-
+rithm 1) suggests a way to perform ranking on
+graphs.
+Ranking on graphs can be performed in the Par-
+allel Label Propagation framework by associating
+a single point distribution with all vertices. The
+pivot node has a mass fixed to the value 1 at all it-
+erations. In addition, the normalization step in Al-
+gorithm 2 is omitted. At the end of the algorithm,
+the mass associated with each node determines its
+rank.
+6.1 Connection to PageRank
+It is interesting to note that Algorithm 1 brings
+out a connection between Label Propagation and
+PageRank (Page et al, 1998). PageRank is a ran-
+dom walk model that allows the random walk to
+?jump? to its initial state with a nonzero proba-
+bility (?). Given the probability transition matrix
+P = [P
+rs
+], where P
+rs
+is the probability of jumping
+from node r to node s, the weight update for any
+vertex (say v) is derived as follows
+v
+t+1
+= ?v
+t
+P + (1? ?)v
+0
+(4)
+Notice that when ? = 0.5, PageRank is reduced
+to Algorithm 1, by a constant factor, with the ad-
+ditional (1? ?)v
+0
+term corresponding to the con-
+tribution from the ?dummy vertices? V
+D
+in Algo-
+rithm 1.
+We can in fact show that Algorithm 1 reduces to
+PageRank as follows:
+v
+t+1
+= ?v
+t
+P + (1? ?)v
+0
+? v
+t
+P +
+(1? ?)
+?
+v
+0
+= v
+t
+P + ?v
+0
+(5)
+where ? =
+(1??)
+?
+. Thus by setting the edge
+weights to the dummy vertices to ?, i.e., ?(z, z
+?
+) ?
+E and z
+?
+? V
+D
+, w
+zz
+?
+= ?, Algorithm 1, and hence
+Algorithm 2, reduces to PageRank. Observe that
+when ? = 1 we get the original Algorithm 1.
+We?ll refer to this as the ??-correction?.
+7 Graph Representation
+Since Parallel Label Propagation algorithm uses
+only local information, we use the adjacency list
+representation (which is same as the sparse adja-
+cency matrix representation) for the graph. This
+representation is important for the algorithm to
+have a constant main memory requirement as no
+further lookups need to be done while comput-
+ing the label distribution at a node. The interface
+definition for the graph is listed in Appendix A.
+Often graph data is available in an edge format,
+as <source, destination, weight> triples. We use
+another map-reduce step (Algorithm 3) to convert
+that data to the form shown in Appendix A.
+8 Evaluation
+We evaluate the Parallel Label Propagation algo-
+rithm for both ranking and semi-supervised clas-
+sification. In ranking our goal is to rank the ver-
+tices of a graph with respect to a given node called
+the pivot/query node. In semi-supervised classi-
+fication, we are given a graph with some vertices
+61
+Algorithm 3: Graph Construction
+map(key, value):
+begin
+edgeEntry = value;
+Node n(edgeEntry);
+Emit(n.id, n);
+end
+reduce(key, values):
+begin
+Emit(key, serialize(values));
+end
+labeled and would like to predict labels for the re-
+maining vertices.
+8.1 Ranking
+To evaluate ranking, we consider the problem
+of deriving lexical relatedness between terms.
+This has been a topic of interest with applica-
+tions in word sense disambiguation (Patwardhan
+et al, 2005), paraphrasing (Kauchak and Barzilay,
+2006), question answering (Prager et al, 2001),
+and machine translation (Blatz et al, 2004), to
+name a few. Following the tradition in pre-
+vious literature we evaluate on the Miller and
+Charles (1991) dataset. We compare our rankings
+with the human judegments using the Spearman
+rank correlation coefficient. The graph for this
+task is derived from WordNet, an electronic lex-
+ical database. We compare Algorithm 2 with re-
+sults from using geodesic similarity as a baseline.
+As observed in Table 1, the parallel implemen-
+tation in Algorithm 2 performs better than rank-
+ing using geodesic similarity derived from short-
+est path lengths. This reinforces the motivation of
+using random walks as described in Section 3.
+Method Spearman
+Correlation
+Geodesic (baseline) 0.28
+Parallel Label 0.36
+Propagation
+Table 1: Lexical-relatedness results: Comparison
+with geodesic similarity.
+We now empirically verify the equivalence of
+the ?-corrected Parallel Label Propagation and
+PageRank established in Equation 4. To do this,
+we use ? = 0.1 in the PageRank algorithm and
+set ? =
+(1??)
+?
+= 9 in the ?-corrected Parallel La-
+bel Propagation algorithm. The results are seen in
+Table 2.
+Method Spearman
+Correlation
+PageRank (? = 0.1) 0.39
+Parallel Label 0.39
+Propagation (? = 9)
+Table 2: Lexical-relatedness results: Comparision
+of PageRank and ?-corrected Parallel Label Prop-
+agation
+8.2 Semi-supervised Classification
+Label Propagation was originally developed as a
+semi-supervised classification method. Hence Al-
+gorithm 2 can be applied without modification.
+After execution of Algorithm 2, every node v in
+the graph will have a distribution over the labels
+F
+v
+. The predicted label is set to argmax
+c?classes(v)
+F
+v
+(c).
+To evaluate semi-supervised classification we
+consider the problem of learning sentiment polar-
+ity lexicons. We consider the polarity of a word to
+be either positive or negative. For example, words
+such as good, beautiful , and wonderful are consid-
+ered as positive sentiment words; whereas words
+such as bad, ugly, and sad are considered negative
+sentiment words. Learning such lexicons has ap-
+plications in sentiment detection and opinion min-
+ing. We treat sentiment polarity detection as a
+semi-supervised Label Propagation problem in a
+graph. In the graph, each node represents a word
+whose polarity is to be determined. Each weighted
+edge encodes a relation that exists between two
+words. Each node (word) can have two labels:
+positive or negative. It is important to note that La-
+bel Propagation, and hence Algorithms 1&2, sup-
+port multi-class classification but for the purpose
+of this task we have two labels. The graph for the
+task is derived from WordNet. We use the Gen-
+eral Inquirer (GI)
+2
+data for evaluation. General
+Inquirer is lexicon of English words hand-labeled
+with categorical information along several dimen-
+sions. One such dimension is called valence, with
+1915 words labeled ?Positiv? (sic) and 2291 words
+labeled ?Negativ? for words with positive and neg-
+ative sentiments respectively. We used a random
+20% of the data as our seed labels and the rest
+as our unlabeled data. We compare our results
+2
+http://www.wjh.harvard.edu/?inquirer/
+62
+(a) (b)
+Figure 3: Scalability results: (a) Scaleup (b) Speedup
+(F-scores) with another scalable previous work by
+Kim and Hovy (Kim and Hovy, 2006) in Table 2
+for the same seed set. Their approach starts with a
+few seeds of positive and negative terms and boot-
+straps the list by considering all synonyms of pos-
+itive word as positive and antonyms of positive
+words as negative. This procedure is repeated mu-
+tatis mutandis for negative words in the seed list
+until there are no more words to add.
+Method Nouns Verbs Adjectives
+Kim & Hovy 34.80 53.36 47.28
+Parallel Label 58.53 83.40 72.95
+Propagation
+Table 3: Polarity induction results (F-scores)
+The performance gains seen in Table 3 should
+be attributed to the Label Propagation in general
+as the previous work (Kim and Hovy, 2006) did
+not utilize a graph based method.
+9 Scalability experiments
+We present some experiments to study the scala-
+bility of the algorithm presented. All our experi-
+ments were performed on an experimental cluster
+of four machines to test the concept. The machines
+were Intel Xeon 2.4 GHz with 1Gb main memory.
+All performance measures were averaged over 20
+runs.
+Figure 3a shows scaleup of the algorithm which
+measures how well the algorithm handles increas-
+ing data sizes. For this experiment, we used all
+nodes in the cluster. As observed, the increase in
+time is at most linear in the size of the data. Fig-
+ure 3b shows speedup of the algorithm. Speedup
+shows how well the algorithm performs with in-
+crease in resources for a fixed input size. In
+this case, we progressively increase the number of
+nodes in the cluster. Again, the speedup achieved
+is linear in the number of processing elements
+(CPUs). An appealing factor of Algorithm 2 is that
+the memory used by each mapper process is fixed
+regardless of the size of the graph. This makes the
+algorithm feasible for use with large-scale graphs.
+10 Related Work
+Historically, there is an abundance of work in par-
+allel and distributed algorithms for graphs. See
+Grama et al (2003) for survey chapters on the
+topic. In addition, the emergence of open-source
+implementations of Google?s map-reduce (Dean
+and Ghemawat, 2004) such as Hadoop
+3
+has made
+parallel implementations more accessible.
+Recent literature shows tremendous interest in
+application of distributed computing to scale up
+machine learning algorithms. Chu et al (2006)
+describe a family of learning algorithms that fit
+the Statistical Query Model (Kearns, 1993). These
+algorithms can be written in a special summation
+form that is amenable to parallel speed-up. Exam-
+ples of such algorithms include Naive Bayes, Lo-
+gistic Regression, backpropagation in Neural Net-
+works, Expectation Maximization (EM), Princi-
+pal Component Analysis, and Support Vector Ma-
+chines to name a few. The summation form can be
+easily decomposed so that the mapper can com-
+pute the partial sums that are then aggregated by a
+reducer. Wolfe et al (2008) describe an approach
+to estimate parameters via the EM algorithm in a
+setup aimed to minimize communication latency.
+The k-means clustering algorithm has been an
+archetype of the map-reduce framework with sev-
+eral implementations available on the web. In
+3
+http://hadoop.apache.org/core
+63
+addition, the Netflix Million Dollar Challenge
+4
+generated sufficient interest in large scale cluster-
+ing algorithms. (McCallum et al, 2000), describe
+algorithmic improvements to the k-means algo-
+rithm, called canopy clustering, to enable efficient
+parallel clustering of data.
+While there is earlier work on scalable map-
+reduce implementations of PageRank (E.g., Gle-
+ich and Zhukov (2005)) there is no existing liter-
+ature on parallel algorithms for graph-based semi-
+supervised learning or the relationship between
+PageRank and Label Propagation.
+11 Conclusion
+In this paper, we have described a parallel algo-
+rithm for graph ranking and semi-supervised clas-
+sification. We derived this by first observing that
+the Label Propagation algorithm can be expressed
+as a solution to a set of linear equations. This is
+easily expressed as an iterative algorithm that can
+be cast into the map-reduce framework. This al-
+gorithm uses fixed main memory regardless of the
+size of the graph. Further, our scalability study re-
+veals that the algorithm scales linearly in the size
+of the data and the number of processing elements
+in the cluster. We also showed how Label Prop-
+agation can be used for ranking on graphs and
+the conditions under which it reduces to PageR-
+ank. We evaluated our implementation on two
+learning tasks ? ranking and semi-supervised clas-
+sification ? using examples from natural language
+processing including lexical-relatedness and senti-
+ment polarity lexicon induction with a substantial
+gain in performance.
+A Appendix A: Interface definition for
+Undirected Graphs
+In order to guarantee the constant main memory
+requirement of Algorithm 2, the graph represen-
+tation should encode for each node, the complete
+information about it?s neighbors. We represent
+our undirected graphs in the Google?s Protocol
+Buffer format.
+5
+Protocol Buffers allow a compact,
+portable on-disk representation that is easily ex-
+tensible. This definition can be compiled into effi-
+cient Java/C++ classes.
+The interface definition for undirected graphs is
+listed below:
+4
+http://www.netflixprize.com
+5
+Implementation available at
+http://code.google.com/p/protobuf/
+package graph;
+message NodeNeighbor {
+required string id = 1;
+required double edgeWeight = 2;
+repeated double labelDistribution = 3;
+}
+message UndirectedGraphNode {
+required string id = 1;
+repeated NodeNeighbor neighbors = 2;
+repeated double labelDistribution = 3;
+}
+message UndirectedGraph {
+repeated UndirectedGraphNode nodes = 1;
+}
+References
+Arik Azran. 2007. The rendezvous algorithm: Multi-
+class semi-supervised learning with markov random
+walks. In Proceedings of the International Confer-
+ence on Machine Learning (ICML).
+Micheal. Belkin, Partha Niyogi, and Vikas Sindhwani.
+2005. On manifold regularization. In Proceedings
+of AISTATS.
+John Blatz, Erin Fitzgerald, George Foster, Simona
+Gandrabur, Cyril Goutte, Alex Kulesza, Alberto
+Sanchis, and Nicola Ueffing. 2004. Confidence es-
+timation for machine translation. In Proceeding of
+COLING.
+Cheng T. Chu, Sang K. Kim, Yi A. Lin, Yuanyuan Yu,
+Gary R. Bradski, Andrew Y. Ng, and Kunle Oluko-
+tun. 2006. Map-reduce for machine learning on
+multicore. In Proceedings of Neural Information
+Processing Systems.
+Jeffrey Dean and Sanjay Ghemawat. 2004. Map-
+reduce: Simplified data processing on large clusters.
+In Proceedings of the symposium on Operating sys-
+tems design and implementation (OSDI).
+Christaine Fellbaum, editor. 1989. WordNet: An Elec-
+tronic Lexical Database. The MIT Press.
+D. Gleich and L. Zhukov. 2005. Scalable comput-
+ing for power law graphs: Experience with parallel
+pagerank. In Proceedings of SuperComputing.
+Ananth Grama, George Karypis, Vipin Kumar, and An-
+shul Gupta. 2003. Introduction to Parallel Comput-
+ing (2nd Edition). Addison-Wesley, January.
+David Kauchak and Regina Barzilay. 2006. Para-
+phrasing for automatic evaluation. In Proceedings
+of HLT-NAACL.
+Michael Kearns. 1993. Efficient noise-tolerant learn-
+ing from statistical queries. In Proceedings of the
+Twenty-Fifth Annual ACM Symposium on Theory of
+Computing (STOC).
+64
+Soo-Min Kim and Eduard H. Hovy. 2006. Identifying
+and analyzing judgment opinions. In Proceedings of
+HLT-NAACL.
+Andrew McCallum, Kamal Nigam, and Lyle H. Un-
+gar. 2000. Efficient clustering of high-dimensional
+data sets with application to reference matching.
+In Knowledge Discovery and Data Mining (KDD),
+pages 169?178.
+G. Miller and W. Charles. 1991. Contextual correlates
+of semantic similarity. In Language and Cognitive
+Process.
+Larry Page, Sergey Brin, Rajeev Motwani, and Terry
+Winograd. 1998. The pagerank citation ranking:
+Bringing order to the web. Technical report, Stan-
+ford University, Stanford, CA.
+Siddharth Patwardhan, Satanjeev Banerjee, and Ted
+Pedersen. 2005. Senserelate::targetword - A gen-
+eralized framework for word sense disambiguation.
+In Proceedings of ACL.
+John M. Prager, Jennifer Chu-Carroll, and Krzysztof
+Czuba. 2001. Use of wordnet hypernyms for an-
+swering what-is questions. In Proceedings of the
+Text REtrieval Conference.
+M. Szummer and T. Jaakkola. 2001. Clustering and
+efficient use of unlabeled examples. In Proceedings
+of Neural Information Processing Systems (NIPS).
+Jason Wolfe, Aria Haghighi, and Dan Klein. 2008.
+Fully distributed EM for very large datasets. In Pro-
+ceedings of the International Conference in Machine
+Learning.
+W. Xiao and I. Gutman. 2003. Resistance distance and
+laplacian spectrum. Theoretical Chemistry Associa-
+tion, 110:284?289.
+Xiaojin Zhu, Zoubin Ghahramani, and John Lafferty.
+2003. Semi-supervised learning using Gaussian
+fields and harmonic functions. In Proceedings of
+the International Conference on Machine Learning
+(ICML).
+65

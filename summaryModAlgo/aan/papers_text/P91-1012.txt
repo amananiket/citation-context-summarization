@@ -1,0 +1,869 @@
+COMPOSE-REWUCE PARSING 
+Henry  S. Thompson1 
+Mike  Dixon2 
+John  Lamping2 
+1: Human Communicat ion  Research  Cent re  
+Un ivers i ty  of Ed inburgh  
+2 Bucc leuch Place 
+Edinburgh EH8 9LW 
+SCOTLAND 
+2: Xerox Palo Alto Research Center 
+3333 Coyote Hill Road  
+Palo Alto, CA  94304 
+ABSTRACT 
+Two new parsing algorithms for 
+context-free phrase structure gram- 
+mars are presented which perform a 
+bounded amount of processing per 
+word per analysis path, independently 
+of sentence length. They are thus ca- 
+pable of parsing in real-time in a par- 
+allel implementation which forks pro- 
+cessors in response to non-determinis- 
+tic choice points. 
+0. INTRODUCTION 
+The work reported here grew out of 
+our attempt o improve on the o (n 2) 
+performance of the SIMD paral lel  
+parser described in (Thompson 1991). 
+Rather than start with a commitment 
+to a specific SIMD architecture, as that 
+work had, we agreed that the best 
+place to start was with a more abstract 
+architecture- independent considera- 
+tion of the CF-PSG parsing problem-- 
+given arbitrary resources, what algo- 
+r i thms could one envisage which 
+could recognise and/or parse atomic 
+category phrase-structure grammars 
+in o (n) ? In the end, two quite differ- 
+ent approaches emerged. One took as 
+its start ing point non-deterministic 
+shift-reduce parsing, and sought to 
+achieve linear (indeed real-time) com- 
+plexity by performing a constant-time 
+step per word of the input. The other 
+took as its starting point tabular pars- 
+ing (Earley, C KY), and sought to 
+achieve linear complexity by perform- 
+ing a constant-time step for the identi- 
+fication/construction f constituents of 
+each length from 0 to n. The latter 
+route has been widely canvassed, 
+although to our knowledge has not yet 
+been implemented--see (Nijholt 1989, 
+90) for extensive references. The 
+former route, whereby real-time pars- 
+ing is achieved by processor forking at 
+non-deterministic choice points in an 
+extended shill-reduce parser, is to our 
+knowledge new. In this paper we pre- 
+sent outlines of two such parsers, 
+which we call compose-reduce 
+parsers. 
+L COMPOSE-Rk~nUCE PARSING 
+Why couldn't a simple breadth- 
+first chart parser achieve linear per- 
+formance on an appropriate parallel 
+system? If you provided enough pro- 
+cessors to immediately process all 
+agenda entries as they were created, 
+would not this give the desired result? 
+No, because the processing of a single 
+word might require many serialised 
+87 
+steps. Consider processing the word 
+"park" in the sentence "The people 
+who ran in the park got wet." Given a 
+simple tradit ional sort of grammar,  
+that word completes an sP, which in 
+turn completes a P P, which in turn 
+completes a vP, which in turn com- 
+pletes an s, which in tu rn  completes a 
+REL, which in turn completes an NP. 
+The construction/recognition of these 
+constituents i  necessari ly serialised, 
+so regardless of the number of proces- 
+sors available a constant-time step is 
+impossible. (Note that this only pre- 
+cludes a real-time parse by this route, 
+but not necessarily a l inear one.) In 
+the shift-reduce approach to parsing, 
+all this means is that for non-linear 
+grammars, a single shift step may be 
+followed by many reduce steps. This 
+in turn suggested the beginnings of a 
+way out, based on categorial gram- 
+mar, namely that  mult iple reduces 
+can be avoided i f  composition is al- 
+lowed. To return to our example 
+above, in a simple shift-reduce parser 
+we would have had all the words pre- 
+ceding the word "park" in the stack. 
+When it was shifted in, there would 
+follow six reduce steps. If alterna- 
+tively following a shift step one was al- 
+lowed (non-deterministically) a com- 
+pose step, this could be reduced (!) to a 
+single reduce step. Restricting our- 
+selves to a simpler example, consider 
+just "run in the park" as a vv, given 
+rules 
+VP --) v PP  
+NP  --) d n 
+PP  --) p NP.  
+With a composition step allowed, 
+the parse would then proceed as fol- 
+lows: 
+Shift run as a v 
+Shift in as a p 
+Compose v and p to give 
+\[vP v \[PP p ? NP\]\] 
+where I use a combination of brack- 
+eted strings and the 'dotted rule' nota- 
+tion to indicate the result of composi- 
+tion. The categorial equivalent would 
+have been to notate v as vP/P P, P as 
+PP/NP, and the result of the composi- 
+tion as therefore vP/NP. 
+Shift the as d 
+Compose the dotted vp with d 
+to give 
+\[VP v \[PP p \[NP d ? n \ ] \ ] \ ]  
+Shift park as n 
+Reduce the dotted vp with n to 
+give the complete result. 
+Although a number of details re- 
+mained to be worked out, this simple 
+move of allowing composition was the 
+enabling step to achieving o(n) pars- 
+ing. Paral lel ism would arise by fork- 
+ing processors at each non-determin- 
+istic choice point, following the gen- 
+eral model of Dixon's earlier work on 
+paral le l is ing the ATMS (Dixon & de 
+Kleer 1988). 
+Simply allowing composition is not 
+in itself sufficient to achieve o (n) per- 
+formance. Some means of guarantee- 
+ing that each step is constant time 
+must still be provided. Here we found 
+two different ways forward. 
+II. TEn~. FIRST COMPOSE-REDUCE 
+PARSER---CR4 
+In this parser there is no stack. 
+We have simply a current structure, 
+which corresponds to the top node of 
+the stack in a normal shift-reduce 
+parser. This is achieved by extending 
+the appeal to composition to include a 
+form of left-embedded raising, which 
+wil l  be discussed fur ther  below. 
+Special attention is also required to 
+handle left-recursive rules. 
+88 
+II.1 The Basic Parsing Algorithm 
+The constant-time parsing step is 
+given below (sl ightly simplified, in 
+that empty productions and some unit 
+productions are not handled). In this 
+algorithm schema, and in subsequent 
+discussion, the annotation "ND" will be 
+used in situations where a number of 
+alternatives are (or may be) described. 
+The meaning is that these alternatives 
+are to be pursued non-deterministi- 
+cally. 
+Algorithm CR-I 
+1 Shift the next word; 
+2 ND look it up in the lexicon; 
+3 ND close the resulting cate- 
+gory wrt the unit produc- 
+t ions;  
+4a ND reduce the resulting 
+category with the current 
+s t ructure  
+or 
+4b N D raise* the resulting cat- 
+egory wrt the non-unary 
+rules in the grammar for 
+which it is a left corner, and 
+compose the result with the 
+current structure. 
+If reduction ever completes a 
+category which is marked as 
+the left corner of one or 
+more left-recursive rules or 
+rule sequences, ND raise* in 
+place wrt those rules 
+(sequences), and propagate 
+the marking. 
+Some of these ND steps may at var- 
+ious points produce complete struc- 
+tures. If .the input is exhausted, then 
+those structures are parses, or not, 
+depending on whether or not they have 
+reached the distinguished symbol. If 
+the input is not exhausted, it is of 
+course the incomplete structures, the 
+results of composition or raising, 
+which are carried forward to the next 
+step. 
+The operation referred to above as 
+"raise*" is more than simple raising, 
+as was involved in the simple example 
+in section IV. In order to allow for all 
+possible compositions to take place all 
+possible left-embedded raising must be 
+pursued. Consider the following 
+grammar fragment: 
+S ~NP VP 
+VP -~ v NP CMP 
+CMP --)that S 
+NP -~ propn 
+NP -+ dn  
+and the utterance "Kim told Robin that 
+the child likes Kim". 
+If we ignore all the ND incorrect 
+paths, the current structure after the 
+"that" has been processed is 
+\[S \[NP \[propn Kim\]\] 
+\[VP \[v told\] 
+\[NP \[propn Robin\] \] 
+\[CMP that  ? S\] \] \] 
+In order for the next word, "the", to 
+be correctly processed, it must  be 
+raised all the way to s, namely we 
+must have 
+\[S \[NP \[d the\] ? n\] VP\]\] 
+to compose with the current structure. 
+What this means is that for every en- 
+try in the normal bottom-up reachabil- 
+ity table pairing a left corner with a top 
+category, we need a set of dotted struc- 
+tures, corresponding to all the ways 
+the grammar can get from that left 
+corner to that top category. It is these 
+structures which are ND made avail- 
+able in step 4b of the parsing step algo- 
+r ithm CR-I above. 
+89 
+II.2 Handling Left Recursion 
+Now this in itself is not sufficient o 
+handle left recursive structures, since 
+by definition there could be an arbi- 
+trary number of left-embeddings of a 
+left-recursive structure. The final 
+note in the description of algorithm 
+CR-I above is designed to handle this. 
+Glossing over some subtleties, left-re- 
+cursion is handled by marking some 
+of the structures introduced in step 3b, 
+and ND raising in place if the marked 
+structure is ever completed by reduc- 
+tion in the course of a parse. Consider 
+the sentence ~Robin likes the chi ld's 
+dog." We add the following two rules 
+to the grammar: 
+D -9 a r t  
+D -9 NP  's 
+thereby transforming D from a pre- 
+terminal to a non-terminal. When we 
+shift "the", we will raise to inter alia 
+\[NP \[D \ [art  the\ ] \ ]  ? n\] r 
+with the NP marked for potential re- 
+raising. This structure will be com- 
+posed with the then current structure 
+to produce 
+IS \[NP \[propn Robin\]\] 
+\[VP Iv l ikes \ ]  
+\[NP (as above) \]r\] \] 
+After reduction with ~child", we 
+will have 
+\[S \[NP \[propn Robin\]\] 
+\[VP \[v l ikes \ ]  
+\[NP \[D \ [art  the\ ] \ ]  
+\[n chi ld\ ]  jr\] \] 
+The last reduction will have com- 
+pleted the marked N P introduced 
+above, so we ND left-recursively raise 
+in place, giving 
+\[S \[NP \[propn Robin\]\] 
+\[VP Iv l ikes \ ]  
+\[NP \[D \[NP the chi ld\]  
+? ' S \ ]  
+n\ ] r \ ] \ ]  
+which will then take us through the 
+rest of the sentence. 
+One final detail needs to be cleared 
+up. Although directly left-recursive 
+rules, such as e.g. NP -9 NP PP, are 
+correctly dealt with by the above 
+mechanism, indirectly left-recursive 
+sets of rules, such as the one exempli- 
+fied above, require one additional sub- 
+tlety. Care must be taken not to intro- 
+duce the potential for spurious ambi- 
+guity. We will introduce the full de- 
+tails in the next section. 
+II.3 Nature of the required tables 
+Steps 3 and 4b of CR-I require tables 
+of partial structures: Closures of unit 
+productions up from pre-terminals, 
+for step 3; left-reachable raisings up 
+from (unit production closures of) pre- 
+terminals, for step 4b. In this section 
+we discuss the creation of the neces- 
+sary tables, in particular Ra ise* ,  
+against the background of a simple 
+exemplary grammar, given below as 
+Table 1. 
+We have grouped the rules accord- 
+ing to type--two kinds of unit produc- 
+tions (from pre-terminals or non-ter- 
+minals), two kinds of left recursive 
+rules (direct and indirect) and the re- 
+mainder. 
+van i l l a  
+S --) NP  VP  
+VP -9 v NP 
+CMP --) cmp S 
+PP -9 prep  NP  
+Table 1. 
+un i t l  un i t2  i rd  i r i  
+NP  -9 propn  NP  -9 CMP NP  -9 NP  PP  NP  -9 D n 
+D -9 a r t  VP  -9 VP  PP D --) NP  's 
+Exemplary grammar in groups by rule type 
+90 
+Cl* 
+LRdir 
+LRindir  2 
+RS* 
+I: 
+2: 
+\[NP pr?pn\]l'2 \[D art\]4 
+\[NP NP PP\] 3: \[VP VP PP\] 
+\[NP \[D NP 's\] n\] 
+\[CMP cmp S\], 
+\[pp prep NP\] 
+\[VP v NP\] 3 
+\[NP D n\]l, 2, 
+\[D NpI 's\]4, 
+\[NP CMP\] 1,2 
+4: \[D \[NP D n\] 1 's\] 
+\[NP \[CMP cmp s\]\]l, 2, 
+\[D \[NP \[CMP cmp S\]\] 1,2 's\], 
+\[S \[NP \[CMP cmp S\]\]I, 2 VP\] 
+\[S \[NP D n\]l, 2 VP\] 
+\[S NpI'2 VP\] 
+Table 2. Partial structures for CR-I 
+Ras* \[NP -\[NP propn\] ? pp\]l,2, \[NP \[D -\[NP propn\] ? 's\] n\] 1,2 
+\[D \[NP i ~  ? n\] 1 's\] 4 
+\[CMP cmp ? S\], \[NP \[CMP cmp ? S\]\]I, 2, 
+\[D \[NP \[CMP cmp ? S\]\]I, 2 's\], 
+\[S \[NP \[CMP cmp ? S\]\]I, 2 VP\] 
+\[pp prep ? NP\] 
+\[VP v ? NP\] 3 
+\[NP \ [ D ~  " r i l l '2  ? \[S \[NF J-D art\] " n\]l'2 VP\] 
+\[D \[Np pr?pn\]l " 's\]4, \[S \[NP P r?pn\]l'2 " VP\] 
+Table 3. Projecting non-terminal left daughters 
+As a first step towards computing 
+the table which step 4b above would 
+use, we can pre-compute the partial 
+structures given above in Table 2. 
+c l*  contains all backbone frag- 
+ments constructable from the unit 
+productions, and is already essentially 
+what we require for step 3 of the algo- 
+rithm. LRdir contains all directly left- 
+recursive structures. LR ind i r2  con- 
+tains all indirectly left-recursive struc- 
+tures involving exactly two rules, and 
+there might be LRind i r3 ,  4,... as 
+well. R s* contains all non-recursive 
+tree fragments constructable from left- 
+embedding of binary or greater ules 
+and non-terminal unit productions. 
+The superscripts denote loci where 
+left-recursion may be appropriate, and 
+identify the relevant structures. 
+In order to get the full Raise* table 
+needed for step 4b, first we need to pro- 
+ject the non-terminal left daughters of 
+rules such as \[ s NpI' 2 VP \] down to 
+terminal left daughters. We achieve 
+this by substituting terminal entries 
+from Cl* wherever we can in LRdir, 
+LRindir2 and Rs* to give us Table 3 
+from Table 2 (new embeddings are 
+underlined). 
+Left recursion has one remaining 
+problem for us. Algorithm CR-I only 
+checks for annotations and ND raises 
+in place after a reduction completes a 
+constituent. But in the last line of 
+Ras* above there are unit constituents 
+91 
+\[NP \[NP propn\] ? 
+\[D \[NP \[D art\] ? 
+\[CMP cmp ? S\], 
+pp\]l,2, \[NP \[D \[NP propn\] ? 's\] 
+n\] 1 ,s\] 4 
+\[NP \[CMP cmp ? S\]\]1,2, 
+\[D \[NP \[CMP cmp ? S\]\]I, 2 's\], 
+\[S \[NP \[CMP cmp ? S\]\]I, 2 VP\] 
+\[pp prep ? NP\] 
+\[VP v ? NP\] 3 
+\[NP \[D art\] ? n\]l, 2, \[S \[NP \[D art\] ? n\]l, 2 VP\] 
+\[D \[NP propn\] ? 's\]4, \[D \[NP \[NP propn\] ? pp\]l ,s\]4 
+\[S \[NP propn\] ? VP\], \[S \[NP \[NP propn\] ? pp\]l,2 VP\], 
+\[S \[NP \[D \[NP propn\] ? 's\] n\] 1,2 VP\] 
+Table 4. Final form of the structure table Ra i S e * 
+n\]l, 2 
+with annotations. Being already com- 
+plete, they will not ever be completed, 
+and consequently the annotations will 
+never be checked. So we pre-compute 
+the desired result, augmenting the 
+above l ist with expansions of those 
+units via the indicated left recursions. 
+This gives us the f inal version of 
+Ra ise  * ,  now shown with dots in- 
+cluded, in Table 4. 
+This table is now suited to its role 
+in the algorithm. Every entry has a 
+lexical left daughter, all annotated 
+constituents are incomplete, and all 
+unit productions are factored in. It is 
+interesting to note that with these tree 
+fragments, taken together with the 
+terminal entries in Cl*, as the initial 
+trees and LRd i r ,  LR ind i r2  , etc. as the 
+aux i l ia ry  trees we have a Tree 
+Adjoining Grammar  ( Joshi 1985) 
+which is strongly equivalent to the CF- 
+PSG we started with. We might call it 
+the left-lexical TAG for that CF-PSG, 
+after Schabes et al (1988). Note fur- 
+ther that if a TAG parser respected the 
+annotations as restricting adjunction, 
+no spur ious ly  ambiguous parses 
+would be produced. 
+Indeed it was via this relationship 
+with TAGs that  the detai ls were 
+worked out of how the annotations are 
+distributed, not presented here to con- 
+serve space. 
+II.4 Implementation a d Efficiency 
+Only a serial pseudo-parallel im- 
+p lementat ion  has  been wr i t ten.  
+Because of the high degree of pre- 
+computation of structure, this version 
+even though serialised runs quite effi- 
+ciently. There is very little computa- 
+tion at each step, as it is straight-for- 
+ward to double index the mai s e* table 
+so that only structures which will 
+compose with the current structure 
+are retrieved. 
+The price one pays for this effi- 
+ciency, whether in serial or parallel 
+versions, is that  only left-common 
+structure is shared. Right-common 
+structure, as for instance in P P at- 
+tachment ambiguity, is not shared be- 
+tween analysis paths. This causes no 
+difficulties for the parallel approach in 
+one sense, in that it does not compro- 
+mise the real-time performance of the 
+parser. Indeed, it is precisely because 
+no recombination is attempted that the 
+basic parsing step is constant time. 
+But it does mean that if  the CF-PSG be- 
+ing parsed is the first half  of a two step 
+process, in which addit ional  con- 
+92 
+straints are solved in the second pass, 
+then the duplication of structure will 
+give rise to duplication of effort. Any 
+paral lel  parser  which adopts the 
+strategy of forking at non-determinis- 
+tic choice points will suffer from this 
+weakness, including CR-II below. 
+III. THE SECOND COMPOSE-R~nUCE 
+PARSER CR-II 
+Our second approach to compose- 
+reduce parsing differs from the first in 
+retaining a stack, having a more com- 
+plex basic parsing step, while requir- 
+ing far less pre-processing of the 
+grammar. In particular, no special 
+treatment is required for left-recursive 
+rules. Nevertheless, the basic step is 
+still constant time, and despite the 
+stack there is no potential processing 
+'balloon' at the end of the input. 
+III. 1 The Basic Parsing Algorithm 
+Algorithm CR-II 
+1 Shift the next word; 
+2 ND look it up in the lexicon; 
+3 ND close the resulting cate- 
+gory wrt the unit produc- 
+t ions; 
+4 N D reduce the resulting cat- 
+egory with the top of the 
+stack--if  results are com- 
+plete and there is input re- 
+maining, pop the stack; 
+5a N D raise the results of (2), 
+(3) and, where complete, (4) 
+and 
+5b N D either push the result 
+onto the stack 
+or 
+5c N D compose the result with 
+the top of the stack, replac- 
+ing it. 
+This is not an easy algorithm to 
+understand. In the next section we 
+present a number of different ways of 
+motivating it, together with an illus- 
+trative example. 
+III.2 CR-II Explained 
+Let us first consider how CR-II will 
+operate on purely left-branching and 
+purely right-branching structures. In 
+each case we will consider the se- 
+quence of algorithm steps along the 
+non-determinist ical ly  correct path, 
+ignoring the others. We will also re- 
+strict ourselves to considering binary 
+branching rules, as pre-terminal unit 
+productions are handled entirely by 
+step 3 of the algorithm, and non-ter- 
+minal unit productions must be fac- 
+tored into the grammar. On the other 
+hand, interior daughters of non-bi- 
+nary nodes are all handled by step 4 
+without changing the depth of the 
+stack. 
+III.2.1 Left-branching analysis 
+For a purely left-branching struc- 
+ture, the first word will be processed 
+by steps 1, 2, 5a and 5b, producing a 
+stack with one entry which we can 
+schematise as in Figure 1, where 
+filled circles are processed nodes and 
+unfilled ones are waiting. 
+Figure 1. 
+All subsequent words except the 
+last will be processed by steps 4, 5a and 
+5b (here and subsequently we will not 
+mention steps 1 and 2, which occur for 
+all words), effectively replacing the 
+previous sole entry in the stack with 
+the one given in Figure 2. 
+93 
+Figure 2. 
+It should be evident hat the cycle of 
+steps 4, 5a and 5b constructs a left- 
+branching structure of increasing 
+depth as the sole stack entry, with one 
+right daughter, of the top node, wait- 
+ing to be filled. The last input word of 
+course is simply processed by step 4 
+and, as there is no further input, left 
+on the stack as the final result. The 
+complete sequence of steps for any left- 
+branching analysis is thus ra ise J re-  
+duce&raise*--reduce. An ordinary 
+shift-reduce or left-corner parser 
+would go through the same sequence 
+of steps. 
+III.2.2 Right-branching analysis 
+The first word of a purely right- 
+branching structure is analysed ex- 
+actly as for a left-branching one, that 
+is, with 5a and 5b, with results as in 
+Figure 1 (repeated here as Figure 3): 
+z% 
+Figure 3. 
+Subsequent words, except he last, 
+are processed via steps 5a and 5c, with 
+the result remaining as the sole stack 
+entry, as in Figure 4. 
+Figure 4. 
+Again it should be evident hat cy- 
+cling steps 5a and 5c will construct a 
+right-branching structure of increas- 
+ing depth as the sole stack entry, with 
+one right daughter, of the most em- 
+bedded node, waiting to be filled. 
+Again, the last input word will be pro- 
+cessed by step 4. The complete se- 
+quence of steps for any right-branch- 
+ing ana lys is  is thus ra i sem 
+raise&compose*--reduce. A catego- 
+rial grammar parser with a compose- 
+first strategy would go through an 
+isomorphic sequence of steps. 
+III.2.3 Mixed Left- and Right-branch- 
+ing Analysis 
+All the steps in algorithm CR-II 
+have now been illustrated, but we have 
+yet to see the stack grow beyond one 
+entry. This will occur in where an in- 
+dividual word, as opposed to a com- 
+pleted complex constituent, is pro- 
+cessed by steps 5a and 5b, that is, 
+where steps 5a and 5b apply other than 
+to the results of step 4. 
+Consider for instance the sentence 
+"the child believes that the dog likes 
+biscuits. ~ With a grammar which I 
+trust will be obvious, we would arrive 
+at the structure shown in Figure 5 
+after processing "the child believes 
+that  ~, having done raise--reduce& 
+raiseJra ise&compose--  
+raise&compose, that is, a bit of left- 
+branching analysis, followed by a bit of 
+right-branching analysis. 
+94 
+S S 
+VP 
+VP 
+S' 
+thai Flr~hle~ir~ili~\[::~: be dorieS the child believes t~ v~p 
+with "the" which will allow immediate 
+integration with this. The ND correct 
+path applies steps 5a and 5b, 
+raise&push, giving a stack as shown 
+in Figure 6: 
+S 
+NP 
+the N 
+VP 
+S 
+the ch i ld  be l ieves  that  
+Figure 6. 
+We can then apply steps 4, 5a and 
+5c, reduce&raise&compose, to "dog", 
+with the result shown in Figure 7. 
+This puts uss back on the standard 
+right-branching path for the rest of the 
+sentence. 
+the  dog  
+Figure 7. 
+III.3 An Alternative View of CR-II 
+Returning to a question raised ear- 
+lier, we can now see how a chart 
+parser could be modified in order to 
+run in real-time given enough proces- 
+sors to empty the agenda s fast as it is 
+filled. We can reproduce the process- 
+ing of CR-II within the active chart 
+parsing framework by two modifica- 
+tions to the fundamental rule (see e.g. 
+Gazdar and Mellish 1989 or Thompson 
+and Ritchie 1984 for a tutorial intro- 
+duction to active chart parsing). First 
+we restrict its normal operation, in 
+which an active and an inactive edge 
+are combined, to apply only in the case 
+of pre-terminal inactive edges. This 
+corresponds to the fact that in CR-II 
+step 4, the reduction step, applies only 
+to pre-terminal categories (continuing 
+to ignore unit productions). Secondly 
+we allow the fundamental rule to 
+combine two active edges, provided the 
+category to be produced by one is what 
+is required by the other. This effects 
+composition. If we now run our chart 
+parser left-to-right, left-corner and 
+breadth-first, it will duplicate CR-II. 
+95 
+The maximum number of edges along 
+a given analysis path which can be in- 
+troduced by the processing of a single 
+word is now at most four, correspond- 
+ing to steps 2, 4, 5a and 5c of CR-IIDthe 
+pre-terminal itself, a constituent com- 
+pleted by it, an active edge containing 
+that constituent as left daughter, cre- 
+ated by left-corner rule invocation, and 
+a further active edge combining that 
+one with one to its left. This in turn 
+means that there is a fixed limit to the 
+amount of processing required for 
+each word. 
+III.4 Implementation and Efficiency 
+Although clearly not benefiting 
+from as much pre-computation of 
+structure as CR-I, CR-II is also quite ef- 
+ficient. Two modifications can be 
+added to improve efficiencyDa reach- 
+ability filter on step 5b, and a shaper 
+test (Kuno 1965), also on 5b. For the 
+latter, we need simply keep a count of 
+the number of open nodes on the stack 
+(equal to the number of stack entries if 
+all rules are binary), and ensure that 
+this number never exceeds the num- 
+ber of words remaining in the input, 
+as each entry will require a number of 
+words equal to the number of its open 
+nodes to pop it off the stack. This test 
+actually cuts down the number of non- 
+deterministic paths quite dramati- 
+cally, as the ND optionality of step 5b 
+means that quite deep stacks would 
+otherwise be pursued along some 
+search paths. Again this reduction in 
+search space is of limited significance 
+in a true parallel implementation, but 
+in the serial simulation it makes a big 
+difference. 
+Note also that no attention has been 
+paid to unit productions, which we 
+pre-compute as in CR-I. Furthermore, 
+neither CR-I nor CR-II address empty 
+productions, whose effect would also 
+need to be pre-computed. 
+IV. CONCLUSIONS 
+Aside from the intrinsic interest in 
+the abstract of real-time parsablility, is 
+there any practical significance to 
+these results. Two drawbacks, one al- 
+ready referred to, certainly restrict 
+their significance. One is that the re- 
+striction to atomic category CF-PSGs is 
+crucial the fact that the comparison 
+between a rule element and a node la- 
+bel is atomic and constant ime is fun- 
+damental. Any move to features or 
+other annotations would put an end to 
+real-time processing. This fact gives 
+added weight to the problem men- 
+tioned above in section II,4, that only 
+left-common analysis results are 
+shared between alternatives. Thus if 
+one finesses the atomic category prob- 
+lem by using a parser such as those 
+described here only as the first pass of 
+a two pass system, one is only putting 
+off the payment of the complexity price 
+to the second pass, in the absence to 
+date of any linear time solution to the 
+constraint satisfaction problem. On 
+this basis, one would clearly prefer a 
+parallel CKY/Earley algorithm, which 
+does share all common substructure, 
+to the parsers presented here. 
+Nevertheless, there is one class of 
+applications where the left-to-right 
+real-time behaviour of these algo- 
+rithms may be of practical benefit, 
+namely  in speech recognit ion. 
+Present day systems require on-line 
+availability of syntactic and domain- 
+semantic constraint to l imit the 
+search space at lower levels of the sys- 
+tem. Hitherto this has meant these 
+constraints must be brought to bear 
+during recognition as some form of 
+regular grammar, either explicitly 
+96 
+constructed as such or compiled into. 
+The parsers presented here offer the 
+alternative of parallel application of 
+genuinely context-free grammars di- 
+rectly, with the potential added benefit 
+that, with sufficient processor width, 
+quite high degrees of local ambiguity 
+can be tolerated, such as would arise if 
+(a finite subset of) a feature-based 
+grammar were expanded out into 
+atomic category form. 
+ACKNOWLEDGEMENTS 
+The work reported here was car- 
+ried out while the first author was a 
+visitor to the Embedded Computation 
+and Natural Language Theory and 
+Technology groups of the Systems 
+Science Laboratory at the Xerox Palo 
+Alto Research Center. These groups 
+provided both the intellectual and ma- 
+terial resources required to support 
+our work, for which our thanks. 
+REFERENCES 
+Dixon, Mike and de Kleer, Johan. 
+1988. "Massively Paral le l  
+Assumpt ion-based  Truth  
+Maintenance". In Proceedings of 
+the AAAI-88 National Conference 
+on Artificial Intelligence, also 
+reprinted in Proceedings of the 
+Second International Workshop on 
+Non-Monotonic Reasoning. 
+Gazdar, Gerald and Mellish, Chris. 
+1989. Natural Language 
+Processing in LISP. Addison- 
+Wesley, Wokingham, England 
+(sic). 
+Joshi, Aravind K. 1985. "How Much 
+Context-Sensitivity s Necessary for 
+Characterizing Structural 
+Descriptions--Tree Adjoining 
+Grammars". In Dowty, D., 
+Karttunen, L., and Zwicky, A. eds, 
+Natural Language Processing-- 
+Theoretical Computational nd 
+Psychological Perspectives. 
+Cambridge University Press, New 
+York. 
+Kuno, Susumo. 1965. "The predictive 
+analyzer and a path elimination 
+technique", Communications of the 
+ACM, 8, 687-698. 
+Nijholt, Anton. 1989. "Parallel 
+parsing strategies in natural 
+language processing ~. In Tomita, 
+M. ed, Proceedings of the 
+International Workshop on 
+Parsing Technologies, 240-253, 
+Carnegie-Mellon University, 
+Pittsburgh. 
+Nijholt, Anton. 1990. The CYK- 
+Approach to Serial and Parallel 
+Parsing. Memoranda Informatica 
+90-13, faculteit der informatica, 
+Universiteit Twente, Netherlands. 
+Shabes, Yves, Abeill6, Anne and 
+Joshi, Aravind K. 1988. "Parsing 
+Strategies with 'Lexicalized' 
+Grammars: Application to Tree 
+Adjoining Grammars". In 
+Proceedings of the 12th 
+International Conference on 
+Computational Linguistics, 82-93. 
+Thompson, Henry S. 1991. "Parallel 
+Parsers for Context-Free 
+Grammars--Two Actual 
+Implementations Compared". To 
+appear in Adriaens, G. and Hahn, 
+U. eds, Parallel Models of Natural 
+Language Computation, Ablex, 
+Norword NJ. 
+Thompson, Henry S. and Ritchie, 
+Graeme D. 1984. "Techniques for 
+Parsing Natural Language: Two 
+Examples". In Eisenstadt, M., and 
+O'Shea, T., editors, Artificial 
+Intelligence: Tools, Techniques, 
+and Applications. Harper and 
+Row, London. Also DAI Research 
+Paper 183, Dept. of Artificial 
+Intelligence, Univ. of Edinburgh. 
+97 

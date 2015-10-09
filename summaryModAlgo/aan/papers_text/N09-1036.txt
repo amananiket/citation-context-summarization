@@ -1,0 +1,887 @@
+Human Language Technologies: The 2009 Annual Conference of the North American Chapter of the ACL, pages 317?325,
+Boulder, Colorado, June 2009. c?2009 Association for Computational Linguistics
+Improving nonparameteric Bayesian inference: experiments on
+unsupervised word segmentation with adaptor grammars
+Mark Johnson
+Brown University
+Providence, RI
+Mark Johnson@Brown.edu
+Sharon Goldwater
+University of Edinburgh
+Edinburgh EH8 9AB
+sgwater@inf.ed.ac.uk
+Abstract
+One of the reasons nonparametric Bayesian
+inference is attracting attention in computa-
+tional linguistics is because it provides a prin-
+cipled way of learning the units of generaliza-
+tion together with their probabilities. Adaptor
+grammars are a framework for defining a va-
+riety of hierarchical nonparametric Bayesian
+models. This paper investigates some of
+the choices that arise in formulating adap-
+tor grammars and associated inference proce-
+dures, and shows that they can have a dra-
+matic impact on performance in an unsuper-
+vised word segmentation task. With appro-
+priate adaptor grammars and inference proce-
+dures we achieve an 87% word token f-score
+on the standard Brent version of the Bernstein-
+Ratner corpus, which is an error reduction of
+over 35% over the best previously reported re-
+sults for this corpus.
+1 Introduction
+Most machine learning algorithms used in computa-
+tional linguistics are parametric, i.e., they learn a nu-
+merical weight (e.g., a probability) associated with
+each feature, where the set of features is fixed be-
+fore learning begins. Such procedures can be used
+to learn features or structural units by embedding
+them in a ?propose-and-prune? algorithm: a feature
+proposal component proposes potentially useful fea-
+tures (e.g., combinations of the currently most useful
+features), which are then fed to a parametric learner
+that estimates their weights. After estimating fea-
+ture weights and pruning ?useless? low-weight fea-
+tures, the cycle repeats. While such algorithms can
+achieve impressive results (Stolcke and Omohundro,
+1994), their effectiveness depends on how well the
+feature proposal step relates to the overall learning
+objective, and it can take considerable insight and
+experimentation to devise good feature proposals.
+One of the main reasons for the recent interest in
+nonparametric Bayesian inference is that it offers a
+systematic framework for structural inference, i.e.,
+inferring the features relevant to a particular prob-
+lem as well as their weights. (Here ?nonparamet-
+ric? means that the models do not have a fixed set of
+parameters; our nonparametric models do have pa-
+rameters, but the particular parameters in a model
+are learned along with their values). Dirichlet Pro-
+cesses and their associated predictive distributions,
+Chinese Restaurant Processes, are one kind of non-
+parametric Bayesian model that has received consid-
+erable attention recently, in part because they can be
+composed in hierarchical fashion to form Hierarchi-
+cal Dirichlet Processes (HDP) (Teh et al, 2006).
+Lexical acquisition is an ideal test-bed for explor-
+ing methods for inferring structure, where the fea-
+tures learned are the words of the language. (Even
+the most hard-core nativists agree that the words of a
+language must be learned). We use the unsupervised
+word segmentation problem as a test case for eval-
+uating structural inference in this paper. Nonpara-
+metric Bayesian methods produce state-of-the-art
+performance on this task (Goldwater et al, 2006a;
+Goldwater et al, 2007; Johnson, 2008).
+In a computational linguistics setting it is natu-
+ral to try to align the HDP hierarchy with the hi-
+erarchy defined by a grammar. Adaptor grammars,
+which are one way of doing this, make it easy to ex-
+plore a wide variety of HDP grammar-based mod-
+els. Given an appropriate adaptor grammar, the fea-
+317
+tures learned by adaptor grammars can correspond
+to linguistic units such as words, syllables and col-
+locations. Different adaptor grammars encode dif-
+ferent assumptions about the structure of these units
+and how they relate to each other. A generic adaptor
+grammar inference program infers these units from
+training data, making it easy to investigate how these
+assumptions affect learning (Johnson, 2008).1
+However, there are a number of choices in the de-
+sign of adaptor grammars and the associated infer-
+ence procedure. While this paper studies the im-
+pact of these on the word segmentation task, these
+choices arise in other nonparametric Bayesian infer-
+ence problems as well, so our results should be use-
+ful more generally. The rest of this paper is orga-
+nized as follows. The next section reviews adaptor
+grammars and presents three different adaptor gram-
+mars for word segmentation that serve as running
+examples in this paper. Adaptor grammars contain
+a large number of adjustable parameters, and Sec-
+tion 3 discusses how these can be estimated using
+Bayesian techniques. Section 4 examines several
+implementation options within the adaptor grammar
+inference algorithm and shows that they can make
+a significant impact on performance. Cumulatively
+these changes make a significant difference in word
+segmentation accuracy: our final adaptor grammar
+performs unsupervised word segmentation with an
+87% token f-score on the standard Brent version
+of the Bernstein-Ratner corpus (Bernstein-Ratner,
+1987; Brent and Cartwright, 1996), which is an er-
+ror reduction of over 35% compared to the best pre-
+viously reported results on this corpus.
+2 Adaptor grammars
+This section informally introduces adaptor gram-
+mars using unsupervised word segmentation as a
+motivating application; see Johnson et al (2007b)
+for a formal definition of adaptor grammars.
+Consider the problem of learning language from
+continuous speech: segmenting each utterance into
+words is a nontrivial problem that language learn-
+ers must solve. Elman (1990) introduced an ideal-
+ized version of this task, and Brent and Cartwright
+(1996) presented a version of it where the data
+consists of unsegmented phonemic representations
+of the sentences in the Bernstein-Ratner corpus of
+1The adaptor grammar inference program is available for
+download at http://www.cog.brown.edu/?mj/Software.htm.
+child-directed speech (Bernstein-Ratner, 1987). Be-
+cause these phonemic representations are obtained
+by looking up orthographic forms in a pronounc-
+ing dictionary and appending the results, identifying
+the word tokens is equivalent to finding the locations
+of the word boundaries. For example, the phoneme
+string corresponding to ?you want to see the book?
+(with its correct segmentation indicated) is as fol-
+lows:
+y ?u Nw ?a ?n ?t Nt ?u Ns ?i ND ?6 Nb ?U ?k
+We can represent any possible segmentation of any
+possible sentence as a tree generated by the follow-
+ing unigram grammar.
+Sentence ? Word+
+Word ? Phoneme+
+The nonterminal Phoneme expands to each pos-
+sible phoneme; the underlining, which identifies
+?adapted nonterminals?, will be explained below. In
+this paper ?+? abbreviates right-recursion through a
+dummy nonterminal, i.e., the unigram grammar ac-
+tually is:
+Sentence ? Word
+Sentence ? Word Sentence
+Word ? Phonemes
+Phonemes ? Phoneme
+Phonemes ? Phoneme Phonemes
+A PCFG with these productions can represent all
+possible segmentations of any Sentence into a se-
+quence of Words. But because it assumes that the
+probability of a word is determined purely by mul-
+tiplying together the probability of its individual
+phonemes, it has no way to encode the fact that cer-
+tain strings of phonemes (the words of the language)
+have much higher probabilities than other strings
+containing the same phonemes. In order to do this,
+a PCFG would need productions like the following
+one, which encodes the fact that ?want? is a Word.
+Word ? w a n t
+Adaptor grammars can be viewed as a way of for-
+malizing this idea. Adaptor grammars learn the
+probabilities of entire subtrees, much as in tree sub-
+stitution grammar (Joshi, 2003) and DOP (Bod,
+318
+1998). (For computational efficiency reasons adap-
+tor grammars require these subtrees to expand to ter-
+minals). The set of possible adapted tree fragments
+is the set of all subtrees generated by the CFG whose
+root label is a member of the set of adapted non-
+terminals A (adapted nonterminals are indicated by
+underlining in this paper). For example, in the uni-
+gram adaptor grammar A = {Word}, which means
+that the adaptor grammar inference procedure learns
+the probability of each possible Word subtree. Thus
+adaptor grammars are simple models of structure
+learning in which adapted subtrees are the units of
+generalization.
+One might try to reduce adaptor grammar infer-
+ence to PCFG parameter estimation by introducing
+a context-free rule for each possible adapted subtree,
+but such an attempt would fail because the number
+of such adapted subtrees, and hence the number of
+corresponding rules, is unbounded. However non-
+parametric Bayesian inference techniques permit us
+to sample from this infinite set of adapted subtrees,
+and only require us to instantiate the finite number
+of them needed to analyse the finite training data.
+An adaptor grammar is a 7-tuple
+(N,W,R, S,?, A,C) where (N,W,R, S,?) is
+a PCFG with nonterminals N , terminals W , rules
+R, start symbol S ? N and rule probabilities ?,
+where ?r is the probability of rule r ? R, A ? N is
+the set of adapted nonterminals and C is a vector
+of adaptors indexed by elements of A, so CX is the
+adaptor for adapted nonterminal X ? A.
+Informally, an adaptor CX nondeterministically
+maps a stream of trees from a base distribution HX
+whose support is TX (the set of subtrees whose root
+node is X ? N generated by the grammar?s rules)
+into another stream of trees whose support is also
+TX . In adaptor grammars the base distributions HX
+are determined by the PCFG rules expanding X and
+the other adapted distributions, as explained in John-
+son et al (2007b). When called upon to generate an-
+other sample tree, the adaptor either generates and
+returns a fresh tree from HX or regenerates a tree
+it has previously emitted, so in general the adapted
+distribution differs from the base distribution.
+This paper uses adaptors based on Chinese
+Restaurant Processes (CRPs) or Pitman-Yor Pro-
+cesses (PYPs) (Pitman, 1995; Pitman and Yor, 1997;
+Ishwaran and James, 2003). CRPs and PYPs non-
+deterministically generate infinite sequences of nat-
+ural numbers z1, z2, . . ., where z1 = 1 and each
+zn+1 ? m+ 1 where m = max(z1, . . . , zn). In the
+?Chinese Restaurant? metaphor samples produced
+by the adaptor are viewed as ?customers? and zn
+is the index of the ?table? that the nth customer is
+seated at. In adaptor grammars each table in the
+adaptor CX is labeled with a tree sampled from the
+base distribution HX that is shared by all customers
+at that table; thus the nth sample tree from the adap-
+tor CX is the znth sample from HX .
+CRPs and PYPs differ in exactly how the
+sequence {zk} is generated. Suppose z =
+(z1, . . . , zn) have already been generated and m =
+max(z). Then a CRP generates the next table index
+zn+1 according to the following distribution:
+P(Zn+1 = k | z) ?
+{
+nk(z) if k ? m
+? if k = m+ 1
+where nk(z) is the number of times table k appears
+in z and ? > 0 is an adjustable parameter that deter-
+mines how often a new table is chosen. This means
+that if CX is a CRP adaptor then the next tree tn+1
+it generates is the same as a previously generated
+tree t? with probability proportional to the number
+of times CX has generated t? before, and is a ?fresh?
+tree t sampled from HX with probability propor-
+tional to ?XHX(t). This leads to a powerful ?rich-
+get-richer? effect in which popular trees are gener-
+ated with increasingly high probabilities.
+Pitman-Yor Processes can control the strength of
+this effect somewhat by moving mass from existing
+tables to the base distribution. The PYP predictive
+distribution is:
+P(Zn+1 = k | z) ?
+{
+nk(z)? a if k ? m
+ma+ b if k = m+ 1
+where a ? [0, 1] and b > 0 are adjustable parame-
+ters. It?s easy to see that the CRP is a special case of
+the PRP where a = 0 and b = ?.
+Each adaptor in an adaptor grammar can be
+viewed as estimating the probability of each adapted
+subtree t; this probability can differ substantially
+from t?s probability HX(t) under the base distribu-
+tion. Because Words are adapted in the unigram
+adaptor grammar it effectively estimates the proba-
+bility of each Word tree separately; the sampling es-
+timators described in section 4 only instantiate those
+Words actually used in the analysis of Sentences in
+the corpus. While the Word adaptor will generally
+319
+prefer to reuse Words that have been used elsewhere
+in the corpus, it is always possible to generate a fresh
+Word using the CFG rules expanding Word into a
+string of Phonemes.
+We assume for now that all CFG rules RX ex-
+panding the nonterminal X ? N have the same
+probability (although we will explore estimating ?
+below), so the base distribution HWord is a ?mon-
+keys banging on typewriters? model. That means the
+unigram adaptor grammar implements the Goldwa-
+ter et al (2006a) unigram word segmentation model,
+and in fact it produces segmentations of similar ac-
+curacies, and exhibits the same characteristic under-
+segmentation errors. As Goldwater et al point out,
+because Words are the only units of generalization
+available to a unigram model it tends to misanal-
+yse collocations as words, resulting in a marked ten-
+dancy to undersegment.
+Goldwater et al demonstrate that modelling bi-
+gram dependencies mitigates this undersegmenta-
+tion. While adaptor grammars cannot express the
+Goldwater et al bigram model, they can get much
+the same effect by directly modelling collocations
+(Johnson, 2008). A collocation adaptor grammar
+generates a Sentence as a sequence of Collocations,
+each of which expands to a sequence of Words.
+Sentence ? Colloc+
+Colloc ? Word+
+Word ? Phoneme+
+Because Colloc is adapted, the collocation adap-
+tor grammar learns Collocations as well as Words.
+(Presumably these approximate syntactic, semantic
+and pragmatic interword dependencies). Johnson
+reported that the collocation adaptor grammar seg-
+ments as well as the Goldwater et al bigram model,
+which we confirm here.
+Recently other researchers have emphasised the
+utility of phonotactic constraints (i.e., modeling
+the allowable phoneme sequences at word onsets
+and endings) for word segmentation (Blanchard and
+Heinz, 2008; Fleck, 2008). Johnson (2008) points
+out that adaptor grammars that model words as se-
+quences of syllables can learn and exploit these con-
+straints, significantly improving segmentation accu-
+racy. Here we present an adaptor grammar that mod-
+els collocations together with these phonotactic con-
+straints. This grammar is quite complex, permitting
+us to study the effects of the various model and im-
+plementation choices described below on a complex
+hierarchical nonparametric Bayesian model.
+The collocation-syllable adaptor grammar gen-
+erates a Sentence in terms of three levels of
+Collocations (enabling it to capture a wider range
+of interword dependencies), and generates Words as
+sequences of 1 to 4 Syllables. Syllables are subcat-
+egorized as to whether they are initial (I), final (F) or
+both (IF).
+Sentence ? Colloc3+
+Colloc3 ? Colloc2+
+Colloc2 ? Colloc1+
+Colloc1 ? Word+
+Word ? SyllableIF
+Word ? SyllableI (Syllable) (Syllable) SyllableF
+Syllable ? Onset Rhyme
+Onset ? Consonant+
+Rhyme ? Nucleus Coda
+Nucleus ? Vowel+
+Coda ? Consonant+
+SyllableIF ? OnsetI RhymeF
+OnsetI ? Consonant+
+RhymeF ? Nucleus CodaF
+CodaF ? Consonant+
+SyllableI ? OnsetI Rhyme
+SyllableF ? Onset RhymeF
+Here Consonant and Vowel expand to all possible
+consonants and vowels respectively, and the paren-
+theses in the expansion of Word indicate optional-
+ity. Because Onsets and Codas are adapted, the
+collocation-syllable adaptor grammar learns the pos-
+sible consonant sequences that begin and end syl-
+lables. Moreover, because Onsets and Codas are
+subcategorized based on whether they are word-
+peripheral, the adaptor grammar learns which con-
+sonant clusters typically appear at word boundaries,
+even though the input contains no explicit word
+boundary information (apart from what it can glean
+from the sentence boundaries).
+3 Bayesian estimation of adaptor
+grammar parameters
+Adaptor grammars as defined in section 2 have a
+large number of free parameters that have to be
+chosen by the grammar designer; a rule probabil-
+ity ?r for each PCFG rule r ? R and either one or
+two hyperparameters for each adapted nonterminal
+X ? A, depending on whether Chinese Restaurant
+320
+or Pitman-Yor Processes are used as adaptors. It?s
+difficult to have intuitions about the appropriate set-
+tings for the latter parameters, and finding the opti-
+mal values for these parameters by some kind of ex-
+haustive search is usually computationally impracti-
+cal. Previous work has adopted an expedient such as
+parameter tying. For example, Johnson (2008) set
+? by requiring all productions expanding the same
+nonterminal to have the same probability, and used
+Chinese Restaurant Process adaptors with tied pa-
+rameters ?X , which was set using a grid search.
+We now describe two methods of dealing with the
+large number of parameters in these models that are
+both more principled and more practical than the ap-
+proaches described above. First, we can integrate
+out ?, and second, we can infer values for the adap-
+tor hyperparameters using sampling. These meth-
+ods (the latter in particular) make it practical to use
+Pitman-Yor Process adaptors in complex grammars
+such as the collocation-syllable adaptor grammar,
+where it is impractical to try to find optimal parame-
+ter values by grid search. As we will show, they also
+improve segmentation accuracy, sometimes dramat-
+ically.
+3.1 Integrating out ?
+Johnson et al (2007a) describe Gibbs samplers for
+Bayesian inference of PCFG rule probabilities ?,
+and these techniques can be used directly with adap-
+tor grammars as well. Just as in that paper, we
+place Dirichlet priors on ?: here ?X is the subvector
+of ? corresponding to rules expanding nonterminal
+X ? N , and ?X is a corresponding vector of posi-
+tive real numbers specifying the hyperparameters of
+the corresponding Dirichlet distributions:
+P(? | ?) = ?
+X?N
+Dir(?X | ?X)
+Because the Dirichlet distribution is conjugate to the
+multinomial distribution, it is possible to integrate
+out the rule probabilities ?, producing the ?collapsed
+sampler? described in Johnson et al (2007a).
+In our experiments we chose an uniform prior
+?r = 1 for all rules r ? R. As Table 1 shows,
+integrating out ? only has a major effect on re-
+sults when the adaptor hyperparameters themselves
+are not sampled, and even then it did not have
+a large effect on the collocation-syllable adaptor
+grammar. This is not too surprising: because the
+Onset, Nucleus and Coda adaptors in this gram-
+mar learn the probabilities of these building blocks
+of words, the phoneme probabilities (which is most
+of what ? encodes) play less important a role.
+3.2 Slice sampling adaptor hyperparameters
+As far as we know, there are no conjugate priors for
+the adaptor hyperparameters aX or bX (which cor-
+responds to ?X in a Chinese Restaurant Process),
+so it is not possible to integrate them out as we did
+with the rule probabilities ?. However, it is possible
+to perform Bayesian inference by putting a prior on
+them and sampling their values.
+Because we have no strong intuitions about the
+values of these parameters we chose uninformative
+priors. We chose a uniform Beta(1, 1) prior on aX ,
+and a ?vague? Gamma(10, 0.1) prior on bX = ?X
+(MacKay, 2003). (We experimented with other pa-
+rameters in the Gamma prior, but found no signifi-
+cant difference in performance).
+After each Gibbs sweep through the parse trees t
+we resampled each of the adaptor parameters from
+the posterior distribution of the parameter using a
+slice sampler 10 times. For example, we resample
+each bX from:
+P(bX | t) ? P(t | bX) Gamma(bX | 10, 0.1)
+Here P(t | bX) is the likelihood of the current se-
+quence of sample parse trees (we only need the fac-
+tors that depend on bX ) and Gamma(bX | 10, 0.1)
+is the prior. The same formula is used for sampling
+aX , except that the prior is now a flat Beta(1, 1) dis-
+tribution.
+In general we cannot even compute the normaliz-
+ing constants for these posterior distributions, so we
+chose a sampler that does not require this. We use a
+slice sampler here because it does not require a pro-
+posal distribution (Neal, 2003). (We initially tried
+a Metropolis-Hastings sampler but were unable to
+find a proposal distribution that had reasonable ac-
+ceptance ratios for all of our adaptor grammars).
+As Table 1 makes clear, sampling the adaptor pa-
+rameters makes a significant difference, especially
+on the collocation-syllable adaptor grammar. This
+is not surprising, as the adaptors in that grammar
+play many different roles and there is no reason to
+to expect the optimal values of their parameters to
+be similar.
+321
+Condition Word token f-scores
+Sample average Max. Marginal
+B
+at
+ch
+in
+iti
+al
+iz
+at
+io
+n
+Ta
+bl
+e
+la
+be
+lr
+es
+am
+pl
+in
+g
+In
+te
+gr
+at
+e
+o
+u
+t?
+Sa
+m
+pl
+e
+? X
+=
+b X
+Sa
+m
+pl
+e
+a X
+u
+n
+ig
+ra
+m
+co
+llo
+c
+co
+llo
+c-
+sy
+ll
+u
+n
+ig
+ra
+m
+co
+llo
+c
+co
+llo
+c-
+sy
+ll
+? ? ? ? ? 0.55 0.74 0.85 0.56 0.76 0.87
+? ? ? ? 0.55 0.72 0.84 0.56 0.74 0.84
+? ? ? 0.55 0.72 0.78 0.57 0.75 0.78
+? ? 0.54 0.66 0.75 0.56 0.69 0.76
+? ? ? ? 0.54 0.70 0.87 0.56 0.74 0.88
+? ? ? ? 0.55 0.42 0.54 0.57 0.51 0.55
+? ? ? ? 0.74 0.83 0.88 0.81 0.86 0.89
+? ? ? 0.75 0.43 0.74 0.80 0.56 0.82
+? ? 0.71 0.41 0.76 0.77 0.49 0.82
+? ? ? 0.71 0.73 0.87 0.77 0.75 0.88
+Table 1: Word segmentation accuracy measured by word token f-scores on Brent?s version of the Bernstein-Ratner
+corpus as a function of adaptor grammar, adaptor and estimation procedure. Pitman-Yor Process adaptors were used
+when aX was sampled, otherwise Chinese Restaurant Process adaptors were used. In runs where ? was not integrated
+out it was set uniformly, and all ?X = bX were set to 100 they were not sampled.
+4 Inference for adaptor grammars
+Johnson et al (2007b) describe the basic adaptor
+grammar inference procedure that we use here. That
+paper leaves unspecified a number of implemen-
+tation details, which we show can make a crucial
+difference to segmentation accuracy. The adaptor
+grammar algorithm is basically a Gibbs sampler of
+the kind widely used for nonparametric Bayesian in-
+ference (Blei et al, 2004; Goldwater et al, 2006b;
+Goldwater et al, 2006a), so it seems reasonable to
+expect that at least some of the details discussed be-
+low will be relevant to other applications as well.
+The inference algorithm maintains a vector t =
+(t1, . . . , tn) of sample parses, where ti ? TS is a
+parse for the ith sentence wi. It repeatedly chooses a
+sentence wi at random and resamples the parse tree
+ti for wi from P(ti | t?i, wi), i.e., conditioned on wi
+and the parses t?i of all sentences except wi.
+4.1 Maximum marginal decoding
+Sampling algorithms like ours produce a stream of
+samples from the posterior distribution over parses
+of the training data. It is standard to take the out-
+put of the algorithm to be the last sample produced,
+and evaluate those parses. In some other applica-
+tions of nonparametric Bayesian inference involv-
+ing latent structure (e.g., clustering) it is difficult to
+usefully exploit multiple samples, but that is not the
+case here.
+In maximum marginal decoding we map each
+sample parse tree t onto its corresponding word seg-
+mentation s, marginalizing out irrelevant detail in
+t. (For example, the collocation-syllable adaptor
+grammar contains a syllabification and collocational
+structure that is irrelevant for word segmentation).
+Given a set of sample parse trees for a sentence we
+compute the set of corresponding word segmenta-
+tions, and return the one that occurs most frequently
+(this is a sampling approximation to the maximum
+probability marginal structure).
+For each setting in the experiments described in
+Table 1 we ran 8 samplers for 2,000 iterations (i.e.,
+passes through the training data), and kept the sam-
+ple parse trees from every 10th iteration after itera-
+tion 1000, resulting in 800 sample parses for every
+sentence. (An examination of the posterior proba-
+bilities suggests that all of the samplers using batch
+initialization and table label resampling had ?burnt
+322
+batch initialization, table label resampling
+incremental initialization, table label resampling
+batch initialization, no table label resampling
+2000150010005000
+220000
+215000
+210000
+205000
+200000
+195000
+190000
+185000
+Figure 1: Negative log posterior probability (lower is bet-
+ter) as a function of iteration for 24 runs of the collo-
+cation adaptor grammar samplers with Pitman-Yor adap-
+tors. The upper 8 runs use batch initialization but no ta-
+ble label resampling, the middle 8 runs use incremental
+initialization and table label resampling, while the lower
+8 runs use batch initialization and table label resampling.
+in? by iteration 1000). We evaluated the word to-
+ken f-score of the most frequent marginal word seg-
+mentation, and compared that to average of the word
+token f-score for the 800 samples, which is also re-
+ported in Table 1. For each grammar and setting we
+tried, the maximum marginal segmentation was bet-
+ter than the sample average, sometimes by a large
+margin. Given its simplicity, this suggests that max-
+imum marginal decoding is probably worth trying
+when applicable.
+4.2 Batch initialization
+The Gibbs sampling algorithm is initialized with a
+set of sample parses t for each sentence in the train-
+ing data. While the fundamental theorem of Markov
+Chain Monte Carlo guarantees that eventually sam-
+ples will converge to the posterior distribution, it
+says nothing about how long the ?burn in? phase
+might last (Robert and Casella, 2004). In practice
+initialization can make a huge difference to the per-
+formance of Gibbs samplers (just as it can with other
+unsupervised estimation procedures such as Expec-
+tation Maximization).
+There are many different ways in which we could
+generate the initial trees t; we only study two of the
+obvious methods here. Batch initialization assigns
+every sentence a random parse tree in parallel. In
+more detail, the initial parse tree ti for sentence wi
+is sampled from P(t | wi, G?), where G? is the PCFG
+obtained from the adaptor grammar by ignoring its
+last two components A and C (i.e., the adapted non-
+terminals and their adaptors), and seated at a new
+table. This means that in batch initialization each
+initial parse tree is randomly generated without any
+adaptation at all.
+Incremental initialization assigns the initial parse
+trees ti to sentences wi in order, updating the adaptor
+grammar as it goes. That is, ti is sampled from P(t |
+wi, t1, . . . , ti?1). This is easy to do in the context
+of Gibbs sampling, since this distribution is a minor
+variant of the distribution P(ti | t?i, wi) used during
+Gibbs sampling itself.
+Incremental initialization is greedier than batch
+initialization, and produces initial sample trees with
+much higher probability. As Table 1 shows, across
+all grammars and conditions after 2,000 iterations
+incremental initialization produces samples with
+much better word segmentation token f-score than
+does batch initialization, with the largest improve-
+ment on the unigram adaptor grammar.
+However, incremental initialization results in
+sample parses with lower posterior probability for
+the unigram and collocation adaptor grammars (but
+not for the collocation-syllable adaptor grammar).
+Figure 1 plots the posterior probabilities of the sam-
+ple trees t at each iteration for the collocation adap-
+tor grammar, showing that even after 2,000 itera-
+tions incremental initialization results in trees that
+are much less likely than those produced by batch
+initialization. It seems that with incremental initial-
+ization the Gibbs sampler gets stuck in a local op-
+timum which it is extremely unlikely to move away
+from.
+It is interesting that incremental initialization re-
+sults in more accurate word segmentation, even
+though the trees it produces have lower posterior
+probability. This seems to be because the most prob-
+able analyses produced by the unigram and, to a
+lesser extent, the collocation adaptor grammars tend
+to undersegment. Incremental initialization greed-
+ily searches for common substrings, and because
+such substrings are more likely to be short rather
+than long, it tends to produce analyses with shorter
+words than batch initialization does. Goldwater et
+al. (2006a) show that Brent?s incremental segmenta-
+tion algorithm (Brent, 1999) has a similar property.
+We favor batch initialization because we are in-
+323
+terested in understanding the properties of our mod-
+els (expressed here as adaptor grammars), and batch
+initialization does a better job of finding the most
+probable analyses under these models. However, it
+might be possible to justify incremental initializa-
+tion as (say) cognitively more plausible.
+4.3 Table label resampling
+Unlike the previous two implementation choices
+which apply to a broad range of algorithms, table
+label resampling is a specialized kind of Gibbs step
+for adaptor grammars and similar hierarchical mod-
+els that is designed to improve mobility. The adap-
+tor grammar algorithm described in Johnson et al
+(2007b) repeatedly resamples parses for the sen-
+tences of the training data. However, the adaptor
+grammar sampler itself maintains of a hierarchy of
+Chinese Restaurant Processes or Pitman-Yor Pro-
+cesses, one per adapted nonterminal X ? A, that
+cache subtrees from TX . In general each of these
+subtrees will occur many times in the parses for the
+training data sentences. Table label resampling re-
+samples the trees in these adaptors (i.e., the table
+labels, to use the restaurant metaphor), potentially
+changing the analysis of many sentences at once.
+For example, each Collocation in the collocation
+adaptor grammar can occur in many Sentences, and
+each Word can occur in many Collocations. Resam-
+pling a single Collocation can change the way it is
+analysed into Words, thus changing the analysis of
+all of the Sentences containing that Collocation.
+Table label resampling is an additional resam-
+pling step performed after each Gibbs sweep
+through the training data in which we resample the
+parse trees labeling the tables in the adaptor for each
+X ? A. Specifically, if the adaptor CX for X ? A
+currently contains m tables labeled with the trees
+t = (t1, . . . , tm) then table label resampling re-
+places each tj , j ? 1, . . . ,m in turn with a tree sam-
+pled from P(t | t?j , wj), where wj is the terminal
+yield of tj . (Within each adaptor we actually resam-
+ple all of the trees t in a randomly chosen order).
+Table label resampling is a kind of Gibbs sweep,
+but at a higher level in the Bayesian hierarchy than
+the standard Gibbs sweep. It?s easy to show that ta-
+ble label resampling preserves detailed balance for
+the adaptor grammars presented in this paper, so in-
+terposing table label resampling steps with the stan-
+dard Gibbs steps also preserves detailed balance.
+We expect table label resampling to have the
+greatest impact on models with a rich hierarchi-
+cal structure, and the experimental results in Ta-
+ble 1 confirm this. The unigram adaptor grammar
+does not involve nested adapted nonterminals, so
+we would not expect table label resampling to have
+any effect on its analyses. On the other hand, the
+collocation-syllable adaptor grammar involves a rich
+hierarchical structure, and in fact without table la-
+bel resampling our sampler did not burn in or mix
+within 2,000 iterations. As Figure 1 shows, table
+label resampling produces parses with higher pos-
+terior probability, and Table 1 shows that table la-
+bel resampling makes a significant difference in the
+word segmentation f-score of the collocation and
+collocation-syllable adaptor grammars.
+5 Conclusion
+This paper has examined adaptor grammar infer-
+ence procedures and their effect on the word seg-
+mentation problem. Some of the techniques inves-
+tigated here, such as batch versus incremental ini-
+tialization, are quite general and may be applica-
+ble to a wide range of other algorithms, but some
+of the other techniques, such as table label resam-
+pling, are specialized to nonparametric hierarchi-
+cal Bayesian inference. We?ve shown that sampling
+adaptor hyperparameters is feasible, and demon-
+strated that this improves word segmentation accu-
+racy of the collocation-syllable adaptor grammar by
+almost 10%, corresponding to an error reduction of
+over 35% compared to the best results presented in
+Johnson (2008). We also described and investigated
+table label resampling, which dramatically improves
+the effectiveness of Gibbs sampling estimators for
+complex adaptor grammars, and makes it possible
+to work with adaptor grammars with complex hier-
+archical structure.
+Acknowledgments
+We thank Erik Sudderth for suggesting sampling the
+Pitman-Yor hyperparameters and the ACL review-
+ers for their insightful comments. This research was
+funded by NSF awards 0544127 and 0631667 to
+Mark Johnson.
+324
+References
+N. Bernstein-Ratner. 1987. The phonology of parent-
+child speech. In K. Nelson and A. van Kleeck, editors,
+Children?s Language, volume 6. Erlbaum, Hillsdale,
+NJ.
+Daniel Blanchard and Jeffrey Heinz. 2008. Improv-
+ing word segmentation by simultaneously learning
+phonotactics. In CoNLL 2008: Proceedings of the
+Twelfth Conference on Computational Natural Lan-
+guage Learning, pages 65?72, Manchester, England,
+August.
+David Blei, Thomas L. Griffiths, Michael I. Jordan, and
+Joshua B. Tenenbaum. 2004. Hierarchical topic
+models and the nested chinese restaurant process.
+In Sebastian Thrun, Lawrence Saul, and Bernhard
+Scho?lkopf, editors, Advances in Neural Information
+Processing Systems 16. MIT Press, Cambridge, MA.
+Rens Bod. 1998. Beyond grammar: an experience-based
+theory of language. CSLI Publications, Stanford, Cal-
+ifornia.
+M. Brent and T. Cartwright. 1996. Distributional reg-
+ularity and phonotactic constraints are useful for seg-
+mentation. Cognition, 61:93?125.
+M. Brent. 1999. An efficient, probabilistically sound
+algorithm for segmentation and word discovery. Ma-
+chine Learning, 34:71?105.
+Jeffrey Elman. 1990. Finding structure in time. Cogni-
+tive Science, 14:197?211.
+Margaret M. Fleck. 2008. Lexicalized phonotactic
+word segmentation. In Proceedings of ACL-08: HLT,
+pages 130?138, Columbus, Ohio, June. Association
+for Computational Linguistics.
+Sharon Goldwater, Thomas L. Griffiths, and Mark John-
+son. 2006a. Contextual dependencies in unsupervised
+word segmentation. In Proceedings of the 21st In-
+ternational Conference on Computational Linguistics
+and 44th Annual Meeting of the Association for Com-
+putational Linguistics, pages 673?680, Sydney, Aus-
+tralia. Association for Computational Linguistics.
+Sharon Goldwater, Tom Griffiths, and Mark Johnson.
+2006b. Interpolating between types and tokens
+by estimating power-law generators. In Y. Weiss,
+B. Scho?lkopf, and J. Platt, editors, Advances in Neural
+Information Processing Systems 18, pages 459?466,
+Cambridge, MA. MIT Press.
+Sharon Goldwater, Thomas L. Griffiths, and Mark John-
+son. 2007. Distributional cues to word boundaries:
+Context is important. In David Bamman, Tatiana
+Magnitskaia, and Colleen Zaller, editors, Proceedings
+of the 31st Annual Boston University Conference on
+Language Development, pages 239?250, Somerville,
+MA. Cascadilla Press.
+H. Ishwaran and L. F. James. 2003. Generalized
+weighted Chinese restaurant processes for species
+sampling mixture models. Statistica Sinica, 13:1211?
+1235.
+Mark Johnson, Thomas Griffiths, and Sharon Goldwa-
+ter. 2007a. Bayesian inference for PCFGs via Markov
+chain Monte Carlo. In Human Language Technologies
+2007: The Conference of the North American Chap-
+ter of the Association for Computational Linguistics;
+Proceedings of the Main Conference, pages 139?146,
+Rochester, New York, April. Association for Compu-
+tational Linguistics.
+Mark Johnson, Thomas L. Griffiths, and Sharon Gold-
+water. 2007b. Adaptor Grammars: A framework
+for specifying compositional nonparametric Bayesian
+models. In B. Scho?lkopf, J. Platt, and T. Hoffman, ed-
+itors, Advances in Neural Information Processing Sys-
+tems 19, pages 641?648. MIT Press, Cambridge, MA.
+Mark Johnson. 2008. Using adaptor grammars to identi-
+fying synergies in the unsupervised acquisition of lin-
+guistic structure. In Proceedings of the 46th Annual
+Meeting of the Association of Computational Linguis-
+tics, Columbus, Ohio. Association for Computational
+Linguistics.
+Aravind Joshi. 2003. Tree adjoining grammars. In Rus-
+lan Mikkov, editor, The Oxford Handbook of Compu-
+tational Linguistics, pages 483?501. Oxford Univer-
+sity Press, Oxford, England.
+David J.C. MacKay. 2003. Information Theory, Infer-
+ence, and Learning Algorithms. Cambridge Univer-
+sity Press.
+Radford M. Neal. 2003. Slice sampling. Annals of
+Statistics, 31:705?767.
+J. Pitman and M. Yor. 1997. The two-parameter Poisson-
+Dirichlet distribution derived from a stable subordina-
+tor. Annals of Probability, 25:855?900.
+J. Pitman. 1995. Exchangeable and partially exchange-
+able random partitions. Probability Theory and Re-
+lated Fields, 102:145?158.
+Christian P. Robert and George Casella. 2004. Monte
+Carlo Statistical Methods. Springer.
+Andreas Stolcke and Stephen Omohundro. 1994. Induc-
+ing probabilistic grammars by Bayesian model merg-
+ing. In Rafael C. Carrasco and Jose Oncina, editors,
+Grammatical Inference and Applications, pages 106?
+118. Springer, New York.
+Y. W. Teh, M. Jordan, M. Beal, and D. Blei. 2006. Hier-
+archical Dirichlet processes. Journal of the American
+Statistical Association, 101:1566?1581.
+325
