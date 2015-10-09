@@ -35,7 +35,7 @@ inCites(Si) = Out-vertices of Si in the citation graph<br/>
 intersection(A, B) = set of common elements in A & B<br/>
 and |A| = cardinality of list A<br/>
 
-* **7 - Co-citation matrix**
+* **7 - Co-citation matrix**<br/>
 sim (S1, S2) = |intersection(inCites(S1), inCites(S2)|/ min ( |inCites(S1)|, |inCites(S2)| )<br/>
 Where, <br/>
 inCites(Si) = In-vertices of Si in the citation graph<br/>
