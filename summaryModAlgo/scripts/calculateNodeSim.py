@@ -30,7 +30,7 @@ UG_POS_idfDict = getIDFs("UG-POS-IDF.txt")
 BG_POS_idfDict = getIDFs("BG-POS-IDF.txt")
 
 
-def getLexSim(featureIndex, sent1, sent1Index, sent2, sent2Index):
+def getLexSim(featureIndex, sent1, sent2):
 
 	############## Unigrams TF-IDF vectorization ############3
 	
@@ -314,15 +314,15 @@ def getCitationCountSim(sent1Index, sent2Index, citationsCount):
 		return c/float(r)
 
 
-def getNodeSim(featureIndex, paper1ID, paper2ID, edgesList):
+def getNodeSim(featureIndex, paper1ID, paper2ID, dataList):
 
 ############ Graph based similarity features ###################
 
 	if (featureIndex == 6):
 		## Bibilographic coupling
 
-		p1OutEdgesList = getOutEdges(edgesList, paper1ID)
-		p2OutEdgesList = getOutEdges(edgesList, paper2ID)
+		p1OutEdgesList = getOutEdges(dataList, paper1ID)
+		p2OutEdgesList = getOutEdges(dataList, paper2ID)
 		commonList = set(p1OutEdgesList) & set(p2OutEdgesList)
 		return len(commonList)/ float(min(len(p1OutEdgesList), len(p2OutEdgesList)))
 
@@ -330,14 +330,49 @@ def getNodeSim(featureIndex, paper1ID, paper2ID, edgesList):
 
 		## Cocitation matrix
 
-		p1InEdgesList = getInEdges(edgesList, paper1ID)
-		p2InEdgesList = getInEdges(edgesList, paper2ID)
+		p1InEdgesList = getInEdges(dataList, paper1ID)
+		p2InEdgesList = getInEdges(dataList, paper2ID)
 
 		if (len(p1InEdgesList) == 0 or len(p2InEdgesList) == 0):
 			return 0
 		else:
 			commonList = set(p1InEdgesList) & set(p2InEdgesList)
 			return len(commonList)/ float(min(len(p1InEdgesList), len(p2InEdgesList)))
+
+
+	elif (featureIndex == 8):
+
+		## Title similarity
+		if (paper1ID not in dataList or paper2ID not in dataList):
+			return 0
+
+		title1 = dataList[paper1ID]
+		title2 = dataList[paper2ID]
+
+
+		return getLexSim(1, title1, title2)
+
+	elif (featureIndex == 9):
+
+		## Author similarity
+		if (paper1ID not in dataList or paper2ID not in dataList):
+			return 0
+
+		authorList1 = dataList[paper1ID]
+		authorList2 = dataList[paper2ID]
+
+		commonAuthorSet = set(authorList1) & set(authorList2)
+
+		return len(commonAuthorSet)/float(min(len(authorList1), len(authorList2)))
+
+	elif (featureIndex == 10):
+
+		## time similarity
+
+		year1 = dataList[paper1ID]
+		year2 = dataList[paper2ID]
+
+		return max(0, (1- (float(abs(int(year1) - int(year2)))/5)))
 
 
 
@@ -401,18 +436,43 @@ def main():
 	if (featureIndex in [1,2,4,5]):
 		for sent1 in inputLines:
 			for sent2 in inputLines:
-				sims.write(str(sent1) + "\t" + str(sent2) + "\t" + str(getLexSim(featureIndex, inputLines[sent1], sent1 , inputLines[sent2], sent2)) + "\n")
+				sims.write(str(sent1) + "\t" + str(sent2) + "\t" + str(getLexSim(featureIndex, inputLines[sent1] , inputLines[sent2])) + "\n")
 
 
 
-	if (featureIndex in [6, 7]):
+	if (featureIndex in [6, 7, 8, 9, 10]):
+
+		if featureIndex in [6,7]:
+			dataList = getEdges()
+
+		elif (featureIndex == 8):
+			inputFile = open("../graphFeatures/titles.txt")
+			dataList = {}
+
+			for line in inputFile:
+				titlePair = line.decode("utf-8", "replace").split("\t")
+				dataList[titlePair[0]] = titlePair[1]
+
+		elif (featureIndex == 9):
+			inputFile = open("../graphFeatures/authors.txt")	
+			dataList = {}
+
+			for line in inputFile:
+				authorsData = line.decode("utf-8", "replace").split("\t")
+				dataList[authorsData[0]] = [authorsData[x] for  x in range(1,len(authorsData))]
+
+		elif (featureIndex == 10):
+
+			inputFile = open("../graphFeatures/years.txt")	
+			dataList = {}
+
+			for line in inputFile:
+				yearData = line.decode("utf-8", "replace").split("\t")
+				dataList[yearData[0]] = int(yearData[1])
+
+
 		inputFile = open("../graphFeatures/inEdges/"+sys.argv[1] + ".txt", "r")
-
-		edgesList = getEdges()
-
-
 		filePapersList = []
-
 		lines = 0
 
 		for line in inputFile:
@@ -421,7 +481,7 @@ def main():
 
 		for i in range(1, lines+1):
 			for j in range(1, lines+1):
-				sims.write(str(i) + "\t" + str(j) + "\t" + str(getNodeSim(featureIndex, filePapersList[i-1], filePapersList[j-1], edgesList)) + "\n")				
+				sims.write(str(i) + "\t" + str(j) + "\t" + str(getNodeSim(featureIndex, filePapersList[i-1], filePapersList[j-1], dataList)) + "\n")				
 
 
 

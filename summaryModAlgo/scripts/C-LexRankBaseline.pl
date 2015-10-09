@@ -48,7 +48,7 @@ if($totalsents <= 3)
     {
 	$summary = $summary . $origSents{$i}."\n";
     }
-    open OUT, ">outputs/".$name."-C-LR.txt";
+    open OUT, ">../modOutput/".$name."-C-LR.txt";
     print OUT "$summary";
     print $summary;
     exit;
