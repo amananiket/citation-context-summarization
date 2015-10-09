@@ -14,6 +14,12 @@ Citation Context based scientific summarization algorithm based on C-LexRank (ht
 * 3 - Number of citations
 * 4 - POS Tag unigrams
 * 5 - POS Tag Bigrams
+* 6 - Bibilographic Coupling
+* 7 - Co-citation matrix
+* 8 - Title similarity
+* 9 - Author similarty
+* 10 - Time based similarity
+
 
 ```
 python executeAndEvaluate.py <featureIndex> <comments>
