@@ -1,5 +1,5 @@
 
-inputFile = open("../aan/release/2013/acl.txt", "r")
+inputFile = open("../../../aan/release/2013/acl.txt", "r")
 outputFile = open("../graphFeatures/edgesAAN.txt", "w")
 
 for line in inputFile:

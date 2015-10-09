@@ -40,7 +40,7 @@ def main():
 
 			for edge in inEdgesList:
 				try :
-					inputFile = open("../aan/papers_text/"+edge + ".txt")
+					inputFile = open("../../../aan/papers_text/"+edge + ".txt")
 					inputFileLines = []
 
 					for iline in inputFile:
