@@ -374,13 +374,42 @@ def getNodeSim(featureIndex, paper1ID, paper2ID, dataList):
 
 		return max(0, (1- (float(abs(int(year1) - int(year2)))/5)))
 
-
-
-
 def main():
-
-	featureIndex = int(sys.argv[2])
+	optionIndex = int(sys.argv[2])
 	sims = open("../preProcessOutput/"+sys.argv[1]+"-modSimMetrics.txt", "w")
+
+	if (optionIndex == 0):
+		featureMetricsList1 = calculateFeatureNodeSim(1)
+		featureMetricsList2 = calculateFeatureNodeSim(2)
+		featureMetricsList3 = calculateFeatureNodeSim(3)
+		featureMetricsList4 = calculateFeatureNodeSim(4)
+		featureMetricsList5 = calculateFeatureNodeSim(6)
+
+		numberOfSentences = len(featureMetricsList1)
+		
+		similarityMetrics = []
+
+		for i in range(0, numberOfSentences):
+			tempList = [0]*numberOfSentences
+			similarityMetrics.append(tempList)
+
+		for i in range(0, numberOfSentences):
+			for j in range(0, numberOfSentences):
+				similarityMetrics[i][j] = (featureMetricsList1[i][j] + featureMetricsList2[i][j] + featureMetricsList3[i][j] + featureMetricsList4[i][j] + featureMetricsList5[i][j])/5
+
+
+	else:
+		similarityMetrics = calculateFeatureNodeSim(optionIndex)
+		numberOfSentences = len(similarityMetrics)
+
+	for i in range(0, numberOfSentences):
+		for j in range(0, numberOfSentences):
+			sims.write(str(i+1) + "\t" + str(j+1) + "\t" + str(similarityMetrics[i][j]) + "\n")
+
+
+def calculateFeatureNodeSim(featureIndex):
+
+	
 
 	if (featureIndex in [1,2]):
 		inputFile =  open("../preProcessOutput/"+sys.argv[1]+"-tempSents.txt")
@@ -394,7 +423,7 @@ def main():
 		citationsCount = {}
 
 		with open("../contextFiles/" + sys.argv[1] + ".txt", "r") as context:
-			lineId = 1
+			lineId = 0
 			for line in context:
 				tokens = [x.decode('utf-8',"replace") for x in re.split("\W+", line)]
 				for token in tokens:
@@ -410,9 +439,15 @@ def main():
 
 				lineId = lineId + 1
 
-		for i in range(1, lineId+1):
-			for j in range(1, lineId +1):
-				sims.write(str(i) + "\t" + str(j) + "\t" + str(getCitationCountSim(i, j, citationsCount)) + "\n")
+		featureMetrics = []
+
+		for i in range(0, lineId):
+			tempList = [0]*lineId
+			featureMetrics.append(tempList)
+
+		for i in range(0, lineId):
+			for j in range(0, lineId):
+				featureMetrics[i][j] = getCitationCountSim(i, j, citationsCount)
 
 	elif (featureIndex == 4):
 		inputFile =  open("../contextFiles-UG-POSTags/"+sys.argv[1]+".txt")
@@ -432,11 +467,24 @@ def main():
 
 	#inputLines = [x.decode('utf-8').strip('\n').lower() for x in inputFile.readlines()]
 	#sentId = 0
+	
 
 	if (featureIndex in [1,2,4,5]):
-		for sent1 in inputLines:
-			for sent2 in inputLines:
-				sims.write(str(sent1) + "\t" + str(sent2) + "\t" + str(getLexSim(featureIndex, inputLines[sent1] , inputLines[sent2])) + "\n")
+
+		featureMetrics = []
+
+		for i in range(0, len(inputLines)):
+			tempList = [0]*len(inputLines)
+			featureMetrics.append(tempList)
+
+		for i in range(0, len(inputLines)):
+			for j in range(0, len(inputLines)):
+				featureMetrics[i][j] = getLexSim(featureIndex, inputLines[i+1] , inputLines[j+1])
+
+	# if (featureIndex in [1,2,4,5]):
+	# 	for sent1 in inputLines:
+	# 		for sent2 in inputLines:
+	# 			sims.write(str(sent1) + "\t" + str(sent2) + "\t" + str() + "\n")
 
 
 
@@ -479,11 +527,24 @@ def main():
 			lines += 1
 			filePapersList.append(line.strip())
 
-		for i in range(1, lines+1):
-			for j in range(1, lines+1):
-				sims.write(str(i) + "\t" + str(j) + "\t" + str(getNodeSim(featureIndex, filePapersList[i-1], filePapersList[j-1], dataList)) + "\n")				
+
+		featureMetrics = []
+
+		for i in range(0, lines):
+			tempList = [0]*lines
+			featureMetrics.append(tempList)
+	
+		for i in range(0, lines):
+			for j in range(0, lines):
+				featureMetrics[i][j] = getNodeSim(featureIndex, filePapersList[i], filePapersList[j], dataList)
 
 
+		# for i in range(1, lines+1):
+		# 	for j in range(1, lines+1):
+		# 		sims.write(str(i) + "\t" + str(j) + "\t" + str(getNodeSim(featureIndex, filePapersList[i-1], filePapersList[j-1], dataList)) + "\n")				
+
+
+	return featureMetrics
 
 
 if __name__ == "__main__":
