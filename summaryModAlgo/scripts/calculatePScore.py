@@ -7,7 +7,7 @@ def p_score():
 	avg_p_score = 0.0
 	t = arrow.now().format('YYYY-MM-DD HH:mm:ss ZZ')
 			
-	logFile = open("../log.txt", "a+")
+	logFile = open("../metrics/log.txt", "a+")
 	logFile.write("\ntimestamp :"+t+" \n"+sys.argv[1] + "\n\n")
 	for filename in os.listdir('../contextFactPyramids/'):
 			total_weight = 0

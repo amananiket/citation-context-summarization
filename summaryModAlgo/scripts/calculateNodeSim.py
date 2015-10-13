@@ -18,7 +18,6 @@ def getIDFs(filename):
 			idf[tok] = int(line[1])
 			N = N + idf[tok]
 
-		print N
 		for token in idf:
 			idf[token] = math.log(N/(1+float(idf[token])))
 
@@ -188,7 +187,6 @@ def getLexSim(featureIndex, sent1, sent2):
 				tagCount2[word] = 1
 
 		tagsList = list(set(wordTags1 + wordTags2))
-		print tagsList
 		tagsList.sort()
 		
 
@@ -378,14 +376,20 @@ def main():
 	optionIndex = int(sys.argv[2])
 	sims = open("../preProcessOutput/"+sys.argv[1]+"-modSimMetrics.txt", "w")
 
+	
 	if (optionIndex == 0):
-		featureMetricsList1 = calculateFeatureNodeSim(1)
-		featureMetricsList2 = calculateFeatureNodeSim(2)
-		featureMetricsList3 = calculateFeatureNodeSim(3)
-		featureMetricsList4 = calculateFeatureNodeSim(4)
-		featureMetricsList5 = calculateFeatureNodeSim(6)
+		featureMetrics = {}
+		for i in range(1,11):
+			featureMetrics[i] = calculateFeatureNodeSim(i)
+		
+		featureWeights = {}
+		weightsInputFile = open("../metrics/featureWeightsHeuristic1.txt", "r")
 
-		numberOfSentences = len(featureMetricsList1)
+		for line in weightsInputFile:
+			values = line.split()
+			featureWeights[int(values[0])] = float(values[1])
+
+		numberOfSentences = len(featureMetrics[1])
 		
 		similarityMetrics = []
 
@@ -395,7 +399,39 @@ def main():
 
 		for i in range(0, numberOfSentences):
 			for j in range(0, numberOfSentences):
-				similarityMetrics[i][j] = (featureMetricsList1[i][j] + featureMetricsList2[i][j] + featureMetricsList3[i][j] + featureMetricsList4[i][j] + featureMetricsList5[i][j])/5
+
+				for k in range(1,11):
+					similarityMetrics[i][j] += featureWeights[k]*featureMetrics[k][i][j]
+
+
+	elif (optionIndex == 11):
+		#### Combining features with top 2 scores ######
+
+		featureMetrics = {}
+		##for i in range(1,11):
+		featureMetrics[0] = calculateFeatureNodeSim(1)
+		featureMetrics[1] = calculateFeatureNodeSim(4)
+		
+		# featureWeights = {}
+		# weightsInputFile = open("../metrics/featureWeightsHeuristic1.txt", "r")
+
+		# for line in weightsInputFile:
+		# 	values = line.split()
+		# 	featureWeights[int(values[0])] = float(values[1])
+
+		numberOfSentences = len(featureMetrics[1])
+		
+		similarityMetrics = []
+
+		for i in range(0, numberOfSentences):
+			tempList = [0]*numberOfSentences
+			similarityMetrics.append(tempList)
+
+		for i in range(0, numberOfSentences):
+			for j in range(0, numberOfSentences):
+
+				# for k in range(1,11):
+				similarityMetrics[i][j] += (featureMetrics[0][i][j] + featureMetrics[1][i][j])/2
 
 
 	else:
