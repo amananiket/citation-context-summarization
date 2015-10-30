@@ -6,8 +6,11 @@ import time
 startTime = time.time()
 
 ## "2 arguments required. Format :  python executeAndEvalute.py <featureIndex> <comments>"
-	
-os.system("python executeModAlgo.py " + sys.argv[1] )
+
+if (int(sys.argv[1]) >= 0 and int(sys.argv[1]) <= 10 ):
+	os.system("python executeModAlgo.py " + sys.argv[1])	
+else:
+	os.system("python executeModAlgo.py " + sys.argv[1] + " " + sys.argv[3] + " " + sys.argv[4])
 os.system("python calculateEvaluationMetrics.py summary")
 os.system("python calculatePScore.py '"+sys.argv[2] + "'")	
 endTime = time.time()

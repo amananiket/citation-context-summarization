@@ -72,20 +72,28 @@ open COSINE, "../preProcessOutput/".$name."-modSimMetrics.txt";
 
 while (<COSINE>) {
 	@values = split("\t", $_ );
-	$sims{$values[0]}{$values[1]} = $values[2];	
+	if (int($values[0]) == 0){
+		$cutoff = int($values[1]);
+	}
+	else {
+		$sims{$values[0]}{$values[1]} = $values[2];	
+	}
+	
 }
 
-
-for my $s1 (keys %sents){
-   for my $s2 (keys %sents){
-	print $sims{$s1}{$s2};
-   }
-}
+print $cutoff;
+# for my $s1 (keys %sents){
+#    for my $s2 (keys %sents){
+# 	print $sims{$s1}{$s2};
+#    }
+# }
 
 
 #exit;
 my %nodes = ();
 my $cfnw = Clair::Network::CFNetwork->new(name => $name); 
+
+
 
 for my $s1 (keys %sents){
     for my $s2 (keys %sents){

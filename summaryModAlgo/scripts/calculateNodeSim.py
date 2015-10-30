@@ -345,7 +345,7 @@ def getNodeSim(featureIndex, paper1ID, paper2ID, dataList):
 			return 0
 
 		title1 = dataList[paper1ID]
-		title2 = dataList[paper2ID]
+		title2 = dataList[paper2ID]	
 
 
 		return getLexSim(1, title1, title2)
@@ -373,17 +373,22 @@ def getNodeSim(featureIndex, paper1ID, paper2ID, dataList):
 		return max(0, (1- (float(abs(int(year1) - int(year2)))/5)))
 
 def main():
+	print sys.argv[1]
 	optionIndex = int(sys.argv[2])
 	sims = open("../preProcessOutput/"+sys.argv[1]+"-modSimMetrics.txt", "w")
 
+	if (optionIndex > 10 or optionIndex == 0):
+		featuresList = eval(sys.argv[3])
 	
 	if (optionIndex == 0):
+
+	###### feature combining heuristics : mixing features on featureWeights #########
 		featureMetrics = {}
-		for i in range(1,11):
+		for i in featuresList:
 			featureMetrics[i] = calculateFeatureNodeSim(i)
 		
 		featureWeights = {}
-		weightsInputFile = open("../metrics/featureWeightsHeuristic1.txt", "r")
+		weightsInputFile = open("../metrics/featureWeightsHeuristic"+(sys.argv[4])+".txt", "r")
 
 		for line in weightsInputFile:
 			values = line.split()
@@ -400,8 +405,38 @@ def main():
 		for i in range(0, numberOfSentences):
 			for j in range(0, numberOfSentences):
 
-				for k in range(1,11):
+				for k in featuresList:
 					similarityMetrics[i][j] += featureWeights[k]*featureMetrics[k][i][j]
+
+	# elif (optionIndex == 12):
+
+	# 	### heuristic 2 : mixing top 3 features with maxScores as weights ####
+
+	# 	featureMetrics = {}
+	# 	for i in [1,2,4]:
+	# 		featureMetrics[i] = calculateFeatureNodeSim(i)
+		
+	# 	featureWeights = {}
+	# 	weightsInputFile = open("../metrics/featureWeightsHeuristic2.txt", "r")
+
+	# 	for line in weightsInputFile:
+	# 		values = line.split()
+	# 		featureWeights[int(values[0])] = float(values[1])
+
+	# 	numberOfSentences = len(featureMetrics[1])
+		
+	# 	similarityMetrics = []
+
+	# 	for i in range(0, numberOfSentences):
+	# 		tempList = [0]*numberOfSentences
+	# 		similarityMetrics.append(tempList)
+
+	# 	for i in range(0, numberOfSentences):
+	# 		for j in range(0, numberOfSentences):
+
+	# 			for k in range(1,11):
+	# 				similarityMetrics[i][j] += featureWeights[k]*featureMetrics[k][i][j]
+
 
 
 	elif (optionIndex == 11):
@@ -433,10 +468,71 @@ def main():
 				# for k in range(1,11):
 				similarityMetrics[i][j] += (featureMetrics[0][i][j] + featureMetrics[1][i][j])/2
 
+	elif (optionIndex == 12):
+
+	###### feature combining heuristics : mixing features on featureWeights #########
+		featureMetrics = {}
+		for i in featuresList:
+			featureMetrics[i] = calculateFeatureNodeSim(i)
+		
+		# featureWeights = {}
+		# weightsInputFile = open("../metrics/featureWeightsHeuristic"+(sys.argv[4])+".txt", "r")
+
+		# for line in weightsInputFile:
+		# 	values = line.split()
+		# 	featureWeights[int(values[0])] = float(values[1])
+
+		numberOfSentences = len(featureMetrics[1])
+		
+		similarityMetrics = []
+
+		for i in range(0, numberOfSentences):
+			tempList = [0]*numberOfSentences
+			similarityMetrics.append(tempList)
+
+		featureValues = {}
+
+		for x in featuresList:
+			featureValues[x] = {}
+			featureValues[x]['min'] = 1
+			featureValues[x]['max'] = 0
+
+			for i in range(0, numberOfSentences):
+				for j in range(0, numberOfSentences):
+					
+					if featureValues[x]['min'] > featureMetrics[x][i][j]:
+						featureValues[x]['min'] = featureMetrics[x][i][j]
+
+					if featureValues[x]['max'] < featureMetrics[x][i][j]:
+						featureValues[x]['max'] = featureMetrics[x][i][j]
+
+			print featureValues[x]['min'], featureValues[x]['max']
+
+		for i in range(0, numberOfSentences):
+			for j in range(0, numberOfSentences):
+
+				#for k in featuresList:
+					#similarityMetrics[i][j] += featureWeights[k]*featureMetrics[k][i][j]
+
+				similarityMetrics[i][j] += min([ (featureMetrics[x][i][j] - featureValues[x]['min'])/(featureValues[x]['max'] - featureValues[x]['min']) for x in featuresList])
+
+
 
 	else:
 		similarityMetrics = calculateFeatureNodeSim(optionIndex)
 		numberOfSentences = len(similarityMetrics)
+
+	simScores = []
+
+	for i in range(0, numberOfSentences):
+		for j in range(0, numberOfSentences):
+			simScores.append(similarityMetrics[i][j])
+
+	cutoff = 0.9
+	simScores = sorted(simScores, reverse=True)
+	cutoffIndex = int(cutoff*len(simScores))
+
+	sims.write("0" + "\t"+ str(simScores[cutoffIndex]) + "\n")
 
 	for i in range(0, numberOfSentences):
 		for j in range(0, numberOfSentences):
