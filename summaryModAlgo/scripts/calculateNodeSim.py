@@ -27,6 +27,7 @@ idfDict = getIDFs("idf.txt")
 bgIdfDict = getIDFs("BgIdf.txt")
 UG_POS_idfDict = getIDFs("UG-POS-IDF.txt")
 BG_POS_idfDict = getIDFs("BG-POS-IDF.txt")
+SDTuple_idfDict = getIDFs("StanfordDepTuples-IDF.txt")
 
 
 def getLexSim(featureIndex, sent1, sent2):
@@ -101,6 +102,67 @@ def getLexSim(featureIndex, sent1, sent2):
 #	keys = sorted(countC, key = lambda token : countC[token], reverse = True)
 
 #	for key in keys:
+
+	elif (featureIndex == 13):
+		count1 = {}
+		count2 = {}
+
+		if len(sent1) == 0 or len(sent2) == 0:
+			return 0
+		wordSet1 = sent1
+		#wordSet1 = re.split("\W+", sent1)
+		#wordSet1 = [w for w in wordSet1 if not w in stopwords.words('english')]
+		
+		for word in wordSet1:
+			if word in count1:
+				count1[word] = count1[word] + 1
+			else:
+				count1[word] = 1
+
+		#wordSet2 = re.split("\W+", sent2)
+		#wordSet2 = [w for w in wordSet2 if not w in stopwords.words('english')]
+		wordSet2 = sent2
+
+		for word in wordSet2:
+			if word in count2:
+				count2[word] = count2[word] + 1
+			else:
+				count2[word] = 1
+		
+		
+		wordsList = list(set(wordSet1 + wordSet2))
+		wordsList.sort()
+		
+
+		
+
+		countC = {}
+
+		for word in wordsList:
+			if word in count1:
+				c1 = count1[word]
+			else:
+				c1 = 0
+
+			if word in count2:
+				c2 = count2[word]
+			else:
+				c2 = 0
+
+
+			if word in SDTuple_idfDict:
+				idf = SDTuple_idfDict[word]
+			else:	
+				idf = 1
+			c1 = c1 * idf
+			c2 = c2 * idf
+		
+			c = c + c1*c2
+
+			countC[word] = c1*c2
+			
+			rs1 = rs1 + c1*c1
+			rs2 = rs2 + c2*c2		
 	
 	elif (featureIndex == 2):
 	################# Bigrams TF-IDF ######################3
@@ -377,12 +439,12 @@ def main():
 	optionIndex = int(sys.argv[2])
 	sims = open("../preProcessOutput/"+sys.argv[1]+"-modSimMetrics.txt", "w")
 
-	if (optionIndex > 10 or optionIndex == 0):
-		featuresList = eval(sys.argv[3])
-	
+	#if (optionIndex > 10 or optionIndex == 0):
+
 	if (optionIndex == 0):
 
 	###### feature combining heuristics : mixing features on featureWeights #########
+
 		featureMetrics = {}
 		for i in featuresList:
 			featureMetrics[i] = calculateFeatureNodeSim(i)
@@ -470,7 +532,9 @@ def main():
 
 	elif (optionIndex == 12):
 
+		featuresList = eval(sys.argv[3])
 	###### feature combining heuristics : mixing features on featureWeights #########
+
 		featureMetrics = {}
 		for i in featuresList:
 			featureMetrics[i] = calculateFeatureNodeSim(i)
@@ -517,9 +581,9 @@ def main():
 				similarityMetrics[i][j] += min([ (featureMetrics[x][i][j] - featureValues[x]['min'])/(featureValues[x]['max'] - featureValues[x]['min']) for x in featuresList])
 
 
-
 	else:
 		similarityMetrics = calculateFeatureNodeSim(optionIndex)
+		#print similarityMetrics
 		numberOfSentences = len(similarityMetrics)
 
 	simScores = []
@@ -528,9 +592,16 @@ def main():
 		for j in range(0, numberOfSentences):
 			simScores.append(similarityMetrics[i][j])
 
-	cutoff = 0.9
+	try:
+		cutoff = float(sys.argv[4])
+	except:
+		cutoff = float(sys.argv[3])
+
 	simScores = sorted(simScores, reverse=True)
 	cutoffIndex = int(cutoff*len(simScores))
+
+	if (int(cutoff) == 1):
+		cutoffIndex = len(simScores) - 1
 
 	sims.write("0" + "\t"+ str(simScores[cutoffIndex]) + "\n")
 
@@ -597,11 +668,23 @@ def calculateFeatureNodeSim(featureIndex):
 		for line in inputFile:
 			inputLines[int(line.split("\t")[0])] = 	line.split("\t")[1]
 
+
+	elif (featureIndex == 13):
+		inputFile = open("../stanfordDependencies/"+sys.argv[1]+".txt")
+
+		inputLines = {}
+
+		for line in inputFile:
+			if len (line.split("\t")) == 1:
+				inputLines[int(line.split("\t")[0])] = 	[]	
+			else:
+				inputLines[int(line.split("\t")[0])] = 	eval(str(line.split("\t")[1]))
+
 	#inputLines = [x.decode('utf-8').strip('\n').lower() for x in inputFile.readlines()]
 	#sentId = 0
 	
 
-	if (featureIndex in [1,2,4,5]):
+	if (featureIndex in [1,2,4,5,13]):
 
 		featureMetrics = []
 
