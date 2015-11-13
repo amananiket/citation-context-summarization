@@ -205,7 +205,7 @@ for my $jj (sort {$a<=>$b} keys %rankedSents)
     
 }
 
-open OUT, ">../modOutput/".$name."-C-LR.txt";
+open OUT, ">../baselineSummary/".$name."-C-LR.txt";
 print OUT "$summary";
 print "$summary";
 close OUT;
